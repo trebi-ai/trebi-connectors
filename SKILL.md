@@ -10,7 +10,7 @@ description: >
 # discord-cli — Discord CLI
 
 Go CLI for Discord bot operations: messages, channels, threads, reactions, and real-time gateway events.
-Binary: `discord-cli`. Source: `/Users/fritz/projects/jobi/cmd/discord-cli/`.
+Binary: `discord-cli`.
 
 ## Auth
 
