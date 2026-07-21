@@ -181,6 +181,7 @@ WhatsApp Web history is best-effort. If you want to try fetching *older* message
 
 - `whatsapp-cli send text --to PHONE_OR_JID --message TEXT`
 - `whatsapp-cli send file --to PHONE_OR_JID --file PATH [--caption TEXT] [--mime TYPE]`
+- `whatsapp-cli send chat-presence --to PHONE_OR_JID [--state composing|paused] [--media text|audio]`
 
 ### Contacts (read + local management)
 

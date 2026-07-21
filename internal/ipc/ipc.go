@@ -23,7 +23,7 @@ func SocketPath(storeDir string) string {
 
 // Request is a command sent by a client to the daemon over the socket.
 type Request struct {
-	// Cmd is "send_text", "send_file", or "subscribe".
+	// Cmd is "send_text", "send_file", "send_chat_presence", or "subscribe".
 	Cmd string `json:"cmd"`
 	To  string `json:"to,omitempty"`
 
@@ -35,6 +35,10 @@ type Request struct {
 	Filename string `json:"filename,omitempty"`
 	Caption  string `json:"caption,omitempty"`
 	Mime     string `json:"mime,omitempty"`
+
+	// send_chat_presence
+	State string `json:"state,omitempty"` // composing | paused
+	Media string `json:"media,omitempty"` // text | audio
 
 	// subscribe: the secondary listener's own filter. The anchor applies it to
 	// the shared WhatsApp event stream and streams matching JSONL lines back on
@@ -62,4 +66,8 @@ type Response struct {
 	ID   string            `json:"id,omitempty"`
 	To   string            `json:"to,omitempty"`
 	File map[string]string `json:"file,omitempty"`
+
+	// send_chat_presence
+	State string `json:"state,omitempty"`
+	Media string `json:"media,omitempty"`
 }

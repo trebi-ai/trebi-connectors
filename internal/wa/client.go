@@ -183,6 +183,18 @@ func (c *Client) SendText(ctx context.Context, to types.JID, text string) (types
 	return resp.ID, nil
 }
 
+// SendChatPresence updates typing/recording status in a chat (composing/paused).
+// media is types.ChatPresenceMediaText ("") or types.ChatPresenceMediaAudio ("audio").
+func (c *Client) SendChatPresence(ctx context.Context, to types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error {
+	c.mu.Lock()
+	cli := c.client
+	c.mu.Unlock()
+	if cli == nil || !cli.IsConnected() {
+		return fmt.Errorf("not connected")
+	}
+	return cli.SendChatPresence(ctx, to, state, media)
+}
+
 func (c *Client) SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error) {
 	c.mu.Lock()
 	cli := c.client

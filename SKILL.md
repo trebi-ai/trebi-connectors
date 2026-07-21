@@ -89,7 +89,7 @@ whatsapp-cli listen        [--events] [--chat] [--from] [--exclude-self] [--raw]
 whatsapp-cli chats         list | show
 whatsapp-cli contacts      search | show | refresh | alias set|rm | tags add|rm
 whatsapp-cli messages      list | search | show | context
-whatsapp-cli send          text | file
+whatsapp-cli send          text | file | chat-presence
 whatsapp-cli media         download
 whatsapp-cli history       backfill
 whatsapp-cli groups        list | refresh | info | rename | leave | join |
@@ -137,7 +137,15 @@ whatsapp-cli send text --to "123456789012345@g.us" --message "Team update"
 whatsapp-cli send file --to "+15551234567" --file ./report.pdf --caption "Q1 report"
 whatsapp-cli send file --to <JID> --file /path/image.jpg --filename "photo.jpg"
 whatsapp-cli send file --to <JID> --file ./clip.mp4 --mime video/mp4
+
+# Typing / recording indicator (chat presence; no message is stored)
+whatsapp-cli send chat-presence --to "+15551234567"                    # composing (default)
+whatsapp-cli send chat-presence --to <JID> --state paused
+whatsapp-cli send chat-presence --to <JID> --state composing --media audio
 ```
+
+`--state`: `composing` (default) | `paused`. `--media`: `text` (default) | `audio` (voice-note recording).
+Forwarded over the listen Unix socket when a daemon holds the connection (same as `send text`/`file`).
 
 WhatsApp markdown in `--message` / `--caption`:
 

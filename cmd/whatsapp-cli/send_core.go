@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/flarco/cli-tools/whatsapp-cli/internal/app"
@@ -13,6 +14,7 @@ import (
 	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
 	"github.com/flarco/cli-tools/whatsapp-cli/internal/wa"
+	"go.mau.fi/whatsmeow/types"
 )
 
 // sendApp is the subset of *app.App the send core needs. Both the CLI direct
@@ -70,6 +72,56 @@ func sendFileCore(ctx context.Context, a sendApp, to, filePath, filename, captio
 	return toJID.String(), id, meta, nil
 }
 
+// parseChatPresenceFlags maps CLI/IPC state+media strings to whatsmeow types.
+// mediaCLI is "text" or "audio" (CLI form); wire media for text is empty.
+func parseChatPresenceFlags(state, mediaCLI string) (types.ChatPresence, types.ChatPresenceMedia, string, string, error) {
+	state = strings.TrimSpace(strings.ToLower(state))
+	if state == "" {
+		state = "composing"
+	}
+	var cp types.ChatPresence
+	switch state {
+	case "composing":
+		cp = types.ChatPresenceComposing
+	case "paused":
+		cp = types.ChatPresencePaused
+	default:
+		return "", "", "", "", fmt.Errorf("--state must be composing or paused")
+	}
+
+	mediaCLI = strings.TrimSpace(strings.ToLower(mediaCLI))
+	if mediaCLI == "" {
+		mediaCLI = "text"
+	}
+	var media types.ChatPresenceMedia
+	switch mediaCLI {
+	case "text":
+		media = types.ChatPresenceMediaText
+	case "audio":
+		media = types.ChatPresenceMediaAudio
+	default:
+		return "", "", "", "", fmt.Errorf("--media must be text or audio")
+	}
+	return cp, media, state, mediaCLI, nil
+}
+
+// sendChatPresenceCore sends a chat presence (typing/recording) update.
+// Returns resolved JID and normalized state/media CLI labels.
+func sendChatPresenceCore(ctx context.Context, a sendApp, to, state, mediaCLI string) (string, string, string, error) {
+	toJID, err := wa.ParseUserOrJID(to)
+	if err != nil {
+		return "", "", "", err
+	}
+	cp, media, stateOut, mediaOut, err := parseChatPresenceFlags(state, mediaCLI)
+	if err != nil {
+		return "", "", "", err
+	}
+	if err := a.WA().SendChatPresence(ctx, toJID, cp, media); err != nil {
+		return "", "", "", err
+	}
+	return toJID.String(), stateOut, mediaOut, nil
+}
+
 // forwardSend tries to hand the request to a running `whatsapp-cli listen` daemon over
 // its Unix socket. It returns (resp, true) if a daemon accepted the request
 // (whether the send succeeded or not — check resp.OK), or (_, false) if no live
@@ -98,7 +150,7 @@ func sendDispatch(flags *rootFlags, req ipc.Request, direct func() error) error 
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		return printSendResult(flags, resp.To, resp.ID, resp.File)
+		return printForwardedResult(flags, req, resp)
 	}
 
 	err := direct()
@@ -111,9 +163,16 @@ func sendDispatch(flags *rootFlags, req ipc.Request, direct func() error) error 
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		return printSendResult(flags, resp.To, resp.ID, resp.File)
+		return printForwardedResult(flags, req, resp)
 	}
 	return err
+}
+
+func printForwardedResult(flags *rootFlags, req ipc.Request, resp ipc.Response) error {
+	if req.Cmd == "send_chat_presence" {
+		return printChatPresenceResult(flags, resp.To, resp.State, resp.Media)
+	}
+	return printSendResult(flags, resp.To, resp.ID, resp.File)
 }
 
 // printSendResult writes the success output for a send, matching the format of
@@ -135,5 +194,21 @@ func printSendResult(flags *rootFlags, to, id string, meta map[string]string) er
 		return nil
 	}
 	fmt.Fprintf(os.Stdout, "Sent to %s (id %s)\n", to, id)
+	return nil
+}
+
+func printChatPresenceResult(flags *rootFlags, to, state, media string) error {
+	if flags.asJSON {
+		return out.WriteJSON(os.Stdout, map[string]any{
+			"to":    to,
+			"state": state,
+			"media": media,
+		})
+	}
+	if media != "" && media != "text" {
+		fmt.Fprintf(os.Stdout, "chat-presence %s (media=%s) → %s\n", state, media, to)
+		return nil
+	}
+	fmt.Fprintf(os.Stdout, "chat-presence %s → %s\n", state, to)
 	return nil
 }

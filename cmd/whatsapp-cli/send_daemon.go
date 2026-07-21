@@ -37,6 +37,13 @@ func sendHandler(a *app.App) ipc.Handler {
 			}
 			return ipc.Response{OK: true, ID: id, To: toJID, File: meta}
 
+		case "send_chat_presence":
+			toJID, state, media, err := sendChatPresenceCore(ctx, a, req.To, req.State, req.Media)
+			if err != nil {
+				return ipc.Response{OK: false, Error: err.Error()}
+			}
+			return ipc.Response{OK: true, To: toJID, State: state, Media: media}
+
 		default:
 			return ipc.Response{OK: false, Error: fmt.Sprintf("unknown cmd %q", req.Cmd)}
 		}
