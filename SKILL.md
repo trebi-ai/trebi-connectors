@@ -90,7 +90,7 @@ whatsapp-cli chats         list | show
 whatsapp-cli contacts      search | show | refresh | alias set|rm | tags add|rm
 whatsapp-cli messages      list | search | show | context
 whatsapp-cli send          text | file | chat-presence
-whatsapp-cli media         download
+whatsapp-cli media         download   # IPC-forwarded when listen is running
 whatsapp-cli history       backfill
 whatsapp-cli groups        list | refresh | info | rename | leave | join |
                     participants add|remove|promote|demote | invite link get|revoke
@@ -186,6 +186,8 @@ whatsapp-cli groups leave --jid "123@g.us"
 ```bash
 whatsapp-cli media download --chat <JID> --id <MSG_ID>
 whatsapp-cli media download --chat <JID> --id <MSG_ID> --output /tmp/out.jpg
+# When listen holds the store lock, download is forwarded over its Unix socket
+# (same as send). Live listen also persists messages so media metadata is available.
 
 # Best-effort older history (primary phone must be online)
 whatsapp-cli history backfill --chat <JID> --requests 5 --count 50

@@ -9,15 +9,14 @@ import (
 )
 
 // sendHandler builds the IPC handler used by the listen daemon to execute
-// forwarded send requests on the live WhatsApp connection.
+// forwarded send / media requests on the live WhatsApp connection.
 func sendHandler(a *app.App) ipc.Handler {
 	return func(ctx context.Context, req ipc.Request) ipc.Response {
-		if req.To == "" {
-			return ipc.Response{OK: false, Error: "missing 'to'"}
-		}
-
 		switch req.Cmd {
 		case "send_text":
+			if req.To == "" {
+				return ipc.Response{OK: false, Error: "missing 'to'"}
+			}
 			if req.Message == "" {
 				return ipc.Response{OK: false, Error: "missing 'message'"}
 			}
@@ -28,6 +27,9 @@ func sendHandler(a *app.App) ipc.Handler {
 			return ipc.Response{OK: true, ID: id, To: toJID}
 
 		case "send_file":
+			if req.To == "" {
+				return ipc.Response{OK: false, Error: "missing 'to'"}
+			}
 			if req.Path == "" {
 				return ipc.Response{OK: false, Error: "missing 'path'"}
 			}
@@ -38,11 +40,33 @@ func sendHandler(a *app.App) ipc.Handler {
 			return ipc.Response{OK: true, ID: id, To: toJID, File: meta}
 
 		case "send_chat_presence":
+			if req.To == "" {
+				return ipc.Response{OK: false, Error: "missing 'to'"}
+			}
 			toJID, state, media, err := sendChatPresenceCore(ctx, a, req.To, req.State, req.Media)
 			if err != nil {
 				return ipc.Response{OK: false, Error: err.Error()}
 			}
 			return ipc.Response{OK: true, To: toJID, State: state, Media: media}
+
+		case "media_download":
+			if req.Chat == "" || req.MsgID == "" {
+				return ipc.Response{OK: false, Error: "missing 'chat' or 'msg_id'"}
+			}
+			// Daemon already holds the live connection — do not reconnect.
+			result, err := mediaDownloadCore(ctx, a, req.Chat, req.MsgID, req.Output, false)
+			if err != nil {
+				return ipc.Response{OK: false, Error: err.Error()}
+			}
+			return ipc.Response{
+				OK:        true,
+				Chat:      result.Chat,
+				ID:        result.ID,
+				Path:      result.Path,
+				Bytes:     result.Bytes,
+				MediaType: result.MediaType,
+				MimeType:  result.MimeType,
+			}
 
 		default:
 			return ipc.Response{OK: false, Error: fmt.Sprintf("unknown cmd %q", req.Cmd)}

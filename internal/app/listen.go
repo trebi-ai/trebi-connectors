@@ -139,6 +139,9 @@ func classifyEvent(ctx context.Context, a *App, evt interface{}) (string, string
 			return "", "", "", "", false, nil
 		}
 		pm := wa.ParseLiveMessage(v)
+		// Persist so media download / offline search work while listen is the
+		// only long-running process (same path sync uses).
+		_ = a.storeParsedMessage(ctx, pm)
 		chat := pm.Chat.String()
 		sender := pm.SenderJID
 		return "message", "messages", chat, sender, pm.FromMe, normalizeMessage(ctx, a, pm)
