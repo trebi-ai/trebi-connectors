@@ -13,7 +13,7 @@ import (
 func ChannelCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "channel",
-		Usage: "List, create, delete, edit channels",
+		Usage: "List, create, delete, edit channels; trigger typing",
 		Subcommands: []*cli.Command{
 			{
 				Name:  "list",
@@ -57,6 +57,12 @@ func ChannelCommand() *cli.Command {
 					&cli.BoolFlag{Name: "no-nsfw"},
 				},
 				Action: channelEdit,
+			},
+			{
+				Name:      "typing",
+				Usage:     "Trigger a typing indicator in a channel (~10s)",
+				ArgsUsage: "<channel_id>",
+				Action:    channelTyping,
 			},
 		},
 	}
@@ -240,6 +246,29 @@ func channelEdit(c *cli.Context) error {
 		printJSON(os.Stdout, ch)
 	} else {
 		fmt.Fprintf(os.Stdout, "Updated channel %q (ID: %s)\n", ch.Name, ch.ID)
+	}
+	return nil
+}
+
+func channelTyping(c *cli.Context) error {
+	if c.NArg() < 1 {
+		return fmt.Errorf("usage: discord-cli channel typing <channel_id>")
+	}
+	cl, err := clientFromCtx(c)
+	if err != nil {
+		return err
+	}
+	channelID := c.Args().Get(0)
+	if err := cl.DoNoBody(c.Context, "POST", "/channels/"+channelID+"/typing"); err != nil {
+		return err
+	}
+	if outputJSON(c) {
+		printJSON(os.Stdout, map[string]any{
+			"channel_id": channelID,
+			"ok":         true,
+		})
+	} else {
+		fmt.Fprintf(os.Stdout, "Typing in channel %s (expires ~10s)\n", channelID)
 	}
 	return nil
 }

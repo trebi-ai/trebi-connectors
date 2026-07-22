@@ -75,6 +75,15 @@ discord-cli channel info <channel_id>
 discord-cli channel create <guild_id> "name" --type text --topic "desc"   # text|voice|category|forum
 discord-cli channel edit <channel_id> --name "new" --topic "t" --slowmode 5 --nsfw
 discord-cli channel delete <channel_id>
+discord-cli channel typing <channel_id>               # "bot is typing…" (~10s; re-call to extend)
+```
+
+Typing uses `POST /channels/{id}/typing` (no body). Indicator expires after ~10s; there is no stop endpoint. Thread IDs work as channel IDs. Use before a slow reply:
+
+```bash
+discord-cli channel typing "$CHANNEL"
+# ... compute answer ...
+discord-cli message send "$CHANNEL" "here's the answer"
 ```
 
 ## Listen (Gateway)

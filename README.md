@@ -66,6 +66,7 @@ The CLI resolves the bot token in this order:
 ./discord-cli channel list                       # all guilds
 ./discord-cli channel list --server <guild_id>
 ./discord-cli channel create <guild_id> announcements --type text --topic "..."
+./discord-cli channel typing <channel_id>        # typing indicator (~10s)
 
 # Servers (guilds)
 ./discord-cli server list --counts
@@ -89,7 +90,7 @@ The CLI resolves the bot token in this order:
 | `message` | `send`, `list`, `get`, `edit`, `delete`, `reply`, `search`, `bulk-delete` |
 | `reaction` | `add`, `remove`, `list`, `users` |
 | `thread` | `create`, `list`, `send`, `archive`, `unarchive`, `rename`, `add-member`, `remove-member` |
-| `channel` | `list`, `create`, `delete`, `info`, `edit` |
+| `channel` | `list`, `create`, `delete`, `info`, `edit`, `typing` |
 | `server` (alias `guild`) | `list`, `info` |
 | `listen` | Stream gateway events as JSONL |
 
