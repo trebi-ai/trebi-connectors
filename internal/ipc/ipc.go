@@ -23,7 +23,8 @@ func SocketPath(storeDir string) string {
 
 // Request is a command sent by a client to the daemon over the socket.
 type Request struct {
-	// Cmd is "send_text", "send_file", "send_chat_presence", "media_download", or "subscribe".
+	// Cmd is "send_text", "send_file", "send_chat_presence", "send_receipt",
+	// "send_presence", "media_download", or "subscribe".
 	Cmd string `json:"cmd"`
 	To  string `json:"to,omitempty"`
 
@@ -36,11 +37,18 @@ type Request struct {
 	Caption  string `json:"caption,omitempty"`
 	Mime     string `json:"mime,omitempty"`
 
-	// send_chat_presence
-	State string `json:"state,omitempty"` // composing | paused
-	Media string `json:"media,omitempty"` // text | audio
+	// send_chat_presence: composing | paused
+	// send_presence: available | unavailable
+	State string `json:"state,omitempty"`
+	Media string `json:"media,omitempty"` // text | audio (chat-presence)
 
-	// media_download
+	// send_receipt
+	MessageIDs  []string `json:"message_ids,omitempty"`
+	ReceiptType string   `json:"receipt_type,omitempty"` // read | played
+	Sender      string   `json:"sender,omitempty"`
+	At          string   `json:"at,omitempty"` // RFC3339
+
+	// media_download / send_receipt
 	Chat   string `json:"chat,omitempty"`
 	MsgID  string `json:"msg_id,omitempty"`
 	Output string `json:"output,omitempty"`
@@ -72,9 +80,15 @@ type Response struct {
 	To   string            `json:"to,omitempty"`
 	File map[string]string `json:"file,omitempty"`
 
-	// send_chat_presence
+	// send_chat_presence / send_presence
 	State string `json:"state,omitempty"`
 	Media string `json:"media,omitempty"`
+
+	// send_receipt
+	MessageIDs  []string `json:"message_ids,omitempty"`
+	ReceiptType string   `json:"receipt_type,omitempty"`
+	Sender      string   `json:"sender,omitempty"`
+	Timestamp   string   `json:"timestamp,omitempty"`
 
 	// media_download
 	Path      string `json:"path,omitempty"`

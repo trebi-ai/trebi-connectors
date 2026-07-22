@@ -195,6 +195,31 @@ func (c *Client) SendChatPresence(ctx context.Context, to types.JID, state types
 	return cli.SendChatPresence(ctx, to, state, media)
 }
 
+// MarkRead sends a read/played receipt for the given message IDs.
+// sender must be set for group chats (the user who sent the messages).
+// receiptType defaults to types.ReceiptTypeRead when omitted.
+func (c *Client) MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptType ...types.ReceiptType) error {
+	c.mu.Lock()
+	cli := c.client
+	c.mu.Unlock()
+	if cli == nil || !cli.IsConnected() {
+		return fmt.Errorf("not connected")
+	}
+	return cli.MarkRead(ctx, ids, timestamp, chat, sender, receiptType...)
+}
+
+// SendPresence updates global online/offline presence (available/unavailable).
+// available enables active delivery receipts (two gray checks on receive).
+func (c *Client) SendPresence(ctx context.Context, state types.Presence) error {
+	c.mu.Lock()
+	cli := c.client
+	c.mu.Unlock()
+	if cli == nil || !cli.IsConnected() {
+		return fmt.Errorf("not connected")
+	}
+	return cli.SendPresence(ctx, state)
+}
+
 func (c *Client) SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error) {
 	c.mu.Lock()
 	cli := c.client

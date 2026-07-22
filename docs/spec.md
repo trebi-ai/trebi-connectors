@@ -63,9 +63,10 @@ Behavior:
 - `whatsapp-cli listen` (non-interactive)
   - Requires an existing authenticated session; never displays QR.
   - Streams whatsmeow events as JSONL to stdout (one `{"t":"...","ts":"...","d":{...}}` object per line); status messages go to stderr.
-  - Does not persist to the `whatsapp-cli.db` message store — it is a live pass-through.
+  - Persists live messages to the local store (same path as sync) so media download / offline search work while listening.
   - Event categories are opt-in via `--events` (default: `messages,receipts,connection`); `--events all` selects everything except `history`, which is always opt-in due to payload size.
   - Filters: `--chat <JID>`, `--from <JID>`, `--exclude-self`. `--raw` emits the full whatsmeow event (nested protobuf, binary as base64) instead of the normalized shape.
+  - `--presence available|unavailable` sets global presence after connect (and after reconnect). `available` enables active delivery receipts (two gray checks) for incoming messages.
   - Holds the same exclusive store lock as `sync`, so the two cannot run concurrently against the same store.
 
 ### UX principle
@@ -182,6 +183,8 @@ WhatsApp Web history is best-effort. If you want to try fetching *older* message
 - `whatsapp-cli send text --to PHONE_OR_JID --message TEXT`
 - `whatsapp-cli send file --to PHONE_OR_JID --file PATH [--caption TEXT] [--mime TYPE]`
 - `whatsapp-cli send chat-presence --to PHONE_OR_JID [--state composing|paused] [--media text|audio]`
+- `whatsapp-cli send receipt --chat PHONE_OR_JID --id MSG_ID [--id ...] [--type read|played] [--sender PHONE_OR_JID] [--at TS]`
+- `whatsapp-cli send presence --state available|unavailable`
 
 ### Contacts (read + local management)
 

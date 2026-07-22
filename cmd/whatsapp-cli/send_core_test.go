@@ -67,3 +67,87 @@ func TestParseChatPresenceFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestParseReceiptType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in      string
+		want    types.ReceiptType
+		wantOut string
+		wantErr bool
+	}{
+		{in: "", want: types.ReceiptTypeRead, wantOut: "read"},
+		{in: "read", want: types.ReceiptTypeRead, wantOut: "read"},
+		{in: "PLAYED", want: types.ReceiptTypePlayed, wantOut: "played"},
+		{in: "delivered", wantErr: true},
+		{in: "seen", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in+"_", func(t *testing.T) {
+			t.Parallel()
+			rt, out, err := parseReceiptType(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if rt != tt.want || out != tt.wantOut {
+				t.Fatalf("got rt=%q out=%q", rt, out)
+			}
+		})
+	}
+}
+
+func TestParsePresenceState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in      string
+		want    types.Presence
+		wantOut string
+		wantErr bool
+	}{
+		{in: "available", want: types.PresenceAvailable, wantOut: "available"},
+		{in: "UNAVAILABLE", want: types.PresenceUnavailable, wantOut: "unavailable"},
+		{in: "", wantErr: true},
+		{in: "online", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in+"_", func(t *testing.T) {
+			t.Parallel()
+			p, out, err := parsePresenceState(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p != tt.want || out != tt.wantOut {
+				t.Fatalf("got p=%q out=%q", p, out)
+			}
+		})
+	}
+}
+
+func TestNormalizeMsgIDs(t *testing.T) {
+	t.Parallel()
+
+	ids, err := normalizeMsgIDs([]string{" a ", "", "b", "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
+		t.Fatalf("got %v", ids)
+	}
+	if _, err := normalizeMsgIDs(nil); err == nil {
+		t.Fatal("expected error for empty ids")
+	}
+}

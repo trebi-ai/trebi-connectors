@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -122,6 +123,191 @@ func sendChatPresenceCore(ctx context.Context, a sendApp, to, state, mediaCLI st
 	return toJID.String(), stateOut, mediaOut, nil
 }
 
+// parseReceiptType maps CLI/IPC receipt type to whatsmeow types.
+// Empty defaults to read. delivered is intentionally not supported (use presence).
+func parseReceiptType(s string) (types.ReceiptType, string, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		s = "read"
+	}
+	switch s {
+	case "read":
+		return types.ReceiptTypeRead, "read", nil
+	case "played":
+		return types.ReceiptTypePlayed, "played", nil
+	case "delivered":
+		return "", "", fmt.Errorf("delivered is not supported; mark online with `send presence --state available` or `listen --presence available` so delivery receipts are sent on receive")
+	default:
+		return "", "", fmt.Errorf("type must be read or played")
+	}
+}
+
+// parsePresenceState maps available|unavailable.
+func parsePresenceState(s string) (types.Presence, string, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return "", "", fmt.Errorf("state is required (available or unavailable)")
+	}
+	switch s {
+	case "available":
+		return types.PresenceAvailable, "available", nil
+	case "unavailable":
+		return types.PresenceUnavailable, "unavailable", nil
+	default:
+		return "", "", fmt.Errorf("state must be available or unavailable")
+	}
+}
+
+// normalizeMsgIDs trims and drops empties; rejects empty list.
+func normalizeMsgIDs(ids []string) ([]string, error) {
+	out := make([]string, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("at least one --id is required")
+	}
+	return out, nil
+}
+
+// resolveReceiptSender picks the MarkRead sender JID.
+// Prefer --sender when set; otherwise load from local store. Groups require a sender.
+// Rejects from_me messages when present in the local store.
+func resolveReceiptSender(a sendApp, chat types.JID, ids []string, senderFlag string) (types.JID, error) {
+	var dbSender string
+	var haveDB bool
+
+	chatStr := chat.String()
+	for _, id := range ids {
+		msg, err := a.DB().GetMessage(chatStr, id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return types.JID{}, fmt.Errorf("lookup message %s: %w", id, err)
+		}
+		if msg.FromMe {
+			return types.JID{}, fmt.Errorf("message %s is from you; receipts are only for incoming messages", id)
+		}
+		if msg.SenderJID == "" {
+			continue
+		}
+		if haveDB && dbSender != msg.SenderJID {
+			return types.JID{}, fmt.Errorf("messages have different senders (%s vs %s); call once per sender", dbSender, msg.SenderJID)
+		}
+		dbSender = msg.SenderJID
+		haveDB = true
+	}
+
+	if strings.TrimSpace(senderFlag) != "" {
+		flagJID, err := wa.ParseUserOrJID(senderFlag)
+		if err != nil {
+			return types.JID{}, fmt.Errorf("--sender: %w", err)
+		}
+		if haveDB && dbSender != flagJID.String() {
+			// Allow AD vs non-AD string differences by comparing user+server.
+			dbJID, dbErr := types.ParseJID(dbSender)
+			if dbErr != nil || dbJID.User != flagJID.User || dbJID.Server != flagJID.Server {
+				return types.JID{}, fmt.Errorf("--sender %s does not match stored sender %s", flagJID, dbSender)
+			}
+		}
+		return flagJID, nil
+	}
+
+	if haveDB {
+		j, err := types.ParseJID(dbSender)
+		if err != nil {
+			return types.JID{}, fmt.Errorf("stored sender %q: %w", dbSender, err)
+		}
+		return j, nil
+	}
+
+	if wa.IsGroupJID(chat) {
+		return types.JID{}, fmt.Errorf("--sender is required for group chats when message is not in the local store")
+	}
+	// DMs: empty sender is fine for MarkRead.
+	return types.JID{}, nil
+}
+
+// receiptResult is the normalized output of a successful send receipt.
+type receiptResult struct {
+	Chat       string
+	Type       string
+	MessageIDs []string
+	Sender     string
+	Timestamp  time.Time
+}
+
+// sendReceiptCore sends a read/played receipt for the given message IDs.
+func sendReceiptCore(ctx context.Context, a sendApp, chat, receiptTypeCLI, senderFlag, at string, ids []string) (receiptResult, error) {
+	var zero receiptResult
+	ids, err := normalizeMsgIDs(ids)
+	if err != nil {
+		return zero, err
+	}
+	rt, typeOut, err := parseReceiptType(receiptTypeCLI)
+	if err != nil {
+		return zero, err
+	}
+	chatJID, err := wa.ParseUserOrJID(chat)
+	if err != nil {
+		return zero, err
+	}
+	sender, err := resolveReceiptSender(a, chatJID, ids, senderFlag)
+	if err != nil {
+		return zero, err
+	}
+
+	ts := time.Now().UTC()
+	if strings.TrimSpace(at) != "" {
+		t, err := parseTime(at)
+		if err != nil {
+			return zero, fmt.Errorf("--at: %w", err)
+		}
+		ts = t.UTC()
+	}
+
+	msgIDs := make([]types.MessageID, len(ids))
+	for i, id := range ids {
+		msgIDs[i] = types.MessageID(id)
+	}
+	if err := a.WA().MarkRead(ctx, msgIDs, ts, chatJID, sender, rt); err != nil {
+		return zero, err
+	}
+
+	res := receiptResult{
+		Chat:       chatJID.String(),
+		Type:       typeOut,
+		MessageIDs: ids,
+		Timestamp:  ts,
+	}
+	if !sender.IsEmpty() {
+		res.Sender = sender.String()
+	}
+	return res, nil
+}
+
+// sendPresenceCore sends global available/unavailable presence.
+func sendPresenceCore(ctx context.Context, a sendApp, state string) (string, error) {
+	p, stateOut, err := parsePresenceState(state)
+	if err != nil {
+		return "", err
+	}
+	if err := a.WA().SendPresence(ctx, p); err != nil {
+		return "", err
+	}
+	return stateOut, nil
+}
+
 // forwardSend tries to hand the request to a running `whatsapp-cli listen` daemon over
 // its Unix socket. It returns (resp, true) if a daemon accepted the request
 // (whether the send succeeded or not — check resp.OK), or (_, false) if no live
@@ -169,10 +355,26 @@ func sendDispatch(flags *rootFlags, req ipc.Request, direct func() error) error 
 }
 
 func printForwardedResult(flags *rootFlags, req ipc.Request, resp ipc.Response) error {
-	if req.Cmd == "send_chat_presence" {
+	switch req.Cmd {
+	case "send_chat_presence":
 		return printChatPresenceResult(flags, resp.To, resp.State, resp.Media)
+	case "send_receipt":
+		ts, _ := time.Parse(time.RFC3339Nano, resp.Timestamp)
+		if ts.IsZero() {
+			ts, _ = time.Parse(time.RFC3339, resp.Timestamp)
+		}
+		return printReceiptResult(flags, receiptResult{
+			Chat:       resp.Chat,
+			Type:       resp.ReceiptType,
+			MessageIDs: resp.MessageIDs,
+			Sender:     resp.Sender,
+			Timestamp:  ts,
+		})
+	case "send_presence":
+		return printPresenceResult(flags, resp.State)
+	default:
+		return printSendResult(flags, resp.To, resp.ID, resp.File)
 	}
-	return printSendResult(flags, resp.To, resp.ID, resp.File)
 }
 
 // printSendResult writes the success output for a send, matching the format of
@@ -210,5 +412,41 @@ func printChatPresenceResult(flags *rootFlags, to, state, media string) error {
 		return nil
 	}
 	fmt.Fprintf(os.Stdout, "chat-presence %s → %s\n", state, to)
+	return nil
+}
+
+func printReceiptResult(flags *rootFlags, res receiptResult) error {
+	if flags.asJSON {
+		payload := map[string]any{
+			"chat":        res.Chat,
+			"type":        res.Type,
+			"message_ids": res.MessageIDs,
+			"timestamp":   res.Timestamp.UTC().Format(time.RFC3339Nano),
+		}
+		if res.Sender != "" {
+			payload["sender"] = res.Sender
+		}
+		return out.WriteJSON(os.Stdout, payload)
+	}
+	n := len(res.MessageIDs)
+	msg := "message"
+	if n != 1 {
+		msg = "messages"
+	}
+	if res.Sender != "" {
+		fmt.Fprintf(os.Stdout, "receipt %s → %s (sender %s, %d %s)\n", res.Type, res.Chat, res.Sender, n, msg)
+		return nil
+	}
+	fmt.Fprintf(os.Stdout, "receipt %s → %s (%d %s)\n", res.Type, res.Chat, n, msg)
+	return nil
+}
+
+func printPresenceResult(flags *rootFlags, state string) error {
+	if flags.asJSON {
+		return out.WriteJSON(os.Stdout, map[string]any{
+			"state": state,
+		})
+	}
+	fmt.Fprintf(os.Stdout, "presence %s\n", state)
 	return nil
 }

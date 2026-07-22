@@ -41,6 +41,7 @@ func newListenCmd(flags *rootFlags) *cobra.Command {
 	var excludeSelf bool
 	var raw bool
 	var maxReconnect time.Duration
+	var presence string
 
 	cmd := &cobra.Command{
 		Use:   "listen",
@@ -62,12 +63,20 @@ instead of failing on the lock: it registers its own --events/--chat/--from
 filter and streams matching events to its own stdout. When the anchor exits, the
 attached listeners print a notice and exit non-zero.
 
+Use --presence available so the session is online and delivery receipts (two gray
+checks) are sent when messages arrive. Read receipts still require 'send receipt'.
+
 Event categories: ` + strings.Join(allCategories, ", ") + `, history, all
 (history is opt-in: it delivers large initial-sync batches).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			categories, err := parseEventCategories(eventsFlag)
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(presence) != "" {
+				if _, _, err := parsePresenceState(presence); err != nil {
+					return fmt.Errorf("--presence: %w", err)
+				}
 			}
 
 			ctx, stop := signalContext()
@@ -81,7 +90,7 @@ Event categories: ` + strings.Join(allCategories, ", ") + `, history, all
 				Raw:         raw,
 			}
 
-			return runListen(ctx, flags, filter, maxReconnect)
+			return runListen(ctx, flags, filter, maxReconnect, strings.TrimSpace(presence))
 		},
 	}
 
@@ -91,6 +100,7 @@ Event categories: ` + strings.Join(allCategories, ", ") + `, history, all
 	cmd.Flags().BoolVar(&excludeSelf, "exclude-self", false, "drop events where from_me=true")
 	cmd.Flags().BoolVar(&raw, "raw", false, "emit raw whatsmeow event instead of normalized shape")
 	cmd.Flags().DurationVar(&maxReconnect, "max-reconnect", 5*time.Minute, "give up reconnecting after this duration (0 = unlimited)")
+	cmd.Flags().StringVar(&presence, "presence", "", "send global presence after connect: available or unavailable")
 	return cmd
 }
 

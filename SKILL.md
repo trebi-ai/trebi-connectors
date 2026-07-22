@@ -89,7 +89,7 @@ whatsapp-cli listen        [--events] [--chat] [--from] [--exclude-self] [--raw]
 whatsapp-cli chats         list | show
 whatsapp-cli contacts      search | show | refresh | alias set|rm | tags add|rm
 whatsapp-cli messages      list | search | show | context
-whatsapp-cli send          text | file | chat-presence
+whatsapp-cli send          text | file | chat-presence | receipt | presence
 whatsapp-cli media         download   # IPC-forwarded when listen is running
 whatsapp-cli history       backfill
 whatsapp-cli groups        list | refresh | info | rename | leave | join |
@@ -142,9 +142,26 @@ whatsapp-cli send file --to <JID> --file ./clip.mp4 --mime video/mp4
 whatsapp-cli send chat-presence --to "+15551234567"                    # composing (default)
 whatsapp-cli send chat-presence --to <JID> --state paused
 whatsapp-cli send chat-presence --to <JID> --state composing --media audio
+
+# Read receipt (blue double checks) / played (voice notes, view-once)
+whatsapp-cli send receipt --chat "+15551234567" --id <MSG_ID>
+whatsapp-cli send receipt --chat <JID> --id id1 --id id2 --type read
+whatsapp-cli send receipt --chat "123@g.us" --id <MSG_ID> --sender "+1555..."  # groups need sender
+whatsapp-cli send receipt --chat <JID> --id <MSG_ID> --type played
+
+# Global online/offline (enables gray double-check delivery receipts while connected)
+whatsapp-cli send presence --state available
+whatsapp-cli send presence --state unavailable
 ```
 
-`--state`: `composing` (default) | `paused`. `--media`: `text` (default) | `audio` (voice-note recording).
+`--state` (chat-presence): `composing` (default) | `paused`. `--media`: `text` (default) | `audio` (voice-note recording).
+
+**Receipts vs presence:**
+- **Gray ✓✓ (delivered):** automatic when the session is online (`send presence --state available` or `listen --presence available`) and a message is received. Not a separate `send receipt` type.
+- **Blue ✓✓ (read):** `send receipt --type read` (default). Needs message `--id`(s); groups need `--sender` unless the message is in the local DB.
+- **Played:** `send receipt --type played` for voice notes / view-once.
+- Privacy: if the account has read receipts disabled, WhatsApp may only sync as `read-self` to your other devices.
+
 Forwarded over the listen Unix socket when a daemon holds the connection (same as `send text`/`file`).
 
 WhatsApp markdown in `--message` / `--caption`:
@@ -201,6 +218,7 @@ Backfill is **best-effort**; WhatsApp may not return full history. Recommended
 
 ```bash
 whatsapp-cli listen                                          # messages,receipts,connection
+whatsapp-cli listen --presence available                     # online + gray ✓✓ on receive
 whatsapp-cli listen --events messages,groups --chat <JID>
 whatsapp-cli listen --events all --exclude-self
 whatsapp-cli listen --raw                                    # raw whatsmeow events

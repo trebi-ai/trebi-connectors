@@ -24,25 +24,26 @@ import (
 //
 // If the direct (anchor) path loses the LOCK race to another process, it falls
 // back to the secondary path (one retry), mirroring `whatsapp-cli send`.
-func runListen(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter, maxReconnect time.Duration) error {
-	err := runAnchor(ctx, flags, filter, maxReconnect)
+func runListen(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter, maxReconnect time.Duration, presence string) error {
+	err := runAnchor(ctx, flags, filter, maxReconnect, presence)
 	if err == nil || !errors.Is(err, lock.ErrLocked) {
 		return err
 	}
 
 	// Store is locked by an anchor — attach as a secondary instead.
+	// Presence is only applied by the anchor (it owns the connection).
 	if serr := runSecondary(ctx, flags, filter); serr == nil || !errors.Is(serr, errNoAnchor) {
 		return serr
 	}
 
 	// Raced: anchor released the lock between our lock attempt and dial. Retry
 	// the anchor path once.
-	return runAnchor(ctx, flags, filter, maxReconnect)
+	return runAnchor(ctx, flags, filter, maxReconnect, presence)
 }
 
 // runAnchor attempts to become the anchor. It returns a lock.ErrLocked-wrapped
 // error (via newApp) if another process already holds the store.
-func runAnchor(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter, maxReconnect time.Duration) error {
+func runAnchor(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter, maxReconnect time.Duration, presence string) error {
 	a, lk, err := newApp(ctx, flags, true, false)
 	if err != nil {
 		return err
@@ -66,6 +67,7 @@ func runAnchor(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter
 	return a.Listen(ctx, appPkg.ListenOptions{
 		ListenFilter: filter,
 		MaxReconnect: maxReconnect,
+		Presence:     presence,
 		Out:          os.Stdout,
 		Subscribers:  subs,
 	})

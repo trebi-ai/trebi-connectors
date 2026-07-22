@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/flarco/cli-tools/whatsapp-cli/internal/app"
 	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
@@ -48,6 +49,30 @@ func sendHandler(a *app.App) ipc.Handler {
 				return ipc.Response{OK: false, Error: err.Error()}
 			}
 			return ipc.Response{OK: true, To: toJID, State: state, Media: media}
+
+		case "send_receipt":
+			if req.Chat == "" {
+				return ipc.Response{OK: false, Error: "missing 'chat'"}
+			}
+			res, err := sendReceiptCore(ctx, a, req.Chat, req.ReceiptType, req.Sender, req.At, req.MessageIDs)
+			if err != nil {
+				return ipc.Response{OK: false, Error: err.Error()}
+			}
+			return ipc.Response{
+				OK:          true,
+				Chat:        res.Chat,
+				ReceiptType: res.Type,
+				MessageIDs:  res.MessageIDs,
+				Sender:      res.Sender,
+				Timestamp:   res.Timestamp.UTC().Format(time.RFC3339Nano),
+			}
+
+		case "send_presence":
+			state, err := sendPresenceCore(ctx, a, req.State)
+			if err != nil {
+				return ipc.Response{OK: false, Error: err.Error()}
+			}
+			return ipc.Response{OK: true, State: state}
 
 		case "media_download":
 			if req.Chat == "" || req.MsgID == "" {

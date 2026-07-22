@@ -212,6 +212,14 @@ func (f *fakeWA) SendChatPresence(ctx context.Context, to types.JID, state types
 	return nil
 }
 
+func (f *fakeWA) MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptType ...types.ReceiptType) error {
+	return nil
+}
+
+func (f *fakeWA) SendPresence(ctx context.Context, state types.Presence) error {
+	return nil
+}
+
 func (f *fakeWA) SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error) {
 	return types.MessageID("msgid"), nil
 }

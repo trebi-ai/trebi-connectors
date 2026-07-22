@@ -37,6 +37,9 @@ type ListenOptions struct {
 	ListenFilter
 	// MaxReconnect bounds the reconnect retry duration. 0 means unlimited.
 	MaxReconnect time.Duration
+	// Presence, when non-empty ("available" or "unavailable"), is sent after
+	// connect and after each successful reconnect so delivery receipts work.
+	Presence string
 	// Out is where the anchor's own JSONL lines are written (defaults to os.Stdout).
 	Out io.Writer
 	// Subscribers, when non-nil, is consulted on every event so secondary
@@ -109,6 +112,9 @@ func (a *App) Listen(ctx context.Context, opts ListenOptions) error {
 	if err := a.Connect(ctx, false, nil); err != nil {
 		return err
 	}
+	if err := a.applyListenPresence(ctx, opts.Presence); err != nil {
+		return err
+	}
 
 	fmt.Fprintln(os.Stderr, "Listening for events (Ctrl+C to stop)...")
 
@@ -122,8 +128,33 @@ func (a *App) Listen(ctx context.Context, opts ListenOptions) error {
 			if err := a.reconnect(ctx, opts.MaxReconnect); err != nil {
 				return err
 			}
+			if err := a.applyListenPresence(ctx, opts.Presence); err != nil {
+				fmt.Fprintf(os.Stderr, "presence after reconnect: %v\n", err)
+			}
 		}
 	}
+}
+
+// applyListenPresence sends global presence when configured on the listen anchor.
+func (a *App) applyListenPresence(ctx context.Context, presence string) error {
+	presence = strings.TrimSpace(strings.ToLower(presence))
+	if presence == "" {
+		return nil
+	}
+	var state types.Presence
+	switch presence {
+	case "available":
+		state = types.PresenceAvailable
+	case "unavailable":
+		state = types.PresenceUnavailable
+	default:
+		return fmt.Errorf("presence must be available or unavailable")
+	}
+	if err := a.wa.SendPresence(ctx, state); err != nil {
+		return fmt.Errorf("send presence %s: %w", presence, err)
+	}
+	fmt.Fprintf(os.Stderr, "Presence set to %s\n", presence)
+	return nil
 }
 
 // classifyEvent maps a whatsmeow event to (name, category, chat, sender, isFromMe, normalizedPayload).
