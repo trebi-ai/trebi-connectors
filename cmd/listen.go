@@ -27,12 +27,14 @@ func ListenCommand() *cli.Command {
 }
 
 // intentBits maps event categories to Discord Gateway intent bits.
+// messages includes GUILD_MESSAGES + DIRECT_MESSAGES + MESSAGE_CONTENT so
+// listen --events messages receives both guild and DM MESSAGE_* events.
 var intentBits = map[string]int{
 	"guilds":    1 << 0,
 	"members":   1 << 1,
 	"voice":     1 << 7,
-	"messages":  (1 << 9) | (1 << 15),
-	"reactions": 1 << 10,
+	"messages":  (1 << 9) | (1 << 12) | (1 << 15), // guild + DM + content
+	"reactions": (1 << 10) | (1 << 13),             // guild + DM reactions
 }
 
 // eventCategoryMap maps Discord event types to categories for filtering.

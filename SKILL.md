@@ -2,23 +2,25 @@
 name: discord-cli
 description: >
   Discord CLI tool for bots. Use when the user wants to send/read/search Discord messages,
-  manage channels/threads/reactions, listen to real-time gateway events, or automate Discord bot actions.
+  manage channels/threads/reactions, show a typing indicator, listen to real-time gateway
+  events, or automate Discord bot actions.
   Triggers: "send discord message", "list discord channels", "search discord", "listen to discord",
-  "discord bot", "react on discord", "create discord thread".
+  "discord bot", "react on discord", "create discord thread", "discord typing", "bot is typing",
+  "channel typing".
 ---
 
 # discord-cli — Discord CLI
 
-Go CLI for Discord bot operations: messages, channels, threads, reactions, and real-time gateway events.
+Go CLI for Discord bot operations: messages, channels, threads, reactions, typing indicators, and real-time gateway events.
 Binary: `discord-cli`.
 
 ## Auth
 
-Token resolution order: `--token` flag → `DISCORD_BOT_TOKEN` env → `~/.discord-cli/config.json`.
+Token resolution order: `--token` flag → `DISCORD_BOT_TOKEN` env → `~/.cli-tools/discord-cli/config.json`.
 Auto-loads `.env` from CWD (walks up parents).
 
 ```bash
-discord-cli auth set <token>       # save token to ~/.discord-cli/config.json
+discord-cli auth set <token>       # save token to ~/.cli-tools/discord-cli/config.json
 discord-cli auth show              # show masked token + source
 discord-cli auth test              # GET /users/@me
 ```
@@ -78,13 +80,15 @@ discord-cli channel delete <channel_id>
 discord-cli channel typing <channel_id>               # "bot is typing…" (~10s; re-call to extend)
 ```
 
-Typing uses `POST /channels/{id}/typing` (no body). Indicator expires after ~10s; there is no stop endpoint. Thread IDs work as channel IDs. Use before a slow reply:
+Typing uses `POST /channels/{id}/typing` (no body). Indicator expires after ~10s; there is no stop endpoint. Thread IDs and DM channel IDs work. Use before a slow reply (re-fire every ~8–10s on long work):
 
 ```bash
 discord-cli channel typing "$CHANNEL"
 # ... compute answer ...
 discord-cli message send "$CHANNEL" "here's the answer"
 ```
+
+`--json` prints `{"channel_id":"...","ok":true}`.
 
 ## Listen (Gateway)
 
@@ -97,6 +101,10 @@ discord-cli listen --include-bots
 ```
 
 Event categories: `messages`, `reactions`, `members`, `voice` (default: all).
+
+The `messages` category requests **guild + DM** intents (`GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT`), so DMs to the bot appear as `MESSAGE_CREATE` with empty/`null` `guild_id`.
+
+Each line is `{"t":"<EVENT_TYPE>","d":{...}}` (Discord dispatch shape). Bot messages are filtered out unless `--include-bots`. `--server` / `--channel` filter client-side after receive (a `--server` filter drops DMs).
 
 ## Global Flags
 
@@ -121,8 +129,19 @@ sources:
 working_dir: /path/to/project
 on:
   - source: discord
-    match: "event.d.author && !event.d.author.bot"
-    extract: "({ channel: event.d.channel_id, msg: event.d.content, author: event.d.author.username })"
+    match: "event.t === 'MESSAGE_CREATE' && event.d.author && !event.d.author.bot"
+    extract: "({ channel_id: event.d.channel_id, msg: event.d.content, author: event.d.author.username })"
+    # Best-effort "bot is typing…" before the agent wakes (runs after match+extract).
+    acknowledge: 'discord-cli channel typing "{{channel_id}}"'
 ---
-{{author}} said in {{channel}}: {{msg}}
+{{author}} said in {{channel_id}}: {{msg}}
+```
+
+DM-only match (empty `guild_id`) plus a trusted author id:
+
+```js
+event.t === "MESSAGE_CREATE"
+  && !!event.d && !event.d.guild_id
+  && event.d.author && !event.d.author.bot
+  && event.d.author.id === "1051677407913967657"
 ```
