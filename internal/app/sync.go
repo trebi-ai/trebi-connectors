@@ -56,6 +56,8 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 	lastEvent.Store(time.Now().UTC().UnixNano())
 
 	disconnected := make(chan struct{}, 1)
+	connected := make(chan struct{}, 1)
+	fatal := make(chan error, 1)
 
 	var stopMedia func()
 	var mediaJobs chan mediaJob
@@ -140,10 +142,29 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 			fmt.Fprintf(os.Stderr, "\rSynced %d messages...", messagesStored.Load())
 		case *events.Connected:
 			fmt.Fprintln(os.Stderr, "\nConnected.")
+			select {
+			case connected <- struct{}{}:
+			default:
+			}
 		case *events.Disconnected:
 			fmt.Fprintln(os.Stderr, "\nDisconnected.")
 			select {
 			case disconnected <- struct{}{}:
+			default:
+			}
+		case *events.LoggedOut:
+			select {
+			case fatal <- fmt.Errorf("logged out (%s); run `whatsapp-cli auth`", v.Reason.String()):
+			default:
+			}
+		case *events.TemporaryBan:
+			select {
+			case fatal <- fmt.Errorf("temporary ban (code %d, expire %s)", int(v.Code), v.Expire):
+			default:
+			}
+		case *events.ClientOutdated:
+			select {
+			case fatal <- fmt.Errorf("whatsapp client outdated; upgrade whatsapp-cli / whatsmeow"):
 			default:
 			}
 		}
@@ -176,15 +197,29 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 		}
 	}
 
+	tracker := reconnectTracker{MaxDuration: opts.MaxReconnect}
+	handleReconnect := func() error {
+		if err := a.runReconnectAttempts(ctx, &tracker); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+
 	if opts.Mode == SyncModeFollow {
 		for {
 			select {
 			case <-ctx.Done():
 				fmt.Fprintln(os.Stderr, "\nStopping sync.")
 				return SyncResult{MessagesStored: messagesStored.Load()}, nil
+			case err := <-fatal:
+				return SyncResult{MessagesStored: messagesStored.Load()}, err
+			case <-connected:
+				tracker.reset()
 			case <-disconnected:
-				fmt.Fprintln(os.Stderr, "Reconnecting...")
-				if err := a.reconnect(ctx, opts.MaxReconnect); err != nil {
+				if err := handleReconnect(); err != nil {
 					return SyncResult{MessagesStored: messagesStored.Load()}, err
 				}
 			}
@@ -203,9 +238,12 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 		case <-ctx.Done():
 			fmt.Fprintln(os.Stderr, "\nStopping sync.")
 			return SyncResult{MessagesStored: messagesStored.Load()}, nil
+		case err := <-fatal:
+			return SyncResult{MessagesStored: messagesStored.Load()}, err
+		case <-connected:
+			tracker.reset()
 		case <-disconnected:
-			fmt.Fprintln(os.Stderr, "Reconnecting...")
-			if err := a.reconnect(ctx, opts.MaxReconnect); err != nil {
+			if err := handleReconnect(); err != nil {
 				return SyncResult{MessagesStored: messagesStored.Load()}, err
 			}
 		case <-ticker.C:
@@ -216,24 +254,6 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 			}
 		}
 	}
-}
-
-// reconnect wraps ReconnectWithBackoff with an optional deadline.
-// If maxDuration is positive, reconnection gives up after that long.
-// A zero or negative value means retry indefinitely (until ctx is cancelled).
-func (a *App) reconnect(ctx context.Context, maxDuration time.Duration) error {
-	rctx := ctx
-	var cancel context.CancelFunc
-	if maxDuration > 0 {
-		rctx, cancel = context.WithTimeout(ctx, maxDuration)
-		defer cancel()
-	}
-	err := a.wa.ReconnectWithBackoff(rctx, 2*time.Second, 30*time.Second)
-	if err != nil && ctx.Err() == nil {
-		// Deadline hit but parent context is still alive — we gave up, not the user.
-		return fmt.Errorf("could not reconnect after %s: %w", maxDuration, err)
-	}
-	return err
 }
 
 func chatKind(chat types.JID) string {

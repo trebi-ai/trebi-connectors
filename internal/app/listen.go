@@ -70,6 +70,9 @@ func (a *App) Listen(ctx context.Context, opts ListenOptions) error {
 	}
 
 	disconnected := make(chan struct{}, 1)
+	connected := make(chan struct{}, 1)
+	fatal := make(chan error, 1)
+	tracker := reconnectTracker{MaxDuration: opts.MaxReconnect}
 
 	handlerID := a.wa.AddEventHandler(func(evt interface{}) {
 		defer func() {
@@ -79,10 +82,30 @@ func (a *App) Listen(ctx context.Context, opts ListenOptions) error {
 		}()
 
 		// Connection lifecycle side effects first.
-		switch evt.(type) {
+		switch v := evt.(type) {
+		case *events.Connected:
+			select {
+			case connected <- struct{}{}:
+			default:
+			}
 		case *events.Disconnected:
 			select {
 			case disconnected <- struct{}{}:
+			default:
+			}
+		case *events.LoggedOut:
+			select {
+			case fatal <- fmt.Errorf("logged out (%s); run `whatsapp-cli auth`", v.Reason.String()):
+			default:
+			}
+		case *events.TemporaryBan:
+			select {
+			case fatal <- fmt.Errorf("temporary ban (code %d, expire %s)", int(v.Code), v.Expire):
+			default:
+			}
+		case *events.ClientOutdated:
+			select {
+			case fatal <- fmt.Errorf("whatsapp client outdated; upgrade whatsapp-cli / whatsmeow"):
 			default:
 			}
 		}
@@ -123,13 +146,20 @@ func (a *App) Listen(ctx context.Context, opts ListenOptions) error {
 		case <-ctx.Done():
 			fmt.Fprintln(os.Stderr, "\nStopping listen.")
 			return nil
-		case <-disconnected:
-			fmt.Fprintln(os.Stderr, "Reconnecting...")
-			if err := a.reconnect(ctx, opts.MaxReconnect); err != nil {
-				return err
-			}
+		case err := <-fatal:
+			return err
+		case <-connected:
+			tracker.reset()
 			if err := a.applyListenPresence(ctx, opts.Presence); err != nil {
 				fmt.Fprintf(os.Stderr, "presence after reconnect: %v\n", err)
+			}
+		case <-disconnected:
+			if err := a.runReconnectAttempts(ctx, &tracker); err != nil {
+				if ctx.Err() != nil {
+					fmt.Fprintln(os.Stderr, "\nStopping listen.")
+					return nil
+				}
+				return err
 			}
 		}
 	}

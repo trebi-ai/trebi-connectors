@@ -99,7 +99,7 @@ Event categories: ` + strings.Join(allCategories, ", ") + `, history, all
 	cmd.Flags().StringVar(&fromFilter, "from", "", "filter by sender JID")
 	cmd.Flags().BoolVar(&excludeSelf, "exclude-self", false, "drop events where from_me=true")
 	cmd.Flags().BoolVar(&raw, "raw", false, "emit raw whatsmeow event instead of normalized shape")
-	cmd.Flags().DurationVar(&maxReconnect, "max-reconnect", 5*time.Minute, "give up reconnecting after this duration (0 = unlimited)")
+	cmd.Flags().DurationVar(&maxReconnect, "max-reconnect", 5*time.Minute, "give up reconnecting after this long from first disconnect (backoff 2s..30s; 0 = unlimited)")
 	cmd.Flags().StringVar(&presence, "presence", "", "send global presence after connect: available or unavailable")
 	return cmd
 }

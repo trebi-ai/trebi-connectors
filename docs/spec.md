@@ -228,7 +228,11 @@ Recommendation:
 ## Reliability considerations
 
 - **Session conflicts**: running multiple instances can cause disconnects or “device replaced” behavior; locking is mandatory.
-- **Reconnect**: on disconnect, retry with exponential backoff and respect context cancellation.
+- **Reconnect**: on disconnect, retry with exponential backoff (2s..30s). Budget
+  is wall-clock from the first disconnect of an outage until `Connected` resets
+  it (`--max-reconnect`, default 5m; `0` = unlimited). Exit non-zero when the
+  budget is exhausted. Immediate exit on logout / temp ban / client outdated.
+  whatsmeow auto-reconnect is disabled so the app owns this policy.
 - **Idempotency**: message inserts are upserts keyed by (`chat_jid`, `msg_id`) so replays/history sync don’t duplicate data.
 
 ## Security considerations

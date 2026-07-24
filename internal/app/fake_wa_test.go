@@ -95,10 +95,6 @@ func (f *fakeWA) RemoveEventHandler(id uint32) {
 	delete(f.handlers, id)
 }
 
-func (f *fakeWA) ReconnectWithBackoff(ctx context.Context, minDelay, maxDelay time.Duration) error {
-	return f.Connect(ctx, wa.ConnectOptions{AllowQR: false})
-}
-
 func (f *fakeWA) ResolveChatName(ctx context.Context, chat types.JID, pushName string) string {
 	if pushName != "" && pushName != "-" {
 		return pushName

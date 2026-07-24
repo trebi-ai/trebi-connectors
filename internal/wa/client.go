@@ -62,6 +62,8 @@ func (c *Client) init() error {
 
 	logger := waLog.Stdout("Client", "ERROR", true)
 	c.client = whatsmeow.NewClient(deviceStore, logger)
+	// App owns reconnect (listen/sync) so we can apply backoff + max-reconnect.
+	c.client.EnableAutoReconnect = false
 	return nil
 }
 
@@ -386,24 +388,4 @@ func (c *Client) Logout(ctx context.Context) error {
 	return cli.Logout(ctx)
 }
 
-// Reconnect loop helper.
-func (c *Client) ReconnectWithBackoff(ctx context.Context, minDelay, maxDelay time.Duration) error {
-	delay := minDelay
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if err := c.Connect(ctx, ConnectOptions{AllowQR: false}); err == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-		}
-		delay *= 2
-		if delay > maxDelay {
-			delay = maxDelay
-		}
-	}
-}
+

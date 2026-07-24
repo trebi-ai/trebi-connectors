@@ -228,6 +228,12 @@ Stdout is JSONL: `{"t":"<event>","ts":"<rfc3339>","d":{...}}`. Status on stderr.
 Exclusive store lock — cannot run alongside `sync` on the same store. A second
 `listen` attaches to the first anchor and streams a filtered view.
 
+On disconnect, reconnect uses exponential backoff (**2s → 4s → … → 30s**). The
+budget is measured from the **first** disconnect of an outage until a successful
+`connected` event; flapping does not reset the clock. Default `--max-reconnect`
+is **5m** (then exit non-zero); `0` means unlimited. Immediate exit (no retries)
+on `logged_out`, `temporary_ban`, or `client_outdated`.
+
 Event categories: `messages`, `receipts`, `connection`, `calls`, `presence`,
 `groups`, `appstate`, `newsletters`, `media`, `security`, `history`, `all`.
 (`history` is opt-in; large initial-sync batches.)
