@@ -97,14 +97,50 @@ Real-time event stream via WebSocket. Outputs JSONL to stdout.
 ```bash
 discord-cli listen                                                          # all events
 discord-cli listen --events messages,reactions --server <guild_id> --channel <channel_id>
+discord-cli listen --events messages,threads --server <guild_id> --channel <parent_channel_id>
 discord-cli listen --include-bots
 ```
 
-Event categories: `messages`, `reactions`, `members`, `voice` (default: all).
+Event categories: `messages`, `reactions`, `members`, `voice`, `threads` (default: all).
+
+| Category   | Discord `t` values |
+|------------|--------------------|
+| `messages` | `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE` |
+| `reactions`| `MESSAGE_REACTION_ADD`, `MESSAGE_REACTION_REMOVE` |
+| `members`  | `GUILD_MEMBER_ADD`, `GUILD_MEMBER_REMOVE` |
+| `voice`    | `VOICE_STATE_UPDATE` |
+| `threads`  | `THREAD_CREATE`, `THREAD_UPDATE`, `THREAD_DELETE`, `THREAD_LIST_SYNC`, `THREAD_MEMBER_UPDATE` |
 
 The `messages` category requests **guild + DM** intents (`GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT`), so DMs to the bot appear as `MESSAGE_CREATE` with empty/`null` `guild_id`.
 
-Each line is `{"t":"<EVENT_TYPE>","d":{...}}` (Discord dispatch shape). Bot messages are filtered out unless `--include-bots`. `--server` / `--channel` filter client-side after receive (a `--server` filter drops DMs).
+`threads` needs only the **GUILDS** intent (always enabled). Use it for thread lifecycle; message content in threads still comes under `messages` (with `channel_id` = thread id).
+
+Each line is `{"t":"<EVENT_TYPE>","d":{...}}` (Discord dispatch shape). Bot messages are filtered out unless `--include-bots` (thread lifecycle events have no author and are never bot-filtered).
+
+**Thread messages + `parent_id` enrichment:**
+Discord sets `d.channel_id` to the **thread id** for messages in threads (not the parent). The CLI injects `d.parent_id` on `MESSAGE_*` and `MESSAGE_REACTION_*` when it knows the channel is a thread (from gateway `THREAD_*` / thread `CHANNEL_*` cache, or one REST `GET /channels/{id}`). Parent-channel messages have no `parent_id`.
+
+```json
+// message in a thread under #marketing-sling
+{"t":"MESSAGE_CREATE","d":{"id":"...","channel_id":"<thread_id>","parent_id":"1502847711018356766","guild_id":"...","content":"...","author":{...}}}
+
+// message in the parent text channel (no parent_id)
+{"t":"MESSAGE_CREATE","d":{"id":"...","channel_id":"1502847711018356766","guild_id":"...","content":"...","author":{...}}}
+```
+
+Jobi check: `!!event.d.parent_id` ⇒ message/reaction is in a thread; reply with `event.d.channel_id` (thread id). Parent text channel is `event.d.parent_id`.
+
+**Filters (client-side after receive):**
+- `--server` — guild_id must match (drops DMs).
+- `--channel` — that channel **and its child threads**. Message/reaction events whose `channel_id` is a thread under the parent pass; `THREAD_*` events match on thread `id` or `parent_id`. Parent map is built from gateway `THREAD_*` / thread-typed `CHANNEL_*` events; unknown thread ids may be resolved once via REST `GET /channels/{id}`.
+
+Jobi / marketing-channel example (parent + threads under `#marketing-sling`):
+
+```bash
+discord-cli listen --events messages,threads \
+  --server 1053623890653499413 \
+  --channel 1502847711018356766
+```
 
 ## Global Flags
 
@@ -119,9 +155,12 @@ discord-cli --json ...                # JSON output (alias: -j)
 # ~/.jobi/sources.yaml
 sources:
   - name: discord
-    command: ["discord-cli", "listen", "--events", "messages"]
+    command: ["discord-cli", "listen", "--events", "messages,threads"]
     format: json
     restart: always
+  # Optional: scope to one channel + its threads
+  # command: ["discord-cli", "listen", "--events", "messages,threads",
+  #           "--server", "<guild_id>", "--channel", "<parent_channel_id>"]
 ```
 
 ```markdown
@@ -130,7 +169,7 @@ working_dir: /path/to/project
 on:
   - source: discord
     match: "event.t === 'MESSAGE_CREATE' && event.d.author && !event.d.author.bot"
-    extract: "({ channel_id: event.d.channel_id, msg: event.d.content, author: event.d.author.username })"
+    extract: "({ channel_id: event.d.channel_id, parent_id: event.d.parent_id || null, msg: event.d.content, author: event.d.author.username })"
     # Best-effort "bot is typing…" before the agent wakes (runs after match+extract).
     acknowledge: 'discord-cli channel typing "{{channel_id}}"'
 ---

@@ -74,8 +74,11 @@ The CLI resolves the bot token in this order:
 
 # Real-time gateway events (JSONL on stdout, status on stderr)
 ./discord-cli listen --events messages,reactions --server <guild_id>
+./discord-cli listen --events messages,threads --server <guild_id> --channel <parent_channel_id>
 ./discord-cli listen --channel <channel_id> --include-bots
 ```
+
+`listen --channel` includes **child threads** of that channel (messages in a thread use `channel_id` = thread id). On `MESSAGE_*` / reaction events in a thread, the CLI adds `d.parent_id` (parent text channel). Event categories: `messages`, `reactions`, `members`, `voice`, `threads`.
 
 ## Output
 
