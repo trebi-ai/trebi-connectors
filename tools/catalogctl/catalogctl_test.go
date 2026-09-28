@@ -50,6 +50,44 @@ func writeEntry(t *testing.T, root, name, manifest, skill string) string {
 	return dir
 }
 
+// progManifest is an entry whose program the catalog builds from src/.
+const progManifest = `schema: trebi-connector/1
+name: prog
+title: Prog
+description: A program that the catalog builds.
+version: 2.0.0
+platforms: [linux/amd64, darwin/arm64]
+install: {catalog: true, bin: prog-cli}
+actions:
+  cli: {commands: [prog-cli]}
+`
+
+func writeSource(t *testing.T, root, bin string) {
+	t.Helper()
+	p := filepath.Join(root, "src", bin, "scripts", "build.sh")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPending(t *testing.T) {
+	root := t.TempDir()
+	writeSource(t, root, "prog-cli")
+	demo, _ := LoadEntry(writeEntry(t, root, "demo", goodManifest, goodSkill))
+	prog, _ := LoadEntry(writeEntry(t, root, "prog", progManifest, goodSkill))
+	got := Pending([]*Entry{demo, prog}, nil)
+	if len(got) != 2 || got[0] != (Build{Name: "prog", Bin: "prog-cli", Version: "2.0.0", OS: "linux", Arch: "amd64"}) {
+		t.Fatalf("pending %+v", got)
+	}
+	prev := &Index{Entries: []IndexEntry{{Name: "prog", Versions: []IndexVersion{{Version: "2.0.0"}}}}}
+	if got := Pending([]*Entry{demo, prog}, prev); len(got) != 0 {
+		t.Fatalf("published version is pending: %+v", got)
+	}
+}
+
 const goodSkill = "---\nname: demo-cli\ndescription: Use demo-cli.\n---\nBody.\n"
 
 func TestRepositoryCatalog(t *testing.T) {
@@ -83,6 +121,7 @@ func TestValidate(t *testing.T) {
 		{"bad version", "demo", strings.Replace(goodManifest, "1.0.0", "1.0", 1), goodSkill, "semver"},
 		{"missing schema file", "demo", goodManifest + "events:\n  protocol: trebi-connector/1\n  command: demo serve\n  types: [{type: message, schema: schemas/m.json}]\n", goodSkill, "not a file"},
 		{"channel on lines", "demo", goodManifest + "events: {command: demo-cli listen}\nchannel: {features: [typing]}\n", goodSkill, "channel needs events.protocol"},
+		{"catalog without source", "demo", goodManifest + "install: {catalog: true, bin: demo-cli}\n", goodSkill, "src/demo-cli/scripts/build.sh is missing"},
 		{"install without bin", "demo", goodManifest + "install: {go: \"example.com/demo@v{version}\"}\n", goodSkill, "install.bin"},
 		{"bad template", "demo", goodManifest + "install:\n  github_release: {repo: a/b, tag: \"v{ver}\", asset: x}\n  bin: demo\n", goodSkill, "unknown template {ver}"},
 	}
@@ -167,13 +206,24 @@ func TestBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	held, err := LoadEntry(writeEntry(t, root, "held", strings.Replace(goodManifest, "name: demo", "name: held", 1), goodSkill))
+	prog, err := LoadEntry(writeEntry(t, root, "prog", progManifest, goodSkill))
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
-	b := &Builder{BaseURL: BaseURL, Now: now, Log: io.Discard}
-	o, err := b.Build(context.Background(), []*Entry{demo, held}, map[string]string{"held": "no release"})
+	b := &Builder{BaseURL: BaseURL, Bin: t.TempDir(), Now: now, Log: io.Discard}
+	if _, err := b.Build(context.Background(), []*Entry{demo, prog}); err == nil || !strings.Contains(err.Error(), "build src/prog-cli first") {
+		t.Fatalf("no archives: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(b.Bin, "prog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"linux/amd64", "darwin/arm64"} {
+		if err := os.WriteFile(filepath.Join(b.Bin, "prog", BinaryFile("prog-cli", p)), []byte("archive "+p), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o, err := b.Build(context.Background(), []*Entry{demo, prog})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,8 +232,17 @@ func TestBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap := o.Snapshots["snapshots/demo/1.0.0.tar.gz"]
-	if len(idx.Entries) != 1 || len(o.Snapshots) != 1 || snap == nil {
+	if len(idx.Entries) != 2 || len(o.Snapshots) != 2 || snap == nil || len(o.Binaries) != 2 {
 		t.Fatalf("index %s", o.Index)
+	}
+	pv := idx.Entries[1].Versions[0]
+	if len(pv.Binaries) != 2 || pv.Binaries[0].Platform != "linux/amd64" ||
+		pv.Binaries[0].URL != "https://catalog.trebi.ai/v1/bin/prog/2.0.0/prog-cli_linux_amd64.tar.gz" ||
+		pv.Binaries[0].Digest != Digest([]byte("archive linux/amd64")) {
+		t.Fatalf("binaries %+v", pv.Binaries)
+	}
+	if idx.Entries[0].Versions[0].Binaries != nil {
+		t.Fatal("an entry with no install.catalog has no binaries")
 	}
 	ie := idx.Entries[0]
 	if ie.Name != "demo" || ie.Latest != "1.0.0" || ie.Publisher != "community" || ie.Capabilities[0] != "actions" ||
@@ -194,7 +253,7 @@ func TestBuild(t *testing.T) {
 
 	// The same version again keeps its record and uploads nothing.
 	b2 := &Builder{BaseURL: BaseURL, Previous: &idx, Now: now.Add(time.Hour), Log: io.Discard}
-	o2, err := b2.Build(context.Background(), []*Entry{demo}, nil)
+	o2, err := b2.Build(context.Background(), []*Entry{demo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +274,7 @@ func TestBuild(t *testing.T) {
 	prev.Entries = []IndexEntry{ie}
 	prev.Entries[0].Versions = []IndexVersion{{Version: "1.0.0", Digest: Digest(regz.Bytes()), URL: ie.Versions[0].URL, PublishedAt: "x"}}
 	b3 := &Builder{BaseURL: BaseURL, Previous: &prev, Fetch: mapFetch{ie.Versions[0].URL: regz.Bytes()}, Now: now, Log: io.Discard}
-	if _, err := b3.Build(context.Background(), []*Entry{demo}, nil); err != nil {
+	if _, err := b3.Build(context.Background(), []*Entry{demo}); err != nil {
 		t.Fatalf("same content: %v", err)
 	}
 
@@ -224,7 +283,7 @@ func TestBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	b4 := &Builder{BaseURL: BaseURL, Previous: &idx, Fetch: mapFetch{ie.Versions[0].URL: snap}, Now: now, Log: io.Discard}
-	if _, err := b4.Build(context.Background(), []*Entry{demo}, nil); err == nil || !strings.Contains(err.Error(), "bump the version") {
+	if _, err := b4.Build(context.Background(), []*Entry{demo}); err == nil || !strings.Contains(err.Error(), "bump the version") {
 		t.Fatalf("changed content: %v", err)
 	}
 }
@@ -294,7 +353,7 @@ func TestReleaseChecker(t *testing.T) {
 	}
 	assets["SHA256SUMS"] = []byte(sums.String())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/acme/demo/releases/download/channels/demo-cli/v1.0.0/")
+		name := strings.TrimPrefix(r.URL.Path, "/acme/demo/releases/download/demo-cli/v1.0.0/")
 		b, ok := assets[name]
 		if !ok {
 			http.NotFound(w, r)
@@ -305,12 +364,7 @@ func TestReleaseChecker(t *testing.T) {
 	defer srv.Close()
 	var m Manifest
 	m.Version = "1.0.0"
-	m.Install = &struct {
-		GitHubRelease *GitHubRelease `yaml:"github_release"`
-		Brew          string         `yaml:"brew"`
-		Go            string         `yaml:"go"`
-		Bin           string         `yaml:"bin"`
-	}{GitHubRelease: &GitHubRelease{Repo: "acme/demo", Tag: "channels/demo-cli/v{version}", Asset: "demo-cli_{version}_{os}_{arch}.tar.gz", Checksums: "SHA256SUMS"}, Bin: "demo-cli"}
+	m.Install = &Install{GitHubRelease: &GitHubRelease{Repo: "acme/demo", Tag: "demo-cli/v{version}", Asset: "demo-cli_{version}_{os}_{arch}.tar.gz", Checksums: "SHA256SUMS"}, Bin: "demo-cli"}
 	rc := ReleaseChecker{Fetch: HTTP{Client: srv.Client()}, GitHubURL: srv.URL}
 	if err := rc.Check(context.Background(), m); err != nil {
 		t.Fatal(err)

@@ -5,6 +5,7 @@ on:
     paths:
       - "catalog/**"
       - "schema/**"
+      - "src/**"
       - "tools/catalogctl/**"
       - "scripts/validate.sh"
       - "scripts/publish.sh"
@@ -14,8 +15,6 @@ on:
     paths:
       - "catalog/**"
       - "schema/**"
-  # channel-release.yml starts this on main when a release finishes, so an
-  # entry that was held back for its assets gets published.
   workflow_dispatch:
 
 permissions:
@@ -23,12 +22,13 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: tools/catalogctl/go.mod
+          cache: false
       - name: Test catalogctl
         working-directory: tools/catalogctl
         run: GOWORK=off go test ./...
@@ -37,12 +37,13 @@ jobs:
 
   conformance:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          cache: false
       - name: Install trebi
         run: |
           # validate.sh falls back to a handshake check without trebi.
@@ -52,10 +53,77 @@ jobs:
       - name: Run the conformance checks on the sandbox of each channel
         run: scripts/validate.sh --conformance
 
-  publish:
+  # Lists the program archives of each install.catalog entry whose version
+  # the published index does not have yet.
+  plan:
     needs: validate
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+    outputs:
+      builds: ${{ steps.pending.outputs.builds }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/catalogctl/go.mod
+          cache: false
+      - id: pending
+        working-directory: tools/catalogctl
+        run: |
+          # Before the first publish there is no index, so every version is new.
+          # publish.sh reads the bucket again and keeps what is published.
+          curl -fsS --max-time 30 -o "$RUNNER_TEMP/previous.json" https://catalog.trebi.ai/v1/index.json \
+            || : > "$RUNNER_TEMP/previous.json"
+          builds="$(GOWORK=off go run . pending --root ../.. --previous "$RUNNER_TEMP/previous.json")"
+          echo "$builds"
+          echo "builds=$builds" >> "$GITHUB_OUTPUT"
+
+  # Builds one archive. The Linux host builds linux/amd64 and cross-compiles
+  # linux/arm64 with aarch64-linux-gnu-gcc. The Mac builds darwin/arm64 and
+  # cross-compiles darwin/amd64 with Apple clang. The Linux host has glibc
+  # 2.31, so the programs also run on older distributions.
+  build:
+    needs: plan
+    if: needs.plan.outputs.builds != '[]'
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.builds) }}
+    runs-on: ${{ matrix.os == 'darwin' && fromJSON('["self-hosted","macOS","ARM64"]') || fromJSON('["self-hosted","Linux","X64"]') }}
+    env:
+      GOOS: ${{ matrix.os }}
+      GOARCH: ${{ matrix.arch }}
+      CC: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/${{ matrix.bin }}/go.mod
+          cache: false
+      - name: Build
+        run: |
+          src/${{ matrix.bin }}/scripts/build.sh "${{ matrix.version }}" "work/${{ matrix.bin }}"
+          file "work/${{ matrix.bin }}"
+          # The Linux host cannot run an arm64 program. The Mac runs amd64 through Rosetta.
+          if [ "${{ matrix.os }}/${{ matrix.arch }}" != linux/arm64 ]; then
+            work/${{ matrix.bin }} --version | grep -F "${{ matrix.version }}"
+          fi
+          mkdir -p "out/${{ matrix.name }}"
+          tar -czf "out/${{ matrix.name }}/${{ matrix.bin }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" -C work "${{ matrix.bin }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.name }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    needs: [validate, plan, build]
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      needs.validate.result == 'success' && needs.plan.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: [self-hosted, Linux, X64]
     environment: catalog-publish
     concurrency:
       group: catalog-publish
@@ -65,10 +133,30 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: tools/catalogctl/go.mod
+          cache: false
+      # The self-hosted runner has no AWS CLI. R2 speaks the S3 API.
+      - name: Install the AWS CLI
+        run: |
+          if ! command -v aws >/dev/null; then
+            dir="$RUNNER_TOOL_CACHE/awscli"
+            if [ ! -x "$dir/bin/aws" ]; then
+              curl -fsSL -o "$RUNNER_TEMP/awscli.zip" https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+              unzip -q -o "$RUNNER_TEMP/awscli.zip" -d "$RUNNER_TEMP"
+              "$RUNNER_TEMP/aws/install" --install-dir "$dir/dist" --bin-dir "$dir/bin" --update
+            fi
+            echo "$dir/bin" >> "$GITHUB_PATH"
+          fi
+      - uses: actions/download-artifact@v4
+        if: needs.build.result == 'success'
+        with:
+          pattern: bin-*
+          path: bin/
+          merge-multiple: true
       - name: Publish to R2
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CATALOG_SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
+          BIN_DIR: ${{ github.workspace }}/bin
         run: scripts/publish.sh

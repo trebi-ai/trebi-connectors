@@ -17,7 +17,7 @@ Go CLI (`cobra`) wrapping the WhatsApp Web protocol via
 SQLite sync, offline FTS search, send text/files, group management, and live event
 streaming — no re-QR after the first `whatsapp-cli auth`.
 
-Source: `channels/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`.
+Source: `src/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`.
 Build: `scripts/build.sh` → `build/whatsapp-cli` (requires **CGO** + `-tags sqlite_fts5`).
 Not affiliated with WhatsApp.
 
@@ -31,7 +31,7 @@ Not affiliated with WhatsApp.
 
 ## Prerequisites
 
-- Binary installed: `whatsapp-cli` on PATH (`./register.sh` after build, or `bash whatsapp-cli/scripts/build.sh`)
+- Binary installed: `whatsapp-cli` on PATH (Trebi installs it from the catalog, or run `src/whatsapp-cli/scripts/build.sh`)
 - Initial auth: `whatsapp-cli auth` (scan QR once)
 - Store directory: `~/.whatsapp-cli` (override with `--store DIR` or `WHATSAPP_CLI_STORE_DIR`)
 - Prefer `--json` when parsing output
@@ -287,11 +287,11 @@ whatsapp-cli --json chats list --limit 100000 \
 
 ## Where things live
 
-- Source: `channels/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`
-- Build: `whatsapp-cli/scripts/build.sh` → `whatsapp-cli/build/whatsapp-cli`
-- Binary name: `whatsapp-cli` (registered to `/usr/local/bin/whatsapp-cli`)
+- Source: `src/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`
+- Build: `src/whatsapp-cli/scripts/build.sh` → `src/whatsapp-cli/build/whatsapp-cli`
+- Binary name: `whatsapp-cli`. Trebi installs it into the connector folder from the catalog.
 - Store: `$TREBI_STATE_DIR` when Trebi runs the CLI, else `$WHATSAPP_CLI_STORE_DIR`, else `~/.whatsapp-cli`
 - Trebi channel: `whatsapp-cli serve` speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts it. While it runs, the send commands forward to it. `serve --sandbox` serves fake rooms for tests.
-- Module: `github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli` (cobra, not urfave/cli)
+- Module: `github.com/trebi-ai/trebi-connectors/src/whatsapp-cli` (cobra, not urfave/cli)
 
 When in doubt: `whatsapp-cli <command> --help`.

@@ -40,11 +40,24 @@ type IndexEntry struct {
 
 // IndexVersion is one published snapshot.
 type IndexVersion struct {
-	Version     string `json:"version"`
-	Digest      string `json:"digest"`
-	URL         string `json:"url"`
-	PublishedAt string `json:"published_at"`
-	Yanked      bool   `json:"yanked,omitempty"`
+	Version     string        `json:"version"`
+	Digest      string        `json:"digest"`
+	URL         string        `json:"url"`
+	PublishedAt string        `json:"published_at"`
+	Yanked      bool          `json:"yanked,omitempty"`
+	Binaries    []IndexBinary `json:"binaries,omitempty"`
+}
+
+// IndexBinary is the program archive of one version for one platform.
+type IndexBinary struct {
+	Platform string `json:"platform"` // "<os>/<arch>"
+	URL      string `json:"url"`
+	Digest   string `json:"digest"`
+}
+
+// BinaryFile is the archive name of one program for one platform.
+func BinaryFile(bin, platform string) string {
+	return bin + "_" + strings.Replace(platform, "/", "_", 1) + ".tar.gz"
 }
 
 // Digest is the digest form of the index: "sha256:<hex>".
@@ -63,6 +76,7 @@ type Builder struct {
 	BaseURL  string // ends with "/v1/"
 	Previous *Index // the published index; nil for the first publish
 	Fetch    Fetcher
+	Bin      string // holds <name>/<BinaryFile> for each new install.catalog version
 	Now      time.Time
 	Log      io.Writer
 }
@@ -71,14 +85,16 @@ type Builder struct {
 type Output struct {
 	Index     []byte
 	Snapshots map[string][]byte // "snapshots/<name>/<version>.tar.gz"
+	Binaries  map[string][]byte // "bin/<name>/<version>/<BinaryFile>"
 	Icons     map[string][]byte // "icons/<name>.svg"
 }
 
-// Build adds the current version of each entry to the previous index.
-// An entry in hold keeps its previous state. A version that the previous
-// index has must have the same content, or Build fails.
-func (b *Builder) Build(ctx context.Context, entries []*Entry, hold map[string]string) (*Output, error) {
-	out := &Output{Snapshots: map[string][]byte{}, Icons: map[string][]byte{}}
+// Build adds the current version of each entry to the previous index. A
+// version that the previous index has must have the same content, or Build
+// fails. A new version with install.catalog needs an archive in b.Bin for
+// each of its platforms.
+func (b *Builder) Build(ctx context.Context, entries []*Entry) (*Output, error) {
+	out := &Output{Snapshots: map[string][]byte{}, Binaries: map[string][]byte{}, Icons: map[string][]byte{}}
 	byName := map[string]IndexEntry{}
 	if b.Previous != nil {
 		for _, ie := range b.Previous.Entries {
@@ -87,10 +103,6 @@ func (b *Builder) Build(ctx context.Context, entries []*Entry, hold map[string]s
 	}
 	for _, e := range entries {
 		m := e.Manifest
-		if why, ok := hold[m.Name]; ok {
-			fmt.Fprintf(b.Log, "hold %s %s: %s\n", m.Name, m.Version, why)
-			continue
-		}
 		snap, err := e.Snapshot()
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", m.Name, err)
@@ -123,9 +135,13 @@ func (b *Builder) Build(ctx context.Context, entries []*Entry, hold map[string]s
 				fmt.Fprintf(b.Log, "keep %s %s (same content, other gzip bytes)\n", m.Name, m.Version)
 			}
 		} else {
+			bins, err := b.binaries(m, out)
+			if err != nil {
+				return nil, fmt.Errorf("%s %s: %w", m.Name, m.Version, err)
+			}
 			ie.Versions = append(ie.Versions, IndexVersion{
 				Version: m.Version, Digest: Digest(snap), URL: b.BaseURL + key,
-				PublishedAt: b.Now.UTC().Format(time.RFC3339),
+				PublishedAt: b.Now.UTC().Format(time.RFC3339), Binaries: bins,
 			})
 			out.Snapshots[key] = snap
 			fmt.Fprintf(b.Log, "add %s %s %s\n", m.Name, m.Version, Digest(snap))
@@ -145,6 +161,26 @@ func (b *Builder) Build(ctx context.Context, entries []*Entry, hold map[string]s
 	}
 	out.Index = append(data, '\n')
 	return out, nil
+}
+
+// binaries reads the program archives of a new version into out.
+func (b *Builder) binaries(m Manifest, out *Output) ([]IndexBinary, error) {
+	bin := m.CatalogBin()
+	if bin == "" {
+		return nil, nil
+	}
+	var bins []IndexBinary
+	for _, p := range m.Targets() {
+		file := BinaryFile(bin, p)
+		data, err := os.ReadFile(filepath.Join(b.Bin, m.Name, file))
+		if err != nil {
+			return nil, fmt.Errorf("no program archive for %s; build src/%s first: %w", p, bin, err)
+		}
+		key := "bin/" + m.Name + "/" + m.Version + "/" + file
+		out.Binaries[key] = data
+		bins = append(bins, IndexBinary{Platform: p, URL: b.BaseURL + key, Digest: Digest(data)})
+	}
+	return bins, nil
 }
 
 // sameContent compares the tar stream of the published snapshot with the
@@ -197,6 +233,9 @@ func (o *Output) Write(dir string, key ed25519.PrivateKey) error {
 	root := filepath.Join(dir, "v1")
 	files := map[string][]byte{"index.json": o.Index, "index.json.sig": []byte(Sign(key, o.Index))}
 	for k, v := range o.Snapshots {
+		files[k] = v
+	}
+	for k, v := range o.Binaries {
 		files[k] = v
 	}
 	for k, v := range o.Icons {
@@ -314,6 +353,20 @@ func mapKeys[V any](m map[string]V) func(func(string) bool) {
 			}
 		}
 	}
+}
+
+// Has reports whether the index lists the version of the connector. A nil
+// index has nothing.
+func (idx *Index) Has(name, version string) bool {
+	if idx == nil {
+		return false
+	}
+	for _, e := range idx.Entries {
+		if e.Name == name {
+			return slices.ContainsFunc(e.Versions, func(v IndexVersion) bool { return v.Version == version })
+		}
+	}
+	return false
 }
 
 // ReadIndex reads an index. An empty input is no index.

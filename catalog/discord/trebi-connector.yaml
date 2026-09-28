@@ -8,12 +8,7 @@ source: github.com/trebi-ai/trebi-connectors
 license: MIT
 platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
 install:
-  github_release:
-    repo: trebi-ai/trebi-connectors
-    tag: channels/discord-cli/v{version}
-    asset: discord-cli_{version}_{os}_{arch}.tar.gz
-    checksums: SHA256SUMS
-  go: github.com/trebi-ai/trebi-connectors/channels/discord-cli@v{version}
+  catalog: true
   bin: discord-cli
   version_command: discord-cli --version
 setup:

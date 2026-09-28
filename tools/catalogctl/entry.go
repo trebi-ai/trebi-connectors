@@ -43,13 +43,8 @@ type Manifest struct {
 	Version     string   `yaml:"version"`
 	Publisher   string   `yaml:"publisher"`
 	Platforms   []string `yaml:"platforms"`
-	Install     *struct {
-		GitHubRelease *GitHubRelease `yaml:"github_release"`
-		Brew          string         `yaml:"brew"`
-		Go            string         `yaml:"go"`
-		Bin           string         `yaml:"bin"`
-	} `yaml:"install"`
-	Setup *struct {
+	Install     *Install `yaml:"install"`
+	Setup       *struct {
 		Login []string `yaml:"login"`
 	} `yaml:"setup"`
 	Skill *struct {
@@ -71,6 +66,15 @@ type Manifest struct {
 		Catchup  *yaml.Node `yaml:"catchup"`
 	} `yaml:"events"`
 	Channel *yaml.Node `yaml:"channel"`
+}
+
+// Install is the install block.
+type Install struct {
+	Catalog       bool           `yaml:"catalog"`
+	GitHubRelease *GitHubRelease `yaml:"github_release"`
+	Brew          string         `yaml:"brew"`
+	Go            string         `yaml:"go"`
+	Bin           string         `yaml:"bin"`
 }
 
 // GitHubRelease is the github_release install method.
@@ -105,6 +109,23 @@ func (m Manifest) Protocol() string {
 		return "lines"
 	}
 	return m.Events.Protocol
+}
+
+// CatalogBin returns the program that the catalog builds and hosts, or ""
+// when the entry has no install.catalog.
+func (m Manifest) CatalogBin() string {
+	if m.Install == nil || !m.Install.Catalog {
+		return ""
+	}
+	return m.Install.Bin
+}
+
+// Targets returns the platforms of the entry.
+func (m Manifest) Targets() []string {
+	if len(m.Platforms) > 0 {
+		return m.Platforms
+	}
+	return DefaultPlatforms
 }
 
 // SkillDir is the skill folder relative to the entry folder.
@@ -146,6 +167,12 @@ func LoadEntry(dir string) (*Entry, error) {
 	return e, nil
 }
 
+// SourceDir is src/<bin> of the repository, where the source of a
+// catalog-built program lives.
+func (e *Entry) SourceDir() string {
+	return filepath.Join(e.Dir, "..", "..", "src", e.Manifest.CatalogBin())
+}
+
 // Name is the folder name, which must equal the manifest name.
 func (e *Entry) Name() string { return filepath.Base(e.Dir) }
 
@@ -177,8 +204,13 @@ func (e *Entry) Validate(schema *jsonschema.Resolved) []error {
 				}
 			}
 		}
-		if (in.GitHubRelease != nil || in.Brew != "" || in.Go != "") && in.Bin == "" {
+		if (in.Catalog || in.GitHubRelease != nil || in.Brew != "" || in.Go != "") && in.Bin == "" {
 			add("install.bin is required with an install method")
+		}
+		if in.Catalog && in.Bin != "" {
+			if st, err := os.Stat(filepath.Join(e.SourceDir(), "scripts", "build.sh")); err != nil || !st.Mode().IsRegular() {
+				add("install.catalog: src/%s/scripts/build.sh is missing", in.Bin)
+			}
 		}
 	}
 	if m.Setup != nil && len(m.Setup.Login) > 0 && m.Protocol() != ProtocolConnector {

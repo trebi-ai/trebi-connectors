@@ -3,7 +3,7 @@
 #
 #   scripts/validate.sh [--conformance] [--check-assets] [name...]
 #
-# --conformance builds the CLI of each trebi-connector/1 entry and checks
+# --conformance builds the CLI of each trebi-connector/1 entry from src/ and checks
 # "<cli> serve --sandbox". It runs "trebi connector conformance" when the
 # trebi on PATH has that command, and a handshake check otherwise.
 set -euo pipefail
@@ -20,8 +20,7 @@ for a in "$@"; do
   esac
 done
 
-export GOWORK=off
-(cd "$root/tools/catalogctl" && go run . validate --root "$root" ${flags[@]+"${flags[@]}"} ${names[@]+"${names[@]}"})
+(cd "$root/tools/catalogctl" && GOWORK=off go run . validate --root "$root" ${flags[@]+"${flags[@]}"} ${names[@]+"${names[@]}"})
 
 # The schema is vendored from trebi. Compare it when a sibling checkout exists.
 upstream="$root/../trebi/internal/connectors/manifest/schema.json"
@@ -30,24 +29,17 @@ if [ -f "$upstream" ] && ! cmp -s "$upstream" "$root/schema/trebi-connector.sche
   exit 1
 fi
 
-# A channel entry carries the skill of its CLI. They must stay the same.
-entries="$(cd "$root/tools/catalogctl" && go run . protocol-entries --root "$root")"
+[ "$conformance" = 1 ] || exit 0
+entries="$(cd "$root/tools/catalogctl" && GOWORK=off go run . protocol-entries --root "$root")"
 while IFS=$'\t' read -r name command; do
   [ -n "$name" ] || continue
   if [ ${#names[@]} -gt 0 ] && [[ ! " ${names[*]} " =~ " $name " ]]; then continue; fi
   cli="${command%% *}"
-  src="$root/channels/$cli"
+  src="$root/src/$cli"
   [ -d "$src" ] || continue
-  if ! cmp -s "$src/SKILL.md" "$root/catalog/$name/skill/SKILL.md"; then
-    echo "FAIL $name: catalog/$name/skill/SKILL.md differs from channels/$cli/SKILL.md" >&2
-    exit 1
-  fi
-  [ "$conformance" = 1 ] || continue
 
   bin="$(mktemp -d)"
-  pkg=.
-  [ -d "$src/cmd/$cli" ] && pkg="./cmd/$cli"
-  (cd "$src" && go build -tags sqlite_fts5 -o "$bin/$cli" "$pkg")
+  "$src/scripts/build.sh" ci "$bin/$cli" >/dev/null
   sandbox="$bin/$cli serve --sandbox"
   if command -v trebi >/dev/null && trebi connector conformance --help >/dev/null 2>&1; then
     trebi connector conformance --command "$sandbox"

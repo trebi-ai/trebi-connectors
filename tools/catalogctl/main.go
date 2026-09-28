@@ -1,7 +1,8 @@
 // Command catalogctl validates the catalog and builds its signed index.
 //
 //	catalogctl validate [flags] [name...]
-//	catalogctl build --out DIR [flags]
+//	catalogctl build --out DIR [--bin DIR] [flags]
+//	catalogctl pending [--previous FILE|URL]
 //	catalogctl protocol-entries
 //	catalogctl keygen
 package main
@@ -11,6 +12,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -39,7 +41,7 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: catalogctl validate|build|protocol-entries|keygen")
+		return errors.New("usage: catalogctl validate|build|pending|protocol-entries|keygen")
 	}
 	cmd, args := args[0], args[1:]
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -47,12 +49,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	root := fs.String("root", ".", "the repository root")
 	schema := fs.String("schema", "", "the manifest JSON Schema (default: <root>/schema/trebi-connector.schema.json)")
 	github := fs.String("github-url", "https://github.com", "the GitHub base URL for release assets")
-	checkAssets := fs.Bool("check-assets", false, "validate: report entries whose release assets do not exist yet")
+	checkAssets := fs.Bool("check-assets", false, "validate: fail an entry whose github_release assets do not exist")
 	out := fs.String("out", "", "build: the output folder")
-	previous := fs.String("previous", "", "build: the published index.json, as a file or a URL")
+	previous := fs.String("previous", "", "build, pending: the published index.json, as a file or a URL")
+	bin := fs.String("bin", "", "build: the folder of the program archives, as <name>/<bin>_<os>_<arch>.tar.gz")
 	baseURL := fs.String("base-url", BaseURL, "build: the public URL of the v1 folder")
 	pub := fs.String("public-key", PublicKey, "build: the expected public key of CATALOG_SIGNING_KEY")
-	skipAssets := fs.Bool("skip-assets", false, "build: do not hold back entries with missing release assets")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -87,20 +89,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		hold := map[string]string{}
-		if !*skipAssets {
-			for _, e := range entries {
-				if err := rc.Check(ctx, e.Manifest); err != nil {
-					hold[e.Manifest.Name] = err.Error()
-				}
-			}
-		}
-		b := &Builder{BaseURL: *baseURL, Previous: prev, Fetch: fetch, Now: time.Now(), Log: stdout}
-		o, err := b.Build(ctx, entries, hold)
+		b := &Builder{BaseURL: *baseURL, Previous: prev, Fetch: fetch, Bin: *bin, Now: time.Now(), Log: stdout}
+		o, err := b.Build(ctx, entries)
 		if err != nil {
 			return err
 		}
 		return o.Write(*out, key)
+	case "pending":
+		entries, err := loadEntries(*root, nil)
+		if err != nil {
+			return err
+		}
+		prev, err := readPrevious(ctx, fetch, *previous)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(Pending(entries, prev))
 	case "protocol-entries":
 		entries, err := loadEntries(*root, nil)
 		if err != nil {
@@ -168,7 +172,8 @@ func validate(ctx context.Context, entries []*Entry, schemaPath string, checkAss
 		fmt.Fprintf(w, "ok   %s %s\n", e.Name(), e.Manifest.Version)
 		if checkAssets {
 			if err := rc.Check(ctx, e.Manifest); err != nil {
-				fmt.Fprintf(w, "hold %s: the release assets are not ready, so publish holds it back: %v\n", e.Name(), err)
+				fmt.Fprintf(w, "FAIL %s: release assets: %v\n", e.Name(), err)
+				bad++
 			}
 		}
 	}
@@ -176,6 +181,32 @@ func validate(ctx context.Context, entries []*Entry, schemaPath string, checkAss
 		return fmt.Errorf("%d of %d entries failed", bad, len(entries))
 	}
 	return nil
+}
+
+// Build is one program archive that the catalog must build.
+type Build struct {
+	Name    string `json:"name"`
+	Bin     string `json:"bin"`
+	Version string `json:"version"`
+	OS      string `json:"os"`
+	Arch    string `json:"arch"`
+}
+
+// Pending lists the archives of each install.catalog entry whose version
+// is not in prev.
+func Pending(entries []*Entry, prev *Index) []Build {
+	out := []Build{}
+	for _, e := range entries {
+		m := e.Manifest
+		if m.CatalogBin() == "" || prev.Has(m.Name, m.Version) {
+			continue
+		}
+		for _, p := range m.Targets() {
+			goos, goarch, _ := strings.Cut(p, "/")
+			out = append(out, Build{Name: m.Name, Bin: m.CatalogBin(), Version: m.Version, OS: goos, Arch: goarch})
+		}
+	}
+	return out
 }
 
 func readPrevious(ctx context.Context, f Fetcher, src string) (*Index, error) {
