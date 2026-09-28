@@ -10,6 +10,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-dev}"
 OUTPUT="${2:-${ROOT_DIR}/build/discord-cli}"
+case "${OUTPUT}" in /*) ;; *) OUTPUT="${PWD}/${OUTPUT}" ;; esac
 
 mkdir -p "$(dirname "${OUTPUT}")"
 cd "${ROOT_DIR}"
