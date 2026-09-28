@@ -7,8 +7,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/spf13/cobra"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
 )
 
 func newGroupsRefreshCmd(flags *rootFlags) *cobra.Command {

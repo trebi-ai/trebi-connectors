@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/spf13/cobra"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
 )
 
 func newContactsCmd(flags *rootFlags) *cobra.Command {

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flarco/cli-tools/discord-cli/internal/client"
-	"github.com/flarco/cli-tools/discord-cli/internal/config"
-	"github.com/flarco/cli-tools/discord-cli/internal/gateway"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/gateway"
 )
 
 func testClient(t *testing.T) *client.Client {

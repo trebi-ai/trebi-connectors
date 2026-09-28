@@ -1,4 +1,4 @@
-module github.com/flarco/cli-tools/whatsapp-cli
+module github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli
 
 go 1.26.0
 
@@ -34,3 +34,7 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+require github.com/trebi-ai/trebi-connectors/sdk v0.0.0
+
+replace github.com/trebi-ai/trebi-connectors/sdk => ../../sdk

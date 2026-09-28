@@ -8,10 +8,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/config"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/lock"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/spf13/cobra"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/lock"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
 )
 
 func newDoctorCmd(flags *rootFlags) *cobra.Command {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/ipc"
 )
 
 // shortSockDir returns a temp dir with a short path so the Unix socket path

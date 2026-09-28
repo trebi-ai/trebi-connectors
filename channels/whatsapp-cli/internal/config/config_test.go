@@ -7,7 +7,16 @@ import (
 )
 
 func TestDefaultStoreDir(t *testing.T) {
+	t.Run("trebi state dir wins", func(t *testing.T) {
+		t.Setenv(EnvStateDir, "/trebi/state")
+		t.Setenv(EnvStoreDir, "/custom/store/path")
+		if got := DefaultStoreDir(); got != "/trebi/state" {
+			t.Errorf("DefaultStoreDir() = %q, want %q", got, "/trebi/state")
+		}
+	})
+
 	t.Run("env var overrides default", func(t *testing.T) {
+		t.Setenv(EnvStateDir, "")
 		t.Setenv(EnvStoreDir, "/custom/store/path")
 		got := DefaultStoreDir()
 		if got != "/custom/store/path" {
@@ -16,6 +25,7 @@ func TestDefaultStoreDir(t *testing.T) {
 	})
 
 	t.Run("falls back to ~/.whatsapp-cli when env unset", func(t *testing.T) {
+		t.Setenv(EnvStateDir, "")
 		t.Setenv(EnvStoreDir, "")
 		got := DefaultStoreDir()
 		home, _ := os.UserHomeDir()

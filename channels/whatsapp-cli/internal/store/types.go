@@ -56,6 +56,13 @@ type Message struct {
 	DisplayText string
 	MediaType   string
 	Snippet     string
+
+	// Set by Page and FindMessage only.
+	SenderName string
+	Filename   string
+	MimeType   string
+	FileLength uint64
+	LocalPath  string
 }
 
 type MessageInfo struct {

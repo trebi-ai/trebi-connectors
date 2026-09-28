@@ -11,8 +11,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/flarco/cli-tools/discord-cli/internal/client"
-	"github.com/flarco/cli-tools/discord-cli/internal/gateway"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/gateway"
 )
 
 // Discord channel types for threads.
@@ -46,8 +46,8 @@ var intentBits = map[string]int{
 	"members":   1 << 1,
 	"voice":     1 << 7,
 	"messages":  (1 << 9) | (1 << 12) | (1 << 15), // guild + DM + content
-	"reactions": (1 << 10) | (1 << 13),             // guild + DM reactions
-	"threads":   0,                                 // GUILDS already covers THREAD_*
+	"reactions": (1 << 10) | (1 << 13),            // guild + DM reactions
+	"threads":   0,                                // GUILDS already covers THREAD_*
 }
 
 // eventCategoryMap maps Discord event types to categories for filtering.

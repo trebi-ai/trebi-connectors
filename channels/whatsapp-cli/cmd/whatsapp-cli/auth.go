@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	appPkg "github.com/flarco/cli-tools/whatsapp-cli/internal/app"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
+	appPkg "github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
 )
 
 func newAuthCmd(flags *rootFlags) *cobra.Command {

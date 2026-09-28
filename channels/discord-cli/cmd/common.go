@@ -9,7 +9,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/flarco/cli-tools/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/client"
 )
 
 // clientFromCtx extracts the *client.Client from the cli context.
@@ -130,4 +130,3 @@ func resolveChannelID(c *cli.Context, cl *client.Client, identifier string) (str
 	}
 	return "", fmt.Errorf("channel %q not found", identifier)
 }
-

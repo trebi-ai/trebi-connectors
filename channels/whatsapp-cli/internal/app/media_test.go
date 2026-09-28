@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/store"
 )
 
 func TestDownloadMediaJobMarksDownloaded(t *testing.T) {

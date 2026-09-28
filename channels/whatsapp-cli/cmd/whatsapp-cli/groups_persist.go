@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/store"
 	"go.mau.fi/whatsmeow/types"
 )
 

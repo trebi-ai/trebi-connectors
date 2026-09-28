@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/wa"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/wa"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
@@ -30,6 +30,11 @@ type fakeWA struct {
 	groups   map[types.JID]*types.GroupInfo
 
 	onDemandHistory func(lastKnown types.MessageInfo, count int) *events.HistorySync
+
+	sent      []*waProto.Message
+	reactions []string
+	reads     []string
+	typing    []string
 }
 
 func newFakeWA() *fakeWA {
@@ -72,6 +77,12 @@ func (f *fakeWA) Connect(ctx context.Context, opts wa.ConnectOptions) error {
 
 	if !authed && !opts.AllowQR {
 		return fmt.Errorf("not authenticated; run `whatsapp-cli auth`")
+	}
+	if !authed && opts.OnQR != nil {
+		opts.OnQR("qr-code-1", 20*time.Second)
+		f.mu.Lock()
+		f.authed = true
+		f.mu.Unlock()
 	}
 	f.emit(&events.Connected{})
 	for _, e := range eventsToEmit {
@@ -205,10 +216,18 @@ func (f *fakeWA) SendText(ctx context.Context, to types.JID, text string) (types
 }
 
 func (f *fakeWA) SendChatPresence(ctx context.Context, to types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.typing = append(f.typing, to.String()+"|"+string(state))
 	return nil
 }
 
 func (f *fakeWA) MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptType ...types.ReceiptType) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		f.reads = append(f.reads, chat.String()+"|"+sender.String()+"|"+string(id))
+	}
 	return nil
 }
 
@@ -217,7 +236,10 @@ func (f *fakeWA) SendPresence(ctx context.Context, state types.Presence) error {
 }
 
 func (f *fakeWA) SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error) {
-	return types.MessageID("msgid"), nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, msg)
+	return types.MessageID(fmt.Sprintf("S%d", len(f.sent))), nil
 }
 
 func (f *fakeWA) Upload(ctx context.Context, data []byte, mediaType whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
@@ -257,4 +279,20 @@ func (f *fakeWA) Logout(ctx context.Context) error {
 	defer f.mu.Unlock()
 	f.authed = false
 	return nil
+}
+
+func (f *fakeWA) Account() (types.JID, string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.authed {
+		return types.JID{}, ""
+	}
+	return types.JID{User: "5511000000000", Server: types.DefaultUserServer}, "Me"
+}
+
+func (f *fakeWA) SendReaction(ctx context.Context, chat, sender types.JID, id types.MessageID, emoji string) (types.MessageID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reactions = append(f.reactions, chat.String()+"|"+sender.String()+"|"+string(id)+"|"+emoji)
+	return "R" + id, nil
 }

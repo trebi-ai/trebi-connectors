@@ -9,7 +9,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/flarco/cli-tools/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/client"
 )
 
 // MessageCommand returns the `message` subcommand tree.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	appPkg "github.com/flarco/cli-tools/whatsapp-cli/internal/app"
 	"github.com/spf13/cobra"
+	appPkg "github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
 )
 
 // allCategories lists every category except "history", which is opt-in due to payload size.

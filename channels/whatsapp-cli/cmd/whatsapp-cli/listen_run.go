@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	appPkg "github.com/flarco/cli-tools/whatsapp-cli/internal/app"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/lock"
+	appPkg "github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/ipc"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/lock"
 )
 
 // runListen runs `whatsapp-cli listen`, choosing one of two roles:

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/store"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"

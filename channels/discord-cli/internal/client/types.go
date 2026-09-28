@@ -39,6 +39,7 @@ type Channel struct {
 	RateLimitPerUser   int             `json:"rate_limit_per_user,omitempty"`
 	LastMessageID      string          `json:"last_message_id,omitempty"`
 	ThreadMetadata     *ThreadMetadata `json:"thread_metadata,omitempty"`
+	Recipients         []User          `json:"recipients,omitempty"`
 	MessageCount       int             `json:"message_count,omitempty"`
 	MemberCount        int             `json:"member_count,omitempty"`
 	OwnerID            string          `json:"owner_id,omitempty"`

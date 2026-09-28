@@ -1,0 +1,89 @@
+# Builds and releases one channel CLI for a tag channels/<cli>/vX.Y.Z.
+# GoReleaser OSS cannot read a prefixed tag, so the job gives it a local
+# tag vX.Y.Z that is never pushed. The GitHub release keeps the full tag.
+name: channel-release
+
+on:
+  push:
+    tags:
+      - "channels/*/v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse the tag
+        id: tag
+        run: |
+          ref="${GITHUB_REF_NAME}"                 # channels/<cli>/vX.Y.Z
+          cli="$(echo "$ref" | cut -d/ -f2)"
+          version="${ref##*/v}"
+          case "$cli" in
+            whatsapp-cli|discord-cli) ;;
+            *) echo "unknown channel CLI: $cli" >&2; exit 1 ;;
+          esac
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo "bad version: $version" >&2; exit 1; }
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          git tag -f "v$version"
+
+      - uses: actions/setup-go@v5
+        if: steps.tag.outputs.cli == 'discord-cli'
+        with:
+          go-version-file: channels/discord-cli/go.mod
+
+      - name: Build discord-cli
+        if: steps.tag.outputs.cli == 'discord-cli'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean --skip=publish,validate
+          workdir: channels/discord-cli
+        env:
+          GOWORK: "off"
+          GORELEASER_CURRENT_TAG: v${{ steps.tag.outputs.version }}
+
+      # CGO build for four platforms. The image has osxcross and the Linux
+      # cross compilers that .goreleaser.yaml names.
+      - name: Build whatsapp-cli
+        if: steps.tag.outputs.cli == 'whatsapp-cli'
+        run: |
+          docker run --rm \
+            -v "$PWD":/src -w /src/channels/whatsapp-cli \
+            -e GOWORK=off -e GORELEASER_CURRENT_TAG="v${{ steps.tag.outputs.version }}" \
+            -e GOFLAGS=-buildvcs=false \
+            ghcr.io/goreleaser/goreleaser-cross:v1.26.5 \
+            release --clean --skip=publish,validate
+          sudo chown -R "$(id -u)" channels/whatsapp-cli/dist
+
+      - name: Check the assets
+        working-directory: channels/${{ steps.tag.outputs.cli }}/dist
+        run: |
+          cli="${{ steps.tag.outputs.cli }}"; v="${{ steps.tag.outputs.version }}"
+          for p in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            test -f "${cli}_${v}_${p}.tar.gz"
+          done
+          sha256sum -c SHA256SUMS
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: channels/${{ steps.tag.outputs.cli }}/dist
+        run: |
+          cli="${{ steps.tag.outputs.cli }}"; v="${{ steps.tag.outputs.version }}"
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$cli $v" \
+            --notes "$cli $v. Built from $GITHUB_SHA." \
+            ${cli}_${v}_*.tar.gz SHA256SUMS

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/pathutil"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/pathutil"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/store"
 )
 
 type mediaJob struct {

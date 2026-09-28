@@ -16,7 +16,7 @@ Binary: `discord-cli`.
 
 ## Auth
 
-Token resolution order: `--token` flag → `DISCORD_BOT_TOKEN` env → `~/.cli-tools/discord-cli/config.json`.
+Token resolution order: `--token` flag → `DISCORD_TOKEN` env → `DISCORD_BOT_TOKEN` env → `~/.cli-tools/discord-cli/config.json`.
 Auto-loads `.env` from CWD (walks up parents).
 
 ```bash
@@ -149,38 +149,6 @@ discord-cli --token <token> ...       # override token
 discord-cli --json ...                # JSON output (alias: -j)
 ```
 
-## As a jobi Source
+## As a Trebi channel
 
-```yaml
-# ~/.jobi/sources.yaml
-sources:
-  - name: discord
-    command: ["discord-cli", "listen", "--events", "messages,threads"]
-    format: json
-    restart: always
-  # Optional: scope to one channel + its threads
-  # command: ["discord-cli", "listen", "--events", "messages,threads",
-  #           "--server", "<guild_id>", "--channel", "<parent_channel_id>"]
-```
-
-```markdown
----
-working_dir: /path/to/project
-on:
-  - source: discord
-    match: "event.t === 'MESSAGE_CREATE' && event.d.author && !event.d.author.bot"
-    extract: "({ channel_id: event.d.channel_id, parent_id: event.d.parent_id || null, msg: event.d.content, author: event.d.author.username })"
-    # Best-effort "bot is typing…" before the agent wakes (runs after match+extract).
-    acknowledge: 'discord-cli channel typing "{{channel_id}}"'
----
-{{author}} said in {{channel_id}}: {{msg}}
-```
-
-DM-only match (empty `guild_id`) plus a trusted author id:
-
-```js
-event.t === "MESSAGE_CREATE"
-  && !!event.d && !event.d.guild_id
-  && event.d.author && !event.d.author.bot
-  && event.d.author.id === "1051677407913967657"
-```
+`discord-cli serve` speaks the `trebi-connector/1` protocol on stdin and stdout. The Trebi daemon starts it and gives the token in `DISCORD_TOKEN`. Do not run it by hand, except `discord-cli serve --sandbox`, which serves fake rooms for tests. The bot needs the Message Content intent.

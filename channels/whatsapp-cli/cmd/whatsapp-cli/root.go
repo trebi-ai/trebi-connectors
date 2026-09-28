@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/app"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/config"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/lock"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/spf13/cobra"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/lock"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
 )
 
 var version = "0.5.0"
@@ -34,7 +34,7 @@ func execute(args []string) error {
 	}
 	rootCmd.SetVersionTemplate("whatsapp-cli {{.Version}}\n")
 
-	rootCmd.PersistentFlags().StringVar(&flags.storeDir, "store", "", "store directory (default: $WHATSAPP_CLI_STORE_DIR or ~/.whatsapp-cli)")
+	rootCmd.PersistentFlags().StringVar(&flags.storeDir, "store", "", "store directory (default: $TREBI_STATE_DIR, $WHATSAPP_CLI_STORE_DIR, or ~/.whatsapp-cli)")
 	rootCmd.PersistentFlags().BoolVar(&flags.asJSON, "json", false, "output JSON instead of human-readable text")
 	rootCmd.PersistentFlags().DurationVar(&flags.timeout, "timeout", 5*time.Minute, "command timeout (non-sync commands)")
 
@@ -50,6 +50,7 @@ func execute(args []string) error {
 	rootCmd.AddCommand(newChatsCmd(&flags))
 	rootCmd.AddCommand(newGroupsCmd(&flags))
 	rootCmd.AddCommand(newHistoryCmd(&flags))
+	rootCmd.AddCommand(newServeCmd(&flags))
 
 	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {

@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/app"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/lock"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
 	"github.com/spf13/cobra"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/ipc"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/lock"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
 )
 
 func newMediaCmd(flags *rootFlags) *cobra.Command {

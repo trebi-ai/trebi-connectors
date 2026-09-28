@@ -90,6 +90,8 @@ func (c *Client) IsConnected() bool {
 type ConnectOptions struct {
 	AllowQR  bool
 	OnQRCode func(code string)
+	// OnQR replaces OnQRCode. timeout is how long the code is valid.
+	OnQR func(code string, timeout time.Duration)
 }
 
 func (c *Client) Connect(ctx context.Context, opts ConnectOptions) error {
@@ -134,7 +136,9 @@ func (c *Client) Connect(ctx context.Context, opts ConnectOptions) error {
 			}
 			switch evt.Event {
 			case "code":
-				if opts.OnQRCode != nil {
+				if opts.OnQR != nil {
+					opts.OnQR(evt.Code, evt.Timeout)
+				} else if opts.OnQRCode != nil {
 					opts.OnQRCode(evt.Code)
 				} else {
 					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.M, os.Stdout)
@@ -378,6 +382,32 @@ func (c *Client) GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupI
 	return cli.GetGroupInfo(ctx, jid)
 }
 
+// Account returns the JID and push name of the linked account.
+func (c *Client) Account() (types.JID, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client == nil || c.client.Store == nil || c.client.Store.ID == nil {
+		return types.JID{}, ""
+	}
+	return c.client.Store.ID.ToNonAD(), c.client.Store.PushName
+}
+
+// SendReaction reacts to message id of sender in chat. An empty emoji
+// removes the reaction.
+func (c *Client) SendReaction(ctx context.Context, chat, sender types.JID, id types.MessageID, emoji string) (types.MessageID, error) {
+	c.mu.Lock()
+	cli := c.client
+	c.mu.Unlock()
+	if cli == nil || !cli.IsConnected() {
+		return "", fmt.Errorf("not connected")
+	}
+	resp, err := cli.SendMessage(ctx, chat, cli.BuildReaction(chat, sender, id, emoji))
+	if err != nil {
+		return "", err
+	}
+	return resp.ID, nil
+}
+
 func (c *Client) Logout(ctx context.Context) error {
 	c.mu.Lock()
 	cli := c.client
@@ -387,5 +417,3 @@ func (c *Client) Logout(ctx context.Context) error {
 	}
 	return cli.Logout(ctx)
 }
-
-

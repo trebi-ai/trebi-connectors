@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/app"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/ipc"
 )
 
 // sendHandler builds the IPC handler used by the listen daemon to execute

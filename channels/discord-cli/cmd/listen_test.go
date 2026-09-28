@@ -175,13 +175,13 @@ func TestEventPassesFilters_MessagesAndThreads(t *testing.T) {
 	}`)
 
 	tests := []struct {
-		name          string
-		eventType     string
-		data          json.RawMessage
-		server        string
-		channel       string
-		includeBots   bool
-		want          bool
+		name        string
+		eventType   string
+		data        json.RawMessage
+		server      string
+		channel     string
+		includeBots bool
+		want        bool
 	}{
 		{"msg parent", "MESSAGE_CREATE", msgInParent, guild, parent, false, true},
 		{"msg child thread", "MESSAGE_CREATE", msgInThread, guild, parent, false, true},

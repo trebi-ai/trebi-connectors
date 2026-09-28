@@ -1,3 +1,6 @@
+# Built by .github/workflows/channel-release.yml for tags channels/whatsapp-cli/v*.
+# The build needs CGO (SQLite). It runs in the goreleaser-cross image, which
+# has the C cross compilers named below.
 version: 2
 
 project_name: whatsapp-cli
@@ -13,36 +16,38 @@ builds:
     tags:
       - sqlite_fts5
     ldflags:
-      - -s -w -X main.version={{.Version}}
-    goos:
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-
-universal_binaries:
-  - id: whatsapp-cli
-    ids:
-      - whatsapp-cli
-    name_template: whatsapp-cli
-    replace: true
+      - -s -w -X main.version={{ .Version }}
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        env: [CC=o64-clang, CXX=o64-clang++]
+      - goos: darwin
+        goarch: arm64
+        env: [CC=oa64-clang, CXX=oa64-clang++]
+      - goos: linux
+        goarch: amd64
+        env: [CC=x86_64-linux-gnu-gcc, CXX=x86_64-linux-gnu-g++]
+      - goos: linux
+        goarch: arm64
+        env: [CC=aarch64-linux-gnu-gcc, CXX=aarch64-linux-gnu-g++]
 
 archives:
   - id: default
-    format: tar.gz
-    name_template: >-
-      {{ .ProjectName }}-{{ if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}-{{ if eq .Arch "all" }}universal{{ else }}{{ .Arch }}{{ end }}
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
       - README.md
+      - SKILL.md
 
 checksum:
-  name_template: checksums.txt
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+release:
+  disable: true
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+  disable: true

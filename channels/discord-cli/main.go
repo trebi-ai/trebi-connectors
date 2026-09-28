@@ -1,15 +1,16 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/flarco/cli-tools/discord-cli/cmd"
-	"github.com/flarco/cli-tools/discord-cli/internal/client"
-	"github.com/flarco/cli-tools/discord-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/cmd"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/config"
 )
 
 var version = "dev"
@@ -22,7 +23,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "token",
-				EnvVars: []string{"DISCORD_BOT_TOKEN"},
+				EnvVars: []string{"DISCORD_TOKEN", "DISCORD_BOT_TOKEN"},
 				Usage:   "Discord bot token",
 			},
 			&cli.BoolFlag{
@@ -40,6 +41,7 @@ func main() {
 			cmd.ChannelCommand(),
 			cmd.ServerCommand(),
 			cmd.ListenCommand(),
+			cmd.ServeCommand(version),
 		},
 		Metadata: map[string]any{},
 	}
@@ -66,7 +68,7 @@ func beforeHook(c *cli.Context) error {
 
 	token := c.String("token")
 	if token == "" {
-		token = os.Getenv("DISCORD_BOT_TOKEN")
+		token = cmp.Or(os.Getenv("DISCORD_TOKEN"), os.Getenv("DISCORD_BOT_TOKEN"))
 	}
 	if token == "" {
 		cfg, err := config.Load()

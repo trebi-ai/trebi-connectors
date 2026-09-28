@@ -11,7 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/flarco/cli-tools/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/channels/discord-cli/internal/client"
 )
 
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
@@ -68,12 +68,12 @@ type Gateway struct {
 	DialURL string
 	// InvalidSessionBackoff, if set, replaces the random 1–5s Discord backoff (tests).
 	InvalidSessionBackoff func(attempt int) time.Duration
-	conn      *websocket.Conn
-	seq       *int
-	sessionID string
-	stopCh    chan struct{}
-	hbStop    chan struct{} // cancels heartbeat for the current connection
-	mu        sync.Mutex
+	conn                  *websocket.Conn
+	seq                   *int
+	sessionID             string
+	stopCh                chan struct{}
+	hbStop                chan struct{} // cancels heartbeat for the current connection
+	mu                    sync.Mutex
 }
 
 // New creates a new gateway client.

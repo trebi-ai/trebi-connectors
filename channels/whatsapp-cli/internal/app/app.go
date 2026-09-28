@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/wa"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/wa"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
@@ -47,6 +47,9 @@ type WAClient interface {
 	DecryptReaction(ctx context.Context, reaction *events.Message) (*waProto.ReactionMessage, error)
 	RequestHistorySyncOnDemand(ctx context.Context, lastKnown types.MessageInfo, count int) (types.MessageID, error)
 	Logout(ctx context.Context) error
+
+	Account() (types.JID, string)
+	SendReaction(ctx context.Context, chat, sender types.JID, id types.MessageID, emoji string) (types.MessageID, error)
 }
 
 type Options struct {

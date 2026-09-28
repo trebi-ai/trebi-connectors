@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/app"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/lock"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/out"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/store"
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/wa"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/app"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/ipc"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/lock"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/out"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/wa"
 	"go.mau.fi/whatsmeow/types"
 )
 
@@ -23,6 +23,7 @@ import (
 type sendApp interface {
 	WA() app.WAClient
 	DB() *store.DB
+	SendFile(ctx context.Context, to types.JID, f app.OutFile) (string, map[string]string, error)
 }
 
 // sendTextCore sends a text message and records it in the store. It is shared by

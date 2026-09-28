@@ -19,7 +19,7 @@ Requires Go 1.25+.
 The CLI resolves the bot token in this order:
 
 1. `--token` flag
-2. `DISCORD_BOT_TOKEN` env var (a `.env` file in the current or any parent directory is auto-loaded)
+2. `DISCORD_TOKEN` env var, then `DISCORD_BOT_TOKEN` (a `.env` file in the current or any parent directory is auto-loaded)
 3. `~/.cli-tools/discord-cli/config.json` (written by `auth set`)
 
 ```bash

@@ -11,9 +11,17 @@ import (
 // every invocation.
 const EnvStoreDir = "WHATSAPP_CLI_STORE_DIR"
 
+// EnvStateDir is the state directory that the Trebi daemon gives to a
+// connector. It wins over EnvStoreDir.
+const EnvStateDir = "TREBI_STATE_DIR"
+
 // DefaultStoreDir returns the store directory to use when --store is not
-// supplied. It checks WHATSAPP_CLI_STORE_DIR first, then falls back to ~/.whatsapp-cli.
+// supplied. It checks TREBI_STATE_DIR, then WHATSAPP_CLI_STORE_DIR, then
+// falls back to ~/.whatsapp-cli.
 func DefaultStoreDir() string {
+	if dir := os.Getenv(EnvStateDir); dir != "" {
+		return dir
+	}
 	if dir := os.Getenv(EnvStoreDir); dir != "" {
 		return dir
 	}

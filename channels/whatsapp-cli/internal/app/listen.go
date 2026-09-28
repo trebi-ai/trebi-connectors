@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/wa"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/wa"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )

@@ -211,3 +211,83 @@ func (d *DB) scanMessages(query string, args ...interface{}) ([]Message, error) 
 	}
 	return out, rows.Err()
 }
+
+// Cursor is a position in the message order: time, then message id.
+type Cursor struct {
+	TS time.Time
+	ID string
+}
+
+// PageParams selects messages with text or media. With Before, the page is
+// newest first; otherwise it is oldest first after After.
+type PageParams struct {
+	ChatJID string // empty selects every chat
+	Before  *Cursor
+	After   *Cursor
+	Limit   int
+}
+
+const pageColumns = `m.chat_jid, COALESCE(c.name,''), m.msg_id, COALESCE(m.sender_jid,''), m.ts, m.from_me, COALESCE(m.text,''),
+	COALESCE(m.display_text,''), COALESCE(m.media_type,''), COALESCE(m.sender_name,''), COALESCE(m.filename,''),
+	COALESCE(m.mime_type,''), COALESCE(m.file_length,0), COALESCE(m.local_path,'')`
+
+// Page lists messages in a stable order for history and replay.
+func (d *DB) Page(p PageParams) ([]Message, error) {
+	if p.Limit <= 0 {
+		p.Limit = 50
+	}
+	q := `SELECT ` + pageColumns + ` FROM messages m LEFT JOIN chats c ON c.jid = m.chat_jid
+		WHERE (COALESCE(m.text,'') != '' OR COALESCE(m.media_type,'') != '')`
+	var args []any
+	if p.ChatJID != "" {
+		q += ` AND m.chat_jid = ?`
+		args = append(args, p.ChatJID)
+	}
+	order := ` ORDER BY m.ts ASC, m.msg_id ASC`
+	switch {
+	case p.Before != nil:
+		q += ` AND (m.ts < ? OR (m.ts = ? AND m.msg_id < ?))`
+		args = append(args, unix(p.Before.TS), unix(p.Before.TS), p.Before.ID)
+		order = ` ORDER BY m.ts DESC, m.msg_id DESC`
+	case p.After != nil:
+		q += ` AND (m.ts > ? OR (m.ts = ? AND m.msg_id > ?))`
+		args = append(args, unix(p.After.TS), unix(p.After.TS), p.After.ID)
+	}
+	rows, err := d.sql.Query(q+order+` LIMIT ?`, append(args, p.Limit)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Message
+	for rows.Next() {
+		m, err := scanPageRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// FindMessage finds a message by id in any chat.
+func (d *DB) FindMessage(msgID string) (Message, error) {
+	row := d.sql.QueryRow(`SELECT `+pageColumns+` FROM messages m LEFT JOIN chats c ON c.jid = m.chat_jid
+		WHERE m.msg_id = ? ORDER BY m.ts DESC LIMIT 1`, msgID)
+	return scanPageRow(row)
+}
+
+func scanPageRow(r interface{ Scan(...any) error }) (Message, error) {
+	var m Message
+	var ts, fileLen int64
+	var fromMe int
+	if err := r.Scan(&m.ChatJID, &m.ChatName, &m.MsgID, &m.SenderJID, &ts, &fromMe, &m.Text, &m.DisplayText, &m.MediaType,
+		&m.SenderName, &m.Filename, &m.MimeType, &fileLen, &m.LocalPath); err != nil {
+		return Message{}, err
+	}
+	m.Timestamp = fromUnix(ts)
+	m.FromMe = fromMe != 0
+	if fileLen > 0 {
+		m.FileLength = uint64(fileLen)
+	}
+	return m, nil
+}

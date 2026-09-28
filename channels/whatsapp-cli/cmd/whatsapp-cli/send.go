@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/flarco/cli-tools/whatsapp-cli/internal/ipc"
 	"github.com/spf13/cobra"
+	"github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli/internal/ipc"
 )
 
 func newSendCmd(flags *rootFlags) *cobra.Command {

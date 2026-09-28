@@ -17,7 +17,7 @@ Go CLI (`cobra`) wrapping the WhatsApp Web protocol via
 SQLite sync, offline FTS search, send text/files, group management, and live event
 streaming — no re-QR after the first `whatsapp-cli auth`.
 
-Source: `/Users/fritz/Projects/cli-tools/whatsapp-cli/`.
+Source: `channels/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`.
 Build: `scripts/build.sh` → `build/whatsapp-cli` (requires **CGO** + `-tags sqlite_fts5`).
 Not affiliated with WhatsApp.
 
@@ -287,10 +287,11 @@ whatsapp-cli --json chats list --limit 100000 \
 
 ## Where things live
 
-- Source: `/Users/fritz/Projects/cli-tools/whatsapp-cli/`
+- Source: `channels/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`
 - Build: `whatsapp-cli/scripts/build.sh` → `whatsapp-cli/build/whatsapp-cli`
 - Binary name: `whatsapp-cli` (registered to `/usr/local/bin/whatsapp-cli`)
-- Store: `~/.whatsapp-cli` (not under `~/.cli-tools/`)
-- Module: `github.com/flarco/cli-tools/whatsapp-cli` (cobra, not urfave/cli)
+- Store: `$TREBI_STATE_DIR` when Trebi runs the CLI, else `$WHATSAPP_CLI_STORE_DIR`, else `~/.whatsapp-cli`
+- Trebi channel: `whatsapp-cli serve` speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts it. While it runs, the send commands forward to it. `serve --sandbox` serves fake rooms for tests.
+- Module: `github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli` (cobra, not urfave/cli)
 
 When in doubt: `whatsapp-cli <command> --help`.
