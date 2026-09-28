@@ -5,7 +5,7 @@ on:
     paths:
       - "catalog/**"
       - "schema/**"
-      - "src/**"
+      - "connectors/**"
       - "tools/catalogctl/**"
       - "scripts/validate.sh"
       - "scripts/publish.sh"
@@ -98,11 +98,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: src/${{ matrix.bin }}/go.mod
+          go-version-file: connectors/${{ matrix.bin }}/go.mod
           cache: false
       - name: Build
         run: |
-          src/${{ matrix.bin }}/scripts/build.sh "${{ matrix.version }}" "work/${{ matrix.bin }}"
+          connectors/${{ matrix.bin }}/scripts/build.sh "${{ matrix.version }}" "work/${{ matrix.bin }}"
           file "work/${{ matrix.bin }}"
           # The Linux host cannot run an arm64 program. The Mac runs amd64 through Rosetta.
           if [ "${{ matrix.os }}/${{ matrix.arch }}" != linux/arm64 ]; then

@@ -174,7 +174,7 @@ func (b *Builder) binaries(m Manifest, out *Output) ([]IndexBinary, error) {
 		file := BinaryFile(bin, p)
 		data, err := os.ReadFile(filepath.Join(b.Bin, m.Name, file))
 		if err != nil {
-			return nil, fmt.Errorf("no program archive for %s; build src/%s first: %w", p, bin, err)
+			return nil, fmt.Errorf("no program archive for %s; build connectors/%s first: %w", p, bin, err)
 		}
 		key := "bin/" + m.Name + "/" + m.Version + "/" + file
 		out.Binaries[key] = data

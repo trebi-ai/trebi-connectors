@@ -50,7 +50,7 @@ func writeEntry(t *testing.T, root, name, manifest, skill string) string {
 	return dir
 }
 
-// progManifest is an entry whose program the catalog builds from src/.
+// progManifest is an entry whose program the catalog builds from connectors/.
 const progManifest = `schema: trebi-connector/1
 name: prog
 title: Prog
@@ -64,7 +64,7 @@ actions:
 
 func writeSource(t *testing.T, root, bin string) {
 	t.Helper()
-	p := filepath.Join(root, "src", bin, "scripts", "build.sh")
+	p := filepath.Join(root, "connectors", bin, "scripts", "build.sh")
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestValidate(t *testing.T) {
 		{"bad version", "demo", strings.Replace(goodManifest, "1.0.0", "1.0", 1), goodSkill, "semver"},
 		{"missing schema file", "demo", goodManifest + "events:\n  protocol: trebi-connector/1\n  command: demo serve\n  types: [{type: message, schema: schemas/m.json}]\n", goodSkill, "not a file"},
 		{"channel on lines", "demo", goodManifest + "events: {command: demo-cli listen}\nchannel: {features: [typing]}\n", goodSkill, "channel needs events.protocol"},
-		{"catalog without source", "demo", goodManifest + "install: {catalog: true, bin: demo-cli}\n", goodSkill, "src/demo-cli/scripts/build.sh is missing"},
+		{"catalog without source", "demo", goodManifest + "install: {catalog: true, bin: demo-cli}\n", goodSkill, "connectors/demo-cli/scripts/build.sh is missing"},
 		{"install without bin", "demo", goodManifest + "install: {go: \"example.com/demo@v{version}\"}\n", goodSkill, "install.bin"},
 		{"bad template", "demo", goodManifest + "install:\n  github_release: {repo: a/b, tag: \"v{ver}\", asset: x}\n  bin: demo\n", goodSkill, "unknown template {ver}"},
 	}
@@ -212,7 +212,7 @@ func TestBuild(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	b := &Builder{BaseURL: BaseURL, Bin: t.TempDir(), Now: now, Log: io.Discard}
-	if _, err := b.Build(context.Background(), []*Entry{demo, prog}); err == nil || !strings.Contains(err.Error(), "build src/prog-cli first") {
+	if _, err := b.Build(context.Background(), []*Entry{demo, prog}); err == nil || !strings.Contains(err.Error(), "build connectors/prog-cli first") {
 		t.Fatalf("no archives: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(b.Bin, "prog"), 0o755); err != nil {

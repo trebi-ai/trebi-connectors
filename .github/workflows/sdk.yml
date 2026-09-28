@@ -4,14 +4,14 @@ on:
   pull_request:
     paths:
       - "sdk/**"
-      - "src/**"
+      - "connectors/**"
       - "go.work"
       - ".github/workflows/sdk.yml"
   push:
     branches: [main]
     paths:
       - "sdk/**"
-      - "src/**"
+      - "connectors/**"
 
 permissions:
   contents: read
@@ -50,10 +50,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: src/${{ matrix.cli }}/go.mod
+          go-version-file: connectors/${{ matrix.cli }}/go.mod
           cache: false
       - name: Build, vet, and test
-        working-directory: src/${{ matrix.cli }}
+        working-directory: connectors/${{ matrix.cli }}
         env:
           CGO_ENABLED: "1"
         run: |
@@ -65,7 +65,7 @@ jobs:
       # the SDK change is tagged and the require is bumped, this step fails
       # on a PR as a warning only.
       - name: Build without the workspace
-        working-directory: src/${{ matrix.cli }}
+        working-directory: connectors/${{ matrix.cli }}
         continue-on-error: ${{ github.event_name == 'pull_request' }}
         env:
           GOWORK: "off"

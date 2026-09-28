@@ -3,7 +3,7 @@
 #
 #   scripts/validate.sh [--conformance] [--check-assets] [name...]
 #
-# --conformance builds the CLI of each trebi-connector/1 entry from src/ and checks
+# --conformance builds the CLI of each trebi-connector/1 entry from connectors/ and checks
 # "<cli> serve --sandbox". It runs "trebi connector conformance" when the
 # trebi on PATH has that command, and a handshake check otherwise.
 set -euo pipefail
@@ -35,7 +35,7 @@ while IFS=$'\t' read -r name command; do
   [ -n "$name" ] || continue
   if [ ${#names[@]} -gt 0 ] && [[ ! " ${names[*]} " =~ " $name " ]]; then continue; fi
   cli="${command%% *}"
-  src="$root/src/$cli"
+  src="$root/connectors/$cli"
   [ -d "$src" ] || continue
 
   bin="$(mktemp -d)"

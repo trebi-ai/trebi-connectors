@@ -167,10 +167,10 @@ func LoadEntry(dir string) (*Entry, error) {
 	return e, nil
 }
 
-// SourceDir is src/<bin> of the repository, where the source of a
+// SourceDir is connectors/<bin> of the repository, where the source of a
 // catalog-built program lives.
 func (e *Entry) SourceDir() string {
-	return filepath.Join(e.Dir, "..", "..", "src", e.Manifest.CatalogBin())
+	return filepath.Join(e.Dir, "..", "..", "connectors", e.Manifest.CatalogBin())
 }
 
 // Name is the folder name, which must equal the manifest name.
@@ -209,7 +209,7 @@ func (e *Entry) Validate(schema *jsonschema.Resolved) []error {
 		}
 		if in.Catalog && in.Bin != "" {
 			if st, err := os.Stat(filepath.Join(e.SourceDir(), "scripts", "build.sh")); err != nil || !st.Mode().IsRegular() {
-				add("install.catalog: src/%s/scripts/build.sh is missing", in.Bin)
+				add("install.catalog: connectors/%s/scripts/build.sh is missing", in.Bin)
 			}
 		}
 	}

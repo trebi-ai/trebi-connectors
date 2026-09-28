@@ -1,7 +1,7 @@
 # Trebi maintainers own the code and the automation. Community PRs
 # normally touch only catalog/.
 /sdk/        @trebi-ai/maintainers
-/src/        @trebi-ai/maintainers
+/connectors/        @trebi-ai/maintainers
 /go.work     @trebi-ai/maintainers
 /schema/     @trebi-ai/maintainers
 /tools/      @trebi-ai/maintainers
