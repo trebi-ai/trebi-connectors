@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"event","params":{"id":"1290114512345678901","type":"message","ts":"2026-09-28T08:15:02.000000Z","room":{"id":"1180000000000000001","name":"support","kind":"channel"},"thread":{"id":"1290114500000000001","title":"Refund for order 42"},"sender":{"id":"318000000000000001","name":"sam"},"text":"Any news?","reply_to":"1290114500000000009"}}

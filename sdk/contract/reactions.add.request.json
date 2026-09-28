@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":20,"method":"reactions/add","params":{"room":"1180000000000000001","message_id":"1290114512345678901","emoji":"👀"}}

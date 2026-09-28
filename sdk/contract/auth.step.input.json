@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"auth/step","params":{"flow_id":"f4","step":{"kind":"input","fields":[{"name":"code","label":"SMS code","help":"We sent a code to +55 11 9999-9999."},{"name":"password","label":"Two-step password","secret":true}]}}}

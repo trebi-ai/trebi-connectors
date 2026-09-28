@@ -1,0 +1,100 @@
+# Trebi connector SDK for Go
+
+`github.com/trebi-ai/trebi-connectors/sdk` is the Go SDK for the `trebi-connector/1` protocol. The protocol is JSON-RPC 2.0, one JSON object per line, over the stdin and stdout of one long-lived adapter process. The Trebi daemon starts the process from the `events.command` of a connector manifest.
+
+The module depends only on the Go standard library. Tags are `sdk/vX.Y.Z`. The v1 API has a compatibility promise.
+
+## What the SDK does for you
+
+- It reads and writes the frames. A line is at most 1 MiB. A longer input line ends `Serve` with `ErrLineTooLong`. A longer event or result is refused.
+- It answers `ping` and `shutdown`. After `shutdown`, it cancels the context of the adapter and returns within 3 s.
+- It holds every event and status until the daemon sends `initialized`. Then it sends the first `status` and starts `Runner.Run`.
+- It drops a second `messages/send` with the same `key`. The keys stay in `$TREBI_STATE_DIR/trebi-sdk-sent.jsonl` (the newest 10000 keys), so a restart does not send a message twice.
+- It checks `limits.max_text` before it calls `Send`.
+- It maps errors to the seven codes of the protocol. Return a typed `*sdk.Error` to choose the code. A timeout or a network error becomes `transient`. Any other error becomes `permanent`.
+- It builds the feature list from the interfaces the adapter implements. A request for a feature that is not in the list answers `unsupported`.
+- It runs login flows: it assigns the flow id, answers `auth/begin` with the first step, sends the later steps, and sends `auth/done` and the status changes.
+
+## The adapter
+
+```go
+type Adapter interface {
+	Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.InitializeResult, error)
+}
+```
+
+Add the optional interfaces for the features you have:
+
+| Interface | Feature | Methods |
+|---|---|---|
+| `Sender` | (core) | `messages/send` |
+| `RoomLister` (+ `RoomGetter`) | `rooms.list` | `rooms/list`, `rooms/get` |
+| `RoomOpener` | `rooms.open` | `rooms/open` |
+| `ThreadLister` | `threads` | `threads/list` |
+| `ThreadCreator` | `threads.create` | `threads/create` |
+| `Historian` | `history` | `messages/history` |
+| `Replayer` | `replay` | `events/replay` |
+| `Typer` | `typing` | `typing` |
+| `Seer` | `seen` | `messages/seen` |
+| `Reactor` | `reactions` | `reactions/add` |
+| `Editor` | `edit` | `messages/edit` |
+| `StatusReporter` | | `auth/status` and the first `status` |
+| `Authenticator` | `setup.login` | `auth/begin`, `auth/submit`, `auth/cancel`, `auth/logout` |
+| `Runner` | | receives the `Emitter` after `initialized` |
+
+The features `attachments.in` and `attachments.out` have no method. Put them in `InitializeResult.Features`. When `Features` is not empty, the SDK keeps only the listed features that the adapter can serve, in the listed order. When it is empty, the SDK lists every method feature the adapter implements. Without `RoomGetter`, the SDK answers `rooms/get` from the pages of `ListRooms`.
+
+## A minimal channel
+
+```go
+type echo struct{}
+
+func (echo) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.InitializeResult, error) {
+	return sdk.InitializeResult{
+		Adapter: sdk.AdapterInfo{Name: "echo", Version: "0.1.0"},
+		Events:  []sdk.EventDecl{{Type: "message"}},
+		Limits:  sdk.Limits{MaxText: 4000, Formats: []string{sdk.FormatText}},
+	}, nil
+}
+
+func (echo) Send(ctx context.Context, m sdk.SendParams) (sdk.SendResult, error) {
+	return sdk.SendResult{MessageID: "m1"}, nil
+}
+
+func (echo) Run(ctx context.Context, e sdk.Emitter) error {
+	// Connect to the platform, then call e.Event for each new message.
+	<-ctx.Done()
+	return nil
+}
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := sdk.Serve(ctx, echo{}); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+Stdout belongs to the protocol. Write logs to stderr only. The daemon puts stderr in the stream log of the connector.
+
+## Sandbox mode
+
+`sdk.NewSandbox(cfg)` is an in-memory adapter: three rooms, one thread, a local history of sent messages, the send dedupe, and a fake login of each step kind. Give it the adapter name, the events, the features, the limits, and the login kinds of your real adapter. Then `serve --sandbox` passes the conformance checks 1, 2, 3, and 6 of `trebi connector conformance` with no account:
+
+```go
+if sandbox {
+	return sdk.Serve(ctx, sdk.NewSandbox(sdk.SandboxConfig{Adapter: info, Events: events, Features: features, Limits: limits, Login: []string{"qr"}}))
+}
+```
+
+## Tests
+
+`sdktest` runs an adapter in-process from the daemon side:
+
+- `sdktest.Run(t, adapter, "contract/flow.reply.jsonl")` plays a transcript. It sends each daemon line and checks that each adapter line matches, with `"<any>"` as a wildcard. It maps the request ids.
+- `sdktest.Start(adapter)` returns a `Conn` with `Initialize`, `Call`, `Notify`, and `WaitNote` for single requests.
+
+## Contract fixtures
+
+`contract/` holds the wire fixtures of the protocol, byte-identical to `trebi/internal/connectors/protocol/testdata/contract/`. Do not edit them here. Edit them in `trebi` first, then copy the folder. `TestVendoredContract` fails when a sibling `trebi` checkout has other bytes.

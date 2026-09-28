@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.3.0"},"instance":{"key":"whatsapp","name":"whatsapp"},"cursor":"3EB0C431B3A1"}}

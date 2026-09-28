@@ -1,0 +1,21 @@
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.3.0"},"instance":{"key":"discord@ws1","name":"discord","workspace":"ws1"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"discord-cli","version":"0.4.2"},"account":{"id":"1170000000000000001","name":"trebi-bot"},"events":[{"type":"message"},{"type":"reaction"}],"features":["rooms.list","threads","typing","seen","reactions","edit"],"limits":{"max_text":2000,"formats":["markdown"]},"login":[]}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","method":"initialized","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"connected","account":{"id":"1170000000000000001","name":"trebi-bot"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"1290114512345678901","type":"message","ts":"2026-09-28T08:15:02.000000Z","room":{"id":"1180000000000000001","name":"support","kind":"channel"},"thread":{"id":"1290114500000000001","title":"Refund for order 42"},"sender":{"id":"318000000000000001","name":"sam"},"text":"Any news?"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"ping","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":2,"result":{}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":3,"method":"typing","params":{"room":"1180000000000000001","thread":"1290114500000000001"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":3,"result":{}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":4,"method":"messages/send","params":{"room":"1180000000000000001","thread":"1290114500000000001","text":"The refund went out today.","format":"markdown","key":"01J8ZQ4W6N2X3Y4Z5A6B7C8D9E"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":4,"result":{"message_id":"1290114512345679000","thread":"1290114500000000001"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":5,"method":"messages/send","params":{"room":"1180000000000000001","thread":"1290114500000000001","text":"The refund went out today.","format":"markdown","key":"01J8ZQ4W6N2X3Y4Z5A6B7C8D9E"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":5,"result":{"message_id":"1290114512345679000","thread":"1290114500000000001"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":6,"method":"messages/seen","params":{"room":"1180000000000000001","message_id":"1290114512345678901"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":6,"result":{}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":7,"method":"rooms/open","params":{"user":"318000000000000001"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":7,"error":{"code":-32601,"message":"rooms.open is not a feature of this adapter","data":{"code":"unsupported"}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":8,"method":"messages/send","params":{"room":"1180000000000000009","text":"hello","format":"markdown","key":"01J8ZQ4W6N2X3Y4Z5A6B7C8D9F"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":8,"error":{"code":-32000,"message":"slow down","data":{"code":"rate_limited","retry_after_ms":1500}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":9,"method":"shutdown","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":9,"result":{}}}

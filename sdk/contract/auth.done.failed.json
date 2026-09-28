@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"auth/done","params":{"flow_id":"f1","ok":false,"error":"The QR code expired."}}

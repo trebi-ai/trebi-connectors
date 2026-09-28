@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"status","params":{"state":"auth_required","reason":"expired","message":"The linked device was removed."}}

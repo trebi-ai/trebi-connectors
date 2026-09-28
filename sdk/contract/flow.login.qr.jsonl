@@ -1,0 +1,15 @@
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.3.0"},"instance":{"key":"whatsapp","name":"whatsapp"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"whatsapp-cli","version":"1.3.0"},"events":[{"type":"message"}],"features":["rooms.list","typing","seen"],"limits":{"max_text":65536,"formats":["text"]},"login":["qr"]}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","method":"initialized","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"auth_required","reason":"none"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"auth/begin","params":{"kind":"qr"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":2,"result":{"flow_id":"f1","step":{"kind":"qr","data":"2@AbCdEf,GhIjKl,MnOpQr","expires_at":"2026-09-28T08:20:20Z"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"auth_pending"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"auth/step","params":{"flow_id":"f1","step":{"kind":"qr","data":"2@StUvWx,YzAbCd,EfGhIj","expires_at":"2026-09-28T08:20:40Z"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"auth/step","params":{"flow_id":"f1","step":{"kind":"wait","message":"Open WhatsApp on your phone"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"auth/done","params":{"flow_id":"f1","ok":true,"account":{"id":"5511999999999@s.whatsapp.net","name":"Ana"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"connected","account":{"id":"5511999999999@s.whatsapp.net","name":"Ana"}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":3,"method":"auth/status","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":3,"result":{"state":"connected","account":{"id":"5511999999999@s.whatsapp.net","name":"Ana"}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":4,"method":"shutdown","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":4,"result":{}}}

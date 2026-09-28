@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"the account cannot post in this room","data":{"code":"permanent"}}}
