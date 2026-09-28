@@ -1,0 +1,25 @@
+schema: trebi-connector/1
+name: dbt-cloud
+title: "dbt Cloud"
+description: "Run and watch dbt Cloud jobs, and download their run artifacts."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: DBT_CLOUD_CLI_TOKEN
+      label: "Service token"
+      help: "Create a service token in dbt Cloud under Account settings, Service tokens."
+      url: "https://docs.getdbt.com/docs/dbt-cloud-apis/service-tokens"
+      secret: true
+      required: true
+    - name: DBT_CLOUD_CLI_ACCOUNT_ID
+      label: "Account ID"
+      help: "The number in your dbt Cloud URL after /accounts/."
+      required: true
+    - name: DBT_CLOUD_CLI_HOST
+      label: "Access URL"
+      help: "Change it only for a dbt Cloud region outside the US."
+      format: "url"
+      default: "https://cloud.getdbt.com"
+actions:
+  cli: {commands: [dbt-cloud-cli]}

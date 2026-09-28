@@ -1,0 +1,29 @@
+schema: trebi-connector/1
+name: google
+title: "Google Search Console"
+description: "Read Search Console traffic and index data, and run PageSpeed Insights checks."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: GOOGLE_CLI_CLIENT_ID
+      label: "OAuth client ID"
+      help: "Needed for Search Console. Create an OAuth client in the Google Cloud console."
+      url: "https://console.cloud.google.com/apis/credentials"
+    - name: GOOGLE_CLI_CLIENT_SECRET
+      label: "OAuth client secret"
+      help: "Needed for Search Console."
+      secret: true
+    - name: GOOGLE_CLI_REFRESH_TOKEN
+      label: "Refresh token"
+      help: "Needed for Search Console. Run google-cli auth login once to get it."
+      secret: true
+    - name: GOOGLE_CLI_PAGESPEED_KEY
+      label: "PageSpeed API key"
+      help: "Optional. It raises the PageSpeed Insights quota."
+      secret: true
+    - name: GOOGLE_CLI_SITE
+      label: "Default site"
+      help: "The Search Console property to use when a command names none."
+actions:
+  cli: {commands: [google-cli]}

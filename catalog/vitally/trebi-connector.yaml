@@ -1,0 +1,23 @@
+schema: trebi-connector/1
+name: vitally
+title: "Vitally"
+description: "Read and change accounts, users, notes, tasks, and projects in Vitally."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: VITALLY_API_KEY
+      label: "API key"
+      help: "Create a REST API key in Vitally under Settings, Integrations."
+      url: "https://docs.vitally.io/"
+      secret: true
+      required: true
+    - name: VITALLY_SUBDOMAIN
+      label: "Subdomain"
+      help: "Your Vitally subdomain. Needed for the US data center."
+    - name: VITALLY_DATA_CENTER
+      label: "Data center"
+      default: "us"
+      choices: [us, eu]
+actions:
+  cli: {commands: [vitally-cli]}

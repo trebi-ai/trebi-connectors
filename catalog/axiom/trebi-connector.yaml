@@ -1,0 +1,19 @@
+schema: trebi-connector/1
+name: axiom
+title: "Axiom"
+description: "Query logs and traces, and manage datasets, monitors, and dashboards in Axiom."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: AXIOM_TOKEN
+      label: "API token"
+      help: "Create an API token in Axiom under Settings, API tokens."
+      url: "https://app.axiom.co/settings/api-tokens"
+      secret: true
+      required: true
+    - name: AXIOM_ORG_ID
+      label: "Organization ID"
+      help: "Needed only for a personal access token."
+actions:
+  cli: {commands: [axiom-cli]}

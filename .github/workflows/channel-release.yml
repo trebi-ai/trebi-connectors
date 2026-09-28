@@ -87,3 +87,16 @@ jobs:
             --title "$cli $v" \
             --notes "$cli $v. Built from $GITHUB_SHA." \
             ${cli}_${v}_*.tar.gz SHA256SUMS
+
+  # The catalog holds back an entry until its release assets exist. Publish
+  # again from main now that they do.
+  publish-catalog:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Start the catalog workflow on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run catalog.yml --repo "$GITHUB_REPOSITORY" --ref main

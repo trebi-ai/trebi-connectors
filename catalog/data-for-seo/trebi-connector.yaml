@@ -1,0 +1,19 @@
+schema: trebi-connector/1
+name: data-for-seo
+title: "DataForSEO"
+description: "Get search results, keyword data, backlinks, and site audits from DataForSEO."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: DATAFORSEO_LOGIN
+      label: "API login"
+      url: "https://app.dataforseo.com/api-access"
+      required: true
+    - name: DATAFORSEO_PASSWORD
+      label: "API password"
+      url: "https://app.dataforseo.com/api-access"
+      secret: true
+      required: true
+actions:
+  cli: {commands: [data-for-seo-cli]}

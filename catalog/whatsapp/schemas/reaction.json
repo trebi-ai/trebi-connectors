@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a reaction event.",
+  "required": [
+    "emoji",
+    "message_id"
+  ],
+  "properties": {
+    "emoji": {
+      "type": "string",
+      "description": "The emoji of the reaction."
+    },
+    "message_id": {
+      "type": "string",
+      "description": "The message that got the reaction."
+    }
+  }
+}

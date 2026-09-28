@@ -1,0 +1,20 @@
+schema: trebi-connector/1
+name: bing
+title: "Bing Webmaster Tools"
+description: "Read Bing search traffic, crawl, and index data for your sites."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: BING_CLI_API_KEY
+      label: "API key"
+      help: "Create an API key in Bing Webmaster Tools under Settings, API access."
+      url: "https://www.bing.com/webmasters/apikey"
+      secret: true
+      required: true
+    - name: BING_CLI_SITE
+      label: "Default site"
+      help: "The site URL to use when a command names no site."
+      format: "url"
+actions:
+  cli: {commands: [bing-cli]}

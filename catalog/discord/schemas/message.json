@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a Discord message event.",
+  "properties": {
+    "guild_id": {
+      "type": "string",
+      "description": "The server of the message. It is not set for a direct message."
+    },
+    "bot": {
+      "type": "boolean",
+      "description": "True when a bot wrote the message."
+    },
+    "edited_at": {
+      "type": "string",
+      "description": "When the message was last edited."
+    }
+  }
+}

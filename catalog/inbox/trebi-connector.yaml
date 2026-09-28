@@ -1,0 +1,26 @@
+schema: trebi-connector/1
+name: inbox
+title: "Agentic Inbox"
+description: "Read, send, and organize email in a self-hosted Agentic Inbox."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: INBOX_CLI_BASE_URL
+      label: "Inbox URL"
+      help: "The URL of your Agentic Inbox worker."
+      format: "url"
+      required: true
+    - name: CF_ACCESS_CLIENT_ID
+      label: "Access client ID"
+      help: "The Cloudflare Access service token that protects the inbox."
+      required: true
+    - name: CF_ACCESS_CLIENT_SECRET
+      label: "Access client secret"
+      secret: true
+      required: true
+    - name: INBOX_CLI_MAILBOX
+      label: "Default mailbox"
+      help: "The mailbox to use when a command names none."
+actions:
+  cli: {commands: [inbox-cli]}

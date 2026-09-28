@@ -1,0 +1,16 @@
+schema: trebi-connector/1
+name: apollo
+title: "Apollo"
+description: "Search and enrich people and companies, and manage contacts, deals, and sequences in Apollo."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: APOLLO_API_KEY
+      label: "API key"
+      help: "Create an API key in Apollo under Settings, Integrations, API."
+      url: "https://app.apollo.io/#/settings/integrations/api"
+      secret: true
+      required: true
+actions:
+  cli: {commands: [apollo-cli]}

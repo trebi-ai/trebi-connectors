@@ -1,0 +1,74 @@
+name: catalog
+
+on:
+  pull_request:
+    paths:
+      - "catalog/**"
+      - "schema/**"
+      - "tools/catalogctl/**"
+      - "scripts/validate.sh"
+      - "scripts/publish.sh"
+      - ".github/workflows/catalog.yml"
+  push:
+    branches: [main]
+    paths:
+      - "catalog/**"
+      - "schema/**"
+  # channel-release.yml starts this on main when a release finishes, so an
+  # entry that was held back for its assets gets published.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/catalogctl/go.mod
+      - name: Test catalogctl
+        working-directory: tools/catalogctl
+        run: GOWORK=off go test ./...
+      - name: Validate the entries
+        run: scripts/validate.sh --check-assets
+
+  conformance:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Install trebi
+        run: |
+          # validate.sh falls back to a handshake check without trebi.
+          GOWORK=off go install github.com/trebi-ai/trebi/cmd/trebi@main \
+            || echo "::warning::go install of trebi failed; the conformance check uses the handshake check"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Run the conformance checks on the sandbox of each channel
+        run: scripts/validate.sh --conformance
+
+  publish:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: catalog-publish
+    concurrency:
+      group: catalog-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/catalogctl/go.mod
+      - name: Publish to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CATALOG_SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
+        run: scripts/publish.sh

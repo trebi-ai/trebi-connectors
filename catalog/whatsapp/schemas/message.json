@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a WhatsApp message event.",
+  "properties": {
+    "push_name": {
+      "type": "string",
+      "description": "The name that the sender set in WhatsApp."
+    }
+  }
+}

@@ -1,0 +1,33 @@
+schema: trebi-connector/1
+name: whatsapp
+title: WhatsApp
+description: "Send and receive WhatsApp messages from your own account."
+version: 0.6.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+warning: "Uses the WhatsApp Web protocol. WhatsApp can ban an account that uses it. Use a number that you can lose."
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  github_release:
+    repo: trebi-ai/trebi-connectors
+    tag: channels/whatsapp-cli/v{version}
+    asset: whatsapp-cli_{version}_{os}_{arch}.tar.gz
+    checksums: SHA256SUMS
+  go: github.com/trebi-ai/trebi-connectors/channels/whatsapp-cli@v{version}
+  bin: whatsapp-cli
+  version_command: whatsapp-cli --version
+setup:
+  login: [qr]
+actions:
+  cli: {commands: [whatsapp-cli]}
+events:
+  protocol: trebi-connector/1
+  command: whatsapp-cli serve
+  restart: always
+  types:
+    - {type: message, description: A new message in a room, schema: schemas/message.json}
+    - {type: reaction, description: A reaction on a message, schema: schemas/reaction.json}
+channel:
+  features: [rooms.list, rooms.open, history, replay, typing, seen, reactions, attachments.in, attachments.out]
+  limits: {max_text: 65536, formats: [text]}

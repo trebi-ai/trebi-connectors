@@ -1,0 +1,16 @@
+schema: trebi-connector/1
+name: keywords-everywhere
+title: "Keywords Everywhere"
+description: "Get keyword volume, cost per click, trends, and related keywords."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: KEYWORDS_EVERYWHERE_API_KEY
+      label: "API key"
+      help: "Find your API key in your Keywords Everywhere account."
+      url: "https://keywordseverywhere.com/"
+      secret: true
+      required: true
+actions:
+  cli: {commands: [keywords-everywhere-cli]}

@@ -1,0 +1,38 @@
+schema: trebi-connector/1
+name: discord
+title: Discord
+description: "Talk with people in Discord servers and direct messages through your bot."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  github_release:
+    repo: trebi-ai/trebi-connectors
+    tag: channels/discord-cli/v{version}
+    asset: discord-cli_{version}_{os}_{arch}.tar.gz
+    checksums: SHA256SUMS
+  go: github.com/trebi-ai/trebi-connectors/channels/discord-cli@v{version}
+  bin: discord-cli
+  version_command: discord-cli --version
+setup:
+  inputs:
+    - name: DISCORD_TOKEN
+      label: Bot token
+      help: Create a bot in the Discord developer portal, turn on the Message Content intent, and copy its token.
+      url: https://discord.com/developers/applications
+      secret: true
+      required: true
+actions:
+  cli: {commands: [discord-cli]}
+events:
+  protocol: trebi-connector/1
+  command: discord-cli serve
+  restart: always
+  types:
+    - {type: message, description: A new message in a room, schema: schemas/message.json}
+    - {type: reaction, description: A reaction on a message, schema: schemas/reaction.json}
+channel:
+  features: [rooms.list, rooms.open, threads, threads.create, history, replay, typing, seen, reactions, edit, attachments.in, attachments.out]
+  limits: {max_text: 2000, formats: [markdown]}

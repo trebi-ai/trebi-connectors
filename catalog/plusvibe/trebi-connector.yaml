@@ -1,0 +1,19 @@
+schema: trebi-connector/1
+name: plusvibe
+title: "PlusVibe"
+description: "Manage cold email campaigns, leads, sending accounts, and replies in PlusVibe."
+version: 0.1.0
+publisher: trebi
+setup:
+  inputs:
+    - name: PLUSVIBE_API_KEY
+      label: "API key"
+      help: "Create an API key in PlusVibe under Settings, API."
+      url: "https://app.plusvibe.ai/"
+      secret: true
+      required: true
+    - name: PLUSVIBE_WORKSPACE
+      label: "Workspace ID"
+      help: "The workspace to use when a command names none."
+actions:
+  cli: {commands: [plusvibe-cli]}

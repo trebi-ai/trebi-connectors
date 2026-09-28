@@ -1,0 +1,60 @@
+name: sdk
+
+on:
+  pull_request:
+    paths:
+      - "sdk/**"
+      - "channels/**"
+      - ".github/workflows/sdk.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sdk/**"
+      - "channels/**"
+
+permissions:
+  contents: read
+
+jobs:
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sdk/go.mod
+      - name: Test the SDK
+        working-directory: sdk
+        env:
+          GOWORK: "off"
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -race ./...
+
+  # A change in the SDK rebuilds and tests every channel.
+  channels:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cli: discord-cli
+            tags: ""
+          - cli: whatsapp-cli
+            tags: sqlite_fts5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: channels/${{ matrix.cli }}/go.mod
+      - name: Build, vet, and test
+        working-directory: channels/${{ matrix.cli }}
+        env:
+          GOWORK: "off"
+          CGO_ENABLED: "1"
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go build -tags "${{ matrix.tags }}" ./...
+          go vet -tags "${{ matrix.tags }}" ./...
+          go test -race -tags "${{ matrix.tags }}" ./...
