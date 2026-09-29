@@ -9,9 +9,12 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
+	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -25,8 +28,15 @@ type Options struct {
 type Client struct {
 	opts Options
 
-	mu     sync.Mutex
-	client *whatsmeow.Client
+	mu        sync.Mutex
+	client    *whatsmeow.Client
+	container *sqlstore.Container
+	log       waLog.Logger
+
+	// Handlers live here, not on client, so they survive a renew.
+	hmu      sync.Mutex
+	handlers map[uint32]func(interface{})
+	nextID   uint32
 }
 
 func New(opts Options) (*Client, error) {
@@ -45,11 +55,15 @@ func (c *Client) init() error {
 	defer c.mu.Unlock()
 
 	ctx := context.Background()
-	dbLog := waLog.Stdout("Database", "ERROR", true)
+	// Stdout carries JSON output and the serve protocol, so logs go to stderr.
+	base := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: true, TimeFormat: time.RFC3339}).With().Timestamp().Logger()
+	dbLog := waLog.Zerolog(base.Level(zerolog.ErrorLevel).With().Str("module", "Database").Logger())
 	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL", c.opts.StorePath), dbLog)
 	if err != nil {
 		return fmt.Errorf("open whatsmeow store: %w", err)
 	}
+	c.container = container
+	c.log = waLog.Zerolog(base.Level(zerolog.WarnLevel).With().Str("module", "Client").Logger())
 
 	deviceStore, err := container.GetFirstDevice(ctx)
 	if err != nil {
@@ -59,12 +73,40 @@ func (c *Client) init() error {
 			return fmt.Errorf("get device store: %w", err)
 		}
 	}
+	c.setDevice(deviceStore)
+	return nil
+}
 
-	logger := waLog.Stdout("Client", "ERROR", true)
-	c.client = whatsmeow.NewClient(deviceStore, logger)
+// setDevice makes a whatsmeow client for d. The caller holds c.mu.
+func (c *Client) setDevice(d *store.Device) {
+	c.client = whatsmeow.NewClient(d, c.log)
 	// App owns reconnect (listen/sync) so we can apply backoff + max-reconnect.
 	c.client.EnableAutoReconnect = false
-	return nil
+	c.client.AddEventHandler(c.dispatch)
+}
+
+// renewIfDeleted gives a logged-out client a new empty device, so that a new
+// login can start. whatsmeow never reuses a deleted device.
+func (c *Client) renewIfDeleted() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client == nil || !c.client.Store.Deleted {
+		return
+	}
+	c.client.Disconnect()
+	c.setDevice(c.container.NewDevice())
+}
+
+func (c *Client) dispatch(evt interface{}) {
+	c.hmu.Lock()
+	hs := make([]func(interface{}), 0, len(c.handlers))
+	for _, h := range c.handlers {
+		hs = append(hs, h)
+	}
+	c.hmu.Unlock()
+	for _, h := range hs {
+		h(evt)
+	}
 }
 
 func (c *Client) Close() {
@@ -95,6 +137,7 @@ type ConnectOptions struct {
 }
 
 func (c *Client) Connect(ctx context.Context, opts ConnectOptions) error {
+	c.renewIfDeleted()
 	c.mu.Lock()
 	cli := c.client
 	c.mu.Unlock()
@@ -117,7 +160,9 @@ func (c *Client) Connect(ctx context.Context, opts ConnectOptions) error {
 		qrChan = ch
 	}
 
-	if err := cli.ConnectContext(ctx); err != nil {
+	// whatsmeow keeps this context for the life of the connection, also for
+	// the reconnect after pairing. The caller's cancel must not end it.
+	if err := cli.ConnectContext(context.WithoutCancel(ctx)); err != nil {
 		return err
 	}
 
@@ -155,23 +200,20 @@ func (c *Client) Connect(ctx context.Context, opts ConnectOptions) error {
 }
 
 func (c *Client) AddEventHandler(handler func(interface{})) uint32 {
-	c.mu.Lock()
-	cli := c.client
-	c.mu.Unlock()
-	if cli == nil {
-		return 0
+	c.hmu.Lock()
+	defer c.hmu.Unlock()
+	if c.handlers == nil {
+		c.handlers = map[uint32]func(interface{}){}
 	}
-	return cli.AddEventHandler(handler)
+	c.nextID++
+	c.handlers[c.nextID] = handler
+	return c.nextID
 }
 
 func (c *Client) RemoveEventHandler(id uint32) {
-	c.mu.Lock()
-	cli := c.client
-	c.mu.Unlock()
-	if cli == nil {
-		return
-	}
-	cli.RemoveEventHandler(id)
+	c.hmu.Lock()
+	defer c.hmu.Unlock()
+	delete(c.handlers, id)
 }
 
 func (c *Client) SendText(ctx context.Context, to types.JID, text string) (types.MessageID, error) {

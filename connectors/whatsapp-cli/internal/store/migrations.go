@@ -66,6 +66,9 @@ func (d *DB) ensureSchema() error {
 		}
 	}
 
+	// The FTS migration runs once, so a reopened DB must probe the table.
+	_, err = d.sql.Exec(`SELECT 1 FROM messages_fts LIMIT 0`)
+	d.ftsEnabled = err == nil
 	return nil
 }
 

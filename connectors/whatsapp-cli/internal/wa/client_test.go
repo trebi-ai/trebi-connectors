@@ -1,9 +1,11 @@
 package wa
 
 import (
+	"path/filepath"
 	"testing"
 
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 func TestParseUserOrJID(t *testing.T) {
@@ -39,5 +41,25 @@ func TestBestContactName(t *testing.T) {
 	}
 	if BestContactName(types.ContactInfo{Found: true, PushName: "Push"}) != "Push" {
 		t.Fatalf("expected push name")
+	}
+}
+
+func TestRenewKeepsHandlers(t *testing.T) {
+	c, err := New(Options{StorePath: filepath.Join(t.TempDir(), "session.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []interface{}
+	c.AddEventHandler(func(evt interface{}) { got = append(got, evt) })
+	old := c.client
+	old.Store.Deleted = true // what a logout leaves behind
+
+	c.renewIfDeleted()
+	if c.client == old || c.client.Store.Deleted {
+		t.Fatal("a deleted device was not renewed")
+	}
+	c.client.DangerousInternals().DispatchEvent(&events.Connected{})
+	if len(got) != 1 {
+		t.Fatalf("handler got %d events after renew", len(got))
 	}
 }

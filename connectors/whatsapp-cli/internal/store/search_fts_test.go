@@ -3,6 +3,7 @@
 package store
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -134,4 +135,18 @@ func TestFTSInjectionPrevented(t *testing.T) {
 			t.Errorf("expected m1 for 'hello world', got %v", ms)
 		}
 	})
+}
+
+func TestReopenKeepsFTS(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "whatsapp-cli.db")
+	for i := range 2 {
+		db, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open %d: %v", i, err)
+		}
+		if !db.HasFTS() {
+			t.Fatalf("open %d: expected HasFTS=true", i)
+		}
+		_ = db.Close()
+	}
 }

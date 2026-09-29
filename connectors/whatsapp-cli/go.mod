@@ -21,7 +21,6 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/petermattis/goid v0.0.0-20260816044145-ed329add6b1b // indirect
-	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.31 // indirect
 	go.mau.fi/libsignal v0.2.2 // indirect
@@ -35,4 +34,7 @@ require (
 	rsc.io/qr v0.2.0 // indirect
 )
 
-require github.com/trebi-ai/trebi-connectors/sdk v0.1.0
+require (
+	github.com/rs/zerolog v1.35.1
+	github.com/trebi-ai/trebi-connectors/sdk v0.1.0
+)
