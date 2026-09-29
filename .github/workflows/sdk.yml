@@ -19,6 +19,7 @@ permissions:
 jobs:
   sdk:
     runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -38,6 +39,7 @@ jobs:
   # in the same commit, through go.work.
   channels:
     runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
