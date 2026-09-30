@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: discord
 title: Discord
 description: "Talk with people in Discord servers and direct messages through your bot."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

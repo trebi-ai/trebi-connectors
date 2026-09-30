@@ -58,8 +58,7 @@ func mediaDownloadCore(ctx context.Context, a *app.App, chat, id, outputPath str
 	if err != nil {
 		return mediaDownloadResult{}, err
 	}
-	now := time.Now().UTC()
-	_ = a.DB().MarkMediaDownloaded(info.ChatJID, info.MsgID, target, now)
+	_ = a.MarkMediaDownloaded(info, target, time.Now().UTC())
 
 	return mediaDownloadResult{
 		Chat:      info.ChatJID,

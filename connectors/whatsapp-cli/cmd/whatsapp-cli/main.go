@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/config"
+
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
 	"google.golang.org/protobuf/proto"
@@ -16,11 +18,13 @@ func main() {
 	}
 }
 
+// applyDeviceLabel sets the name that the phone shows for this linked
+// device. config.DeviceSettings picks the env names of the mode.
 func applyDeviceLabel() {
-	label := strings.TrimSpace(os.Getenv("WHATSAPP_CLI_DEVICE_LABEL"))
-	platformRaw := strings.TrimSpace(os.Getenv("WHATSAPP_CLI_DEVICE_PLATFORM"))
-	if platformRaw != "" {
-		platform := parsePlatformType(platformRaw)
+	d := config.DeviceSettings()
+	label := d.Label
+	if d.Platform != "" {
+		platform := parsePlatformType(d.Platform)
 		store.DeviceProps.PlatformType = platform.Enum()
 	}
 	if label == "" {

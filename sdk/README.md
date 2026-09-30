@@ -14,6 +14,15 @@ The module depends only on the Go standard library. Tags are `sdk/vX.Y.Z`. The v
 - It maps errors to the seven codes of the protocol. Return a typed `*sdk.Error` to choose the code. A timeout or a network error becomes `transient`. Any other error becomes `permanent`.
 - It builds the feature list from the interfaces the adapter implements. A request for a feature that is not in the list answers `unsupported`.
 - It runs login flows: it assigns the flow id, answers `auth/begin` with the first step, sends the later steps, and sends `auth/done` and the status changes.
+- It reports a missing input. See "Trebi mode".
+
+## Trebi mode
+
+The daemon gives each connection two folders. `TREBI_STATE_DIR` holds durable data. `TREBI_CACHE_DIR` holds data that the program can build again. `sdk.FromEnv()` reads them. `ok` is true when `TREBI_STATE_DIR` is set: the program is then in Trebi mode. The full rules are in "Adapter folder contract" in `../CLAUDE.md`.
+
+- `Serve` reads the folders from the env. `sdk.WithStateDir(dir)` and `sdk.WithCacheDir(dir)` replace them, for example in tests.
+- An adapter that implements `FolderUser` gets the folders in `UseFolders(t)` before the first request.
+- When a required input is not set, return `sdk.MissingInput{Name: "DISCORD_TOKEN", Label: "Bot token"}` from `Initialize`. `Serve` answers `initialize`, sends `status` `auth_required` with reason `missing_input`, and does not start `Runner.Run`. The process stays alive and answers `ping`, `auth/status`, and `shutdown`. Each other request answers `auth_required`. The daemon then shows the setup form and does not restart the program in a loop.
 
 ## The adapter
 
@@ -78,15 +87,11 @@ func main() {
 
 Stdout belongs to the protocol. Write logs to stderr only. The daemon puts stderr in the stream log of the connector.
 
-## Sandbox mode
+## The reference sandbox
 
-`sdk.NewSandbox(cfg)` is an in-memory adapter: three rooms, one thread, a local history of sent messages, the send dedupe, and a fake login of each step kind. Give it the adapter name, the events, the features, the limits, and the login kinds of your real adapter. Then `serve --sandbox` passes the conformance checks 1, 2, 3, and 6 of `trebi connector conformance` with no account:
+`sdk.NewSandbox(cfg)` is the reference adapter that `trebi connector conformance` must pass. It has three rooms and one thread. It serves every write feature on its rooms. It emits a `message` event with `sender.self: true` for each send. It keeps its login, rooms, and events in `$TREBI_STATE_DIR/sandbox.json` with relative paths only, so a restart or a restore stays logged in. An unknown room gives `not_found`. A send with no text and no file gives `invalid`. It writes nothing outside the state and cache folders.
 
-```go
-if sandbox {
-	return sdk.Serve(ctx, sdk.NewSandbox(sdk.SandboxConfig{Adapter: info, Events: events, Features: features, Limits: limits, Login: []string{"qr"}}))
-}
-```
+Use it in SDK tests and as an example. A connector program does not use it for `serve --sandbox`: the sandbox of a program runs the real adapter of the program over a fake service, so the conformance check tests the program code. See `connectors/discord-cli/internal/fakediscord` and `connectors/whatsapp-cli/internal/wa/fakewa`.
 
 ## Tests
 
@@ -94,6 +99,10 @@ if sandbox {
 
 - `sdktest.Run(t, adapter, "contract/flow.reply.jsonl")` plays a transcript. It sends each daemon line and checks that each adapter line matches, with `"<any>"` as a wildcard. It maps the request ids.
 - `sdktest.Start(adapter)` returns a `Conn` with `Initialize`, `Call`, `Notify`, and `WaitNote` for single requests.
+
+## Versions
+
+The next tag is `sdk/v0.2.0`. It adds `Trebi`, `FromEnv`, `FolderUser`, `MissingInput`, `ReasonMissingInput`, and `WithCacheDir`, and the new behavior of `NewSandbox`. The changes are additive. After the tag, do step 3 of "The SDK" in `../README.md`.
 
 ## Contract fixtures
 

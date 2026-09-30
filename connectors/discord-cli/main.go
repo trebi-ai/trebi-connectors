@@ -1,10 +1,8 @@
 package main
 
 import (
-	"cmp"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -25,16 +23,16 @@ func init() {
 	}
 }
 
-func main() {
-	app := &cli.App{
+// newApp builds the command tree.
+func newApp() *cli.App {
+	return &cli.App{
 		Name:    "discord-cli",
 		Usage:   "Discord CLI tool",
 		Version: version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    "token",
-				EnvVars: []string{"DISCORD_TOKEN", "DISCORD_BOT_TOKEN"},
-				Usage:   "Discord bot token",
+				Name:  "token",
+				Usage: "Discord bot token (outside Trebi only; the default is DISCORD_TOKEN, DISCORD_BOT_TOKEN, a .env file, then the config file)",
 			},
 			&cli.BoolFlag{
 				Name:    "json",
@@ -55,40 +53,23 @@ func main() {
 		},
 		Metadata: map[string]any{},
 	}
+}
 
-	if err := app.Run(os.Args); err != nil {
+func main() {
+	if err := newApp().Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func beforeHook(c *cli.Context) error {
-	if wd, err := os.Getwd(); err == nil {
-		for dir := wd; ; {
-			if loaded := config.LoadDotEnv(filepath.Join(dir, ".env")); loaded {
-				break
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
+	s, err := config.Resolve(c.String("token"))
+	if err != nil {
+		return err
 	}
-
-	token := c.String("token")
-	if token == "" {
-		token = cmp.Or(os.Getenv("DISCORD_TOKEN"), os.Getenv("DISCORD_BOT_TOKEN"))
-	}
-	if token == "" {
-		cfg, err := config.Load()
-		if err == nil {
-			token = cfg.Token
-		}
-	}
-
-	if token != "" {
-		c.App.Metadata["client"] = client.New(token)
+	c.App.Metadata["settings"] = s
+	if s.Token != "" {
+		c.App.Metadata["client"] = client.New(s.Token)
 	}
 	return nil
 }

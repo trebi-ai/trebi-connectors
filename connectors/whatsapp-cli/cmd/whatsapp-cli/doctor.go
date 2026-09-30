@@ -9,7 +9,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/lock"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/out"
 )
@@ -24,11 +23,7 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			storeDir := flags.storeDir
-			if storeDir == "" {
-				storeDir = config.DefaultStoreDir()
-			}
-			storeDir, _ = filepath.Abs(storeDir)
+			storeDir := resolveStoreDir(flags)
 
 			var lockHeld bool
 			var lockInfo string

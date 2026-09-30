@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"mime"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/pathutil"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
 )
 
 type mediaJob struct {
@@ -144,6 +146,38 @@ func (a *App) downloadMediaJob(ctx context.Context, job mediaJob) error {
 		return err
 	}
 
-	now := time.Now().UTC()
-	return a.db.MarkMediaDownloaded(info.ChatJID, info.MsgID, targetPath, now)
+	return a.MarkMediaDownloaded(info, targetPath, time.Now().UTC())
+}
+
+// MarkMediaDownloaded stores the path of a downloaded file. A path inside
+// the store folder is stored relative to it, so the folder can move.
+func (a *App) MarkMediaDownloaded(info store.MediaDownloadInfo, path string, at time.Time) error {
+	if rel, err := filepath.Rel(a.opts.StoreDir, path); err == nil && filepath.IsLocal(rel) {
+		path = rel
+	}
+	return a.db.MarkMediaDownloaded(info.ChatJID, info.MsgID, path, at)
+}
+
+// MediaPath returns the absolute path of a stored media path.
+func (a *App) MediaPath(stored string) string {
+	if stored == "" || filepath.IsAbs(stored) {
+		return stored
+	}
+	return filepath.Join(a.opts.StoreDir, stored)
+}
+
+// removeDownloadTemps deletes the download temp files that a crash left in
+// the store folder.
+func (a *App) removeDownloadTemps() {
+	_ = filepath.WalkDir(a.opts.StoreDir, func(p string, d fs.DirEntry, err error) error { //nolint:errcheck // best effort
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasPrefix(d.Name(), wa.DownloadTempPrefix) {
+			if rerr := os.Remove(p); rerr != nil {
+				fmt.Fprintf(os.Stderr, "remove download temp file: %v\n", rerr)
+			}
+		}
+		return nil
+	})
 }

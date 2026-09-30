@@ -14,6 +14,7 @@ type DB struct {
 	path       string
 	sql        *sql.DB
 	ftsEnabled bool
+	closed     bool
 }
 
 func Open(path string) (*DB, error) {
@@ -41,11 +42,17 @@ func Open(path string) (*DB, error) {
 	return s, nil
 }
 
+// Close moves the WAL into the database file and closes it.
 func (d *DB) Close() error {
-	if d == nil || d.sql == nil {
+	if d == nil || d.sql == nil || d.closed {
 		return nil
 	}
-	return d.sql.Close()
+	d.closed = true
+	_, err := d.sql.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if cerr := d.sql.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 func (d *DB) init() error {

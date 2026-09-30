@@ -40,41 +40,34 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 15
-    env:
-      # trebi is private until it goes public. Drop the token and GOPRIVATE then.
-      GOPRIVATE: github.com/trebi-ai
-      HAS_GH_APP_SECRET: ${{ secrets.GH_APP_SECRET != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
           cache: false
-      # A fork PR gets no secret and falls back to the handshake check.
-      - name: Mint a trebi read token
-        id: trebi-token
-        if: env.HAS_GH_APP_SECRET == 'true'
-        uses: actions/create-github-app-token@v3.2.0
-        with:
-          client-id: "Iv23liHamBzMshOMTWIG"
-          private-key: ${{ secrets.GH_APP_SECRET }}
-          owner: trebi-ai
-          repositories: trebi
+      # The newest public release of trebi. It needs no token, so a fork PR
+      # runs the full check too.
       - name: Install trebi
-        env:
-          TOKEN: ${{ steps.trebi-token.outputs.token }}
         run: |
-          # A job-local git config: the runner user is shared with other jobs.
-          if [[ -n "${TOKEN:-}" ]]; then
-            cfg="$RUNNER_TEMP/gitconfig"
-            git config --file "$cfg" url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-            export GIT_CONFIG_GLOBAL="$cfg"
-          fi
-          # validate.sh falls back to a handshake check without trebi.
-          GOWORK=off go install github.com/trebi-ai/trebi/cmd/trebi@main \
-            || echo "::warning::go install of trebi failed; the conformance check uses the handshake check"
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Run the conformance checks on the sandbox of each channel
+          set -euo pipefail
+          repo=https://github.com/trebi-ai/trebi
+          tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$repo/releases/latest")"
+          tag="${tag##*/}"
+          asset="trebi_${tag#v}_linux_amd64.tar.gz"
+          dir="$RUNNER_TEMP/trebi"
+          rm -rf "$dir" && mkdir -p "$dir"
+          for f in "$asset" SHA256SUMS; do
+            curl -fsSL --retry 3 -o "$dir/$f" "$repo/releases/download/$tag/$f"
+          done
+          (cd "$dir" && grep -E "[[:space:]]\*?${asset}\$" SHA256SUMS | sha256sum -c -)
+          tar -xzf "$dir/$asset" -C "$dir"
+          bin="$(find "$dir" -type f -name trebi | head -n 1)"
+          [ -n "$bin" ] || { echo "::error::$asset has no trebi program"; exit 1; }
+          chmod +x "$bin"
+          echo "$(dirname "$bin")" >> "$GITHUB_PATH"
+          echo "trebi $tag"
+      - name: Run the conformance checks on each entry
         run: scripts/validate.sh --conformance
 
   # Lists the program archives of each install.catalog entry whose version

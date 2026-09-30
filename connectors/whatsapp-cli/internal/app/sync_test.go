@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"testing"
 	"time"
 
@@ -16,16 +17,16 @@ import (
 
 func TestSyncStoresLiveAndHistoryMessages(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	chat := types.JID{User: "123", Server: types.DefaultUserServer}
-	f.contacts[chat.ToNonAD()] = types.ContactInfo{
+	f.AddContact(chat.ToNonAD(), types.ContactInfo{
 		Found:     true,
 		FullName:  "Alice",
 		FirstName: "Alice",
 		PushName:  "Alice",
-	}
+	})
 
 	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -63,7 +64,7 @@ func TestSyncStoresLiveAndHistoryMessages(t *testing.T) {
 		},
 	}
 
-	f.connectEvents = []interface{}{live, history}
+	f.SetConnectEvents(live, history)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -87,16 +88,16 @@ func TestSyncStoresLiveAndHistoryMessages(t *testing.T) {
 
 func TestSyncStoresDisplayText(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	chat := types.JID{User: "123", Server: types.DefaultUserServer}
-	f.contacts[chat.ToNonAD()] = types.ContactInfo{
+	f.AddContact(chat.ToNonAD(), types.ContactInfo{
 		Found:     true,
 		FullName:  "Alice",
 		FirstName: "Alice",
 		PushName:  "Alice",
-	}
+	})
 
 	base := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
 
@@ -184,7 +185,7 @@ func TestSyncStoresDisplayText(t *testing.T) {
 		},
 	}
 
-	f.connectEvents = []interface{}{textMsg, imageMsg, replyMsg, reactionMsg}
+	f.SetConnectEvents(textMsg, imageMsg, replyMsg, reactionMsg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -237,7 +238,7 @@ func TestSyncStoresDisplayText(t *testing.T) {
 
 func TestSyncOnceIdleExit(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

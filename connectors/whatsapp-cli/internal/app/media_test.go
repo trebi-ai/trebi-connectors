@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,7 +13,7 @@ import (
 
 func TestDownloadMediaJobMarksDownloaded(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	chat := "123@s.whatsapp.net"
@@ -47,10 +49,10 @@ func TestDownloadMediaJobMarksDownloaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMediaDownloadInfo: %v", err)
 	}
-	if info.LocalPath == "" {
-		t.Fatalf("expected LocalPath to be set")
+	if info.LocalPath == "" || filepath.IsAbs(info.LocalPath) {
+		t.Fatalf("LocalPath %q, want a path relative to the store", info.LocalPath)
 	}
-	if _, err := os.Stat(info.LocalPath); err != nil {
+	if _, err := os.Stat(a.MediaPath(info.LocalPath)); err != nil {
 		t.Fatalf("expected downloaded file to exist: %v", err)
 	}
 }

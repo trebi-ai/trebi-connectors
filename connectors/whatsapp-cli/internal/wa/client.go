@@ -30,6 +30,7 @@ type Client struct {
 
 	mu        sync.Mutex
 	client    *whatsmeow.Client
+	db        *sql.DB // session.db
 	container *sqlstore.Container
 	log       waLog.Logger
 
@@ -58,11 +59,16 @@ func (c *Client) init() error {
 	// Stdout carries JSON output and the serve protocol, so logs go to stderr.
 	base := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: true, TimeFormat: time.RFC3339}).With().Timestamp().Logger()
 	dbLog := waLog.Zerolog(base.Level(zerolog.ErrorLevel).With().Str("module", "Database").Logger())
-	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL", c.opts.StorePath), dbLog)
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL", c.opts.StorePath))
 	if err != nil {
 		return fmt.Errorf("open whatsmeow store: %w", err)
 	}
-	c.container = container
+	container := sqlstore.NewWithDB(db, "sqlite3", dbLog)
+	if err := container.Upgrade(ctx); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("open whatsmeow store: %w", err)
+	}
+	c.db, c.container = db, container
 	c.log = waLog.Zerolog(base.Level(zerolog.WarnLevel).With().Str("module", "Client").Logger())
 
 	deviceStore, err := container.GetFirstDevice(ctx)
@@ -109,12 +115,32 @@ func (c *Client) dispatch(evt interface{}) {
 	}
 }
 
+// Close disconnects. The client can connect again.
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client != nil {
 		c.client.Disconnect()
 	}
+}
+
+// CloseStore disconnects, moves the WAL into session.db, and closes it.
+// The client is not usable after it.
+func (c *Client) CloseStore() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client != nil {
+		c.client.Disconnect()
+	}
+	if c.db == nil {
+		return nil
+	}
+	_, err := c.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if cerr := c.container.Close(); err == nil {
+		err = cerr
+	}
+	c.db = nil
+	return err
 }
 
 func (c *Client) IsAuthed() bool {

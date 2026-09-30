@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ var (
 	group = types.JID{User: "120363000000000001", Server: types.GroupServer}
 )
 
-func startAdapter(t *testing.T, f *fakeWA) (*sdktest.Conn, sdk.InitializeResult) {
+func startAdapter(t *testing.T, f *fakewa.Client) (*sdktest.Conn, sdk.InitializeResult) {
 	t.Helper()
 	a := newTestApp(t)
 	a.wa = f
@@ -74,7 +75,7 @@ func live(id string, chat, sender types.JID, ts time.Time, msg *waProto.Message)
 }
 
 func TestAdapterEvents(t *testing.T) {
-	f := newFakeWA()
+	f := fakewa.New()
 	c, res := startAdapter(t, f)
 	if res.Account == nil || res.Account.ID != "5511000000000@s.whatsapp.net" || len(res.Features) != 9 || res.Login[0] != "qr" {
 		t.Fatalf("initialize: %+v", res)
@@ -82,15 +83,15 @@ func TestAdapterEvents(t *testing.T) {
 	waitStatus(t, c, sdk.StateConnected)
 
 	ts := time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
-	f.emit(live("M1", peer, peer, ts, &waProto.Message{Conversation: proto.String("Any news?")}))
-	f.emit(live("M2", peer, peer, ts.Add(time.Second), &waProto.Message{ReactionMessage: &waProto.ReactionMessage{
+	f.Emit(live("M1", peer, peer, ts, &waProto.Message{Conversation: proto.String("Any news?")}))
+	f.Emit(live("M2", peer, peer, ts.Add(time.Second), &waProto.Message{ReactionMessage: &waProto.ReactionMessage{
 		Key: &waProto.MessageKey{ID: proto.String("M1")}, Text: proto.String("👍"),
 	}}))
-	f.emit(live("M3", group, peer, ts.Add(2*time.Second), &waProto.Message{ImageMessage: &waProto.ImageMessage{
+	f.Emit(live("M3", group, peer, ts.Add(2*time.Second), &waProto.Message{ImageMessage: &waProto.ImageMessage{
 		Caption: proto.String("look"), Mimetype: proto.String("image/png"), DirectPath: proto.String("/d"),
 		MediaKey: []byte("k"), FileLength: proto.Uint64(4),
 	}}))
-	f.emit(live("M4", types.JID{User: "status", Server: types.BroadcastServer}, peer, ts, &waProto.Message{Conversation: proto.String("story")}))
+	f.Emit(live("M4", types.JID{User: "status", Server: types.BroadcastServer}, peer, ts, &waProto.Message{Conversation: proto.String("story")}))
 
 	msg := waitEvent(t, c)
 	if msg.ID != "M1" || msg.Type != "message" || msg.Text != "Any news?" || msg.Room.ID != peer.String() || msg.Room.Kind != "dm" ||
@@ -106,19 +107,19 @@ func TestAdapterEvents(t *testing.T) {
 		t.Fatalf("image: %+v", img)
 	}
 
-	f.emit(&events.LoggedOut{})
+	f.Emit(&events.LoggedOut{})
 	if st := waitStatus(t, c, sdk.StateAuthRequired); st.Reason != sdk.ReasonRevoked {
 		t.Fatalf("logged out: %+v", st)
 	}
 }
 
 func TestAdapterRequests(t *testing.T) {
-	f := newFakeWA()
+	f := fakewa.New()
 	c, _ := startAdapter(t, f)
 	waitStatus(t, c, sdk.StateConnected)
 	ts := time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
 	for i, id := range []string{"H1", "H2", "H3"} {
-		f.emit(live(id, peer, peer, ts.Add(time.Duration(i)*time.Second), &waProto.Message{Conversation: proto.String("m" + id)}))
+		f.Emit(live(id, peer, peer, ts.Add(time.Duration(i)*time.Second), &waProto.Message{Conversation: proto.String("m" + id)}))
 		waitEvent(t, c)
 	}
 
@@ -126,9 +127,7 @@ func TestAdapterRequests(t *testing.T) {
 	if err := c.Call(sdk.MethodMessagesSend, sdk.SendParams{Room: peer.String(), Text: "Hi", Format: "text", ReplyTo: "H2", Key: "k1"}, &sent); err != nil {
 		t.Fatal(err)
 	}
-	f.mu.Lock()
-	quoted := f.sent[0].GetExtendedTextMessage().GetContextInfo()
-	f.mu.Unlock()
+	quoted := f.Sent()[0].GetExtendedTextMessage().GetContextInfo()
 	if sent.MessageID != "S1" || quoted.GetStanzaID() != "H2" || quoted.GetParticipant() != peer.String() {
 		t.Fatalf("send: %+v %v", sent, quoted)
 	}
@@ -142,11 +141,9 @@ func TestAdapterRequests(t *testing.T) {
 	if err := c.Call(sdk.MethodReactionsAdd, sdk.ReactionParams{Room: peer.String(), MessageID: "H3", Emoji: "👍"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	f.mu.Lock()
-	if len(f.typing) != 1 || f.reads[0] != peer.String()+"|"+peer.String()+"|H3" || f.reactions[0] != peer.String()+"|"+peer.String()+"|H3|👍" {
-		t.Fatalf("typing %v reads %v reactions %v", f.typing, f.reads, f.reactions)
+	if typing, reads, reactions := f.Typing(), f.Reads(), f.Reactions(); len(typing) != 1 || reads[0] != peer.String()+"|"+peer.String()+"|H3" || reactions[0] != peer.String()+"|"+peer.String()+"|H3|👍" {
+		t.Fatalf("typing %v reads %v reactions %v", typing, reads, reactions)
 	}
-	f.mu.Unlock()
 
 	var page sdk.EventPage
 	if err := c.Call(sdk.MethodMessagesHistory, sdk.HistoryQuery{Room: peer.String(), Before: "S1", Limit: 2}, &page); err != nil {
@@ -189,8 +186,8 @@ func TestAdapterRequests(t *testing.T) {
 }
 
 func TestAdapterLogin(t *testing.T) {
-	f := newFakeWA()
-	f.authed = false
+	f := fakewa.New()
+	f.SetAuthed(false)
 	c, res := startAdapter(t, f)
 	if res.Account != nil {
 		t.Fatalf("account before login: %+v", res.Account)

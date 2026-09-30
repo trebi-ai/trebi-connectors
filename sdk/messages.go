@@ -57,6 +57,8 @@ const (
 	ReasonExpired   = "expired"
 	ReasonRevoked   = "revoked"
 	ReasonLoggedOut = "logged_out"
+	// ReasonMissingInput is a required input that is not set (Trebi mode).
+	ReasonMissingInput = "missing_input"
 )
 
 // Login step kinds.

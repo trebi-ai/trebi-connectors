@@ -9,4 +9,4 @@ use (
 // The CLIs build against the SDK in this commit, also before its tag
 // exists. Keep the version equal to the SDK require in connectors/*/go.mod.
 // go install ignores this file and reads the tag.
-replace github.com/trebi-ai/trebi-connectors/sdk v0.1.0 => ./sdk
+replace github.com/trebi-ai/trebi-connectors/sdk v0.2.0 => ./sdk

@@ -85,15 +85,39 @@ This project is heavily inspired by (and learns from) the excellent `whatsapp-cl
 - `whatsapp-cli sync`: non-interactive sync loop (never shows QR; errors if not authenticated).
 - Output is human-readable by default; pass `--json` for machine-readable output.
 
+## Use on its own
+
+With no `TREBI_STATE_DIR` in the env, `whatsapp-cli` is a normal CLI. It finds the store folder in this order:
+
+1. The `--store DIR` flag.
+2. The env var `WHATSAPP_CLI_STORE_DIR`.
+3. `~/.whatsapp-cli`.
+
+These env vars set the linked device:
+
+- `WHATSAPP_CLI_DEVICE_LABEL`: the device name that the phone shows.
+- `WHATSAPP_CLI_DEVICE_PLATFORM`: the device platform (`CHROME` when it is not set or not valid).
+
+## Use with Trebi
+
+Trebi starts `whatsapp-cli serve` with `TREBI_STATE_DIR` set. This is Trebi mode. The Trebi values win over everything:
+
+- The store is `TREBI_STATE_DIR`. The CLI does not read `WHATSAPP_CLI_STORE_DIR` or the home folder.
+- `--store` fails with "Trebi sets this value".
+- The device name comes from the `WA_DEVICE_NAME` input of the connection. The CLI does not read `WHATSAPP_CLI_DEVICE_LABEL` or `WHATSAPP_CLI_DEVICE_PLATFORM`.
+- A CLI command in a Trebi run gets the same `TREBI_STATE_DIR`. A send forwards to the running `serve` over the store socket.
+- `serve --sandbox` runs the same adapter over a fake WhatsApp. It needs no account. The login is a QR step that completes by itself. Outside Trebi, the sandbox uses a temp store unless you give `--store`.
+
+The rules for all connector programs are in "Adapter folder contract" in `../../CLAUDE.md`.
+
 ## Storage
 
-Defaults to `~/.whatsapp-cli` (override with `--store DIR`).
+The store holds `session.db`, `whatsapp-cli.db`, `media/`, `LOCK`, and the socket `whatsapp-cli.sock`.
 
-## Environment overrides
-
-- `WHATSAPP_CLI_DEVICE_LABEL`: set the linked device label (shown in WhatsApp).
-- `WHATSAPP_CLI_DEVICE_PLATFORM`: override the linked device platform (defaults to `CHROME` if unset or invalid).
-- `WHATSAPP_CLI_STORE_DIR`: override the default store directory (`~/.whatsapp-cli`).
+- Media paths in `whatsapp-cli.db` are relative to the store, so you can move the folder. A path from `media download --output` outside the store stays absolute.
+- `whatsapp-cli.db` has a schema version (`PRAGMA user_version`). A newer program upgrades an older store when it opens it. An older program does not open a newer store: `serve` then sends `status` `error` and changes nothing.
+- On a clean stop, the CLI moves the SQLite WAL into each database file and closes it.
+- At start, the CLI deletes the download temp files (`.whatsapp-cli-download-*`) that a crash left.
 
 ## Backfilling older history
 

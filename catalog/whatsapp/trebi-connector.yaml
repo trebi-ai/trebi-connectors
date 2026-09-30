@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: whatsapp
 title: WhatsApp
 description: "Send and receive WhatsApp messages from your own account."
-version: 0.6.1
+version: 0.7.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -14,6 +14,11 @@ install:
   version_command: whatsapp-cli --version
 setup:
   login: [qr]
+  inputs:
+    - name: WA_DEVICE_NAME
+      label: Device name
+      help: The name that your phone shows in Linked devices.
+      required: false
 actions:
   cli: {commands: [whatsapp-cli]}
 events:

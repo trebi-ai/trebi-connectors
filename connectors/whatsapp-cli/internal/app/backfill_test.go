@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 
 func TestBackfillHistoryAddsOlderMessages(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	chat := types.JID{User: "123", Server: types.DefaultUserServer}
@@ -31,7 +32,7 @@ func TestBackfillHistoryAddsOlderMessages(t *testing.T) {
 		t.Fatalf("UpsertMessage: %v", err)
 	}
 
-	f.onDemandHistory = func(lastKnown types.MessageInfo, count int) *events.HistorySync {
+	f.SetOnDemandHistory(func(lastKnown types.MessageInfo, count int) *events.HistorySync {
 		older := &waWeb.WebMessageInfo{
 			Key: &waCommon.MessageKey{
 				RemoteJID: proto.String(chatStr),
@@ -52,7 +53,7 @@ func TestBackfillHistoryAddsOlderMessages(t *testing.T) {
 				}},
 			},
 		}
-	}
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

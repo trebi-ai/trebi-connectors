@@ -3,9 +3,10 @@
 #
 #   scripts/validate.sh [--conformance] [--check-assets] [name...]
 #
-# --conformance builds the CLI of each trebi-connector/1 entry from connectors/ and checks
-# "<cli> serve --sandbox". It runs "trebi connector conformance" when the
-# trebi on PATH has that command, and a handshake check otherwise.
+# --conformance runs "trebi connector conformance --manifest catalog/<name>"
+# for each entry. When connectors/<bin> has the program of the entry, it
+# builds the program first and puts it on PATH. It needs a trebi on PATH
+# that has the conformance command.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,28 +31,30 @@ if [ -f "$upstream" ] && ! cmp -s "$upstream" "$root/schema/trebi-connector.sche
 fi
 
 [ "$conformance" = 1 ] || exit 0
-entries="$(cd "$root/tools/catalogctl" && GOWORK=off go run . protocol-entries --root "$root")"
-while IFS=$'\t' read -r name command; do
+if ! command -v trebi >/dev/null || ! trebi connector conformance --help >/dev/null 2>&1; then
+  echo "FAIL trebi on PATH has no \"connector conformance\" command; install a newer trebi release" >&2
+  exit 1
+fi
+
+bin="$(mktemp -d)"
+trap 'rm -rf "$bin"' EXIT
+export PATH="$bin:$PATH"
+failed=()
+entries="$(cd "$root/tools/catalogctl" && GOWORK=off go run . entries --root "$root")"
+while IFS=$'\t' read -r name version cli; do
   [ -n "$name" ] || continue
   if [ ${#names[@]} -gt 0 ] && [[ ! " ${names[*]} " =~ " $name " ]]; then continue; fi
-  cli="${command%% *}"
-  src="$root/connectors/$cli"
-  [ -d "$src" ] || continue
-
-  bin="$(mktemp -d)"
-  "$src/scripts/build.sh" ci "$bin/$cli" >/dev/null
-  sandbox="$bin/$cli serve --sandbox"
-  if command -v trebi >/dev/null && trebi connector conformance --help >/dev/null 2>&1; then
-    trebi connector conformance --command "$sandbox"
-  else
-    echo "note: trebi connector conformance is not available; run the handshake check for $name" >&2
-    out="$(printf '%s\n' \
-      '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"ci"},"instance":{"key":"ci","name":"ci"}}}' \
-      '{"jsonrpc":"2.0","method":"initialized"}' \
-      '{"jsonrpc":"2.0","id":2,"method":"shutdown"}' \
-      | TREBI_STATE_DIR="$bin" timeout 20 $sandbox)"
-    grep -q '"protocol":"trebi-connector/1"' <<<"$out" || { echo "FAIL $name: no initialize result" >&2; echo "$out" >&2; exit 1; }
-    grep -q '"id":2,"result"' <<<"$out" || { echo "FAIL $name: no shutdown result" >&2; echo "$out" >&2; exit 1; }
+  if [ -n "$cli" ] && [ -d "$root/connectors/$cli" ] && [ ! -x "$bin/$cli" ]; then
+    "$root/connectors/$cli/scripts/build.sh" "$version" "$bin/$cli" >/dev/null
   fi
-  echo "ok   $name conformance"
+  if trebi connector conformance --manifest "$root/catalog/$name"; then
+    echo "ok   $name conformance"
+  else
+    echo "FAIL $name conformance" >&2
+    failed+=("$name")
+  fi
 done <<<"$entries"
+if [ ${#failed[@]} -gt 0 ]; then
+  echo "FAIL conformance: ${failed[*]}" >&2
+  exit 1
+fi

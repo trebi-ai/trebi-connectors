@@ -334,7 +334,7 @@ func (d *Adapter) download(ctx context.Context, pm wa.ParsedMessage) sdk.Attachm
 		return at
 	}
 	if info, err := d.app.db.GetMediaDownloadInfo(job.chatJID, job.msgID); err == nil {
-		at.Path = info.LocalPath
+		at.Path = d.app.MediaPath(info.LocalPath)
 		if at.Name == "" && info.LocalPath != "" {
 			at.Name = path.Base(info.LocalPath)
 		}
@@ -535,7 +535,7 @@ func (d *Adapter) storedEvent(m store.Message) sdk.Event {
 		Sender: sender, Text: m.Text,
 	}
 	if m.MediaType != "" {
-		ev.Attachments = []sdk.Attachment{{ID: m.MsgID, Name: m.Filename, Mime: m.MimeType, Size: int64(m.FileLength), Path: m.LocalPath}}
+		ev.Attachments = []sdk.Attachment{{ID: m.MsgID, Name: m.Filename, Mime: m.MimeType, Size: int64(m.FileLength), Path: d.app.MediaPath(m.LocalPath)}}
 	}
 	return ev
 }
@@ -577,9 +577,10 @@ func (d *Adapter) ListRooms(ctx context.Context, q sdk.RoomQuery) (sdk.RoomPage,
 	return page, nil
 }
 
+// GetRoom reads a known chat. An id that is not a JID is an unknown room.
 func (d *Adapter) GetRoom(ctx context.Context, id string) (sdk.Room, error) {
 	if _, err := d.jid(id); err != nil {
-		return sdk.Room{}, err
+		return sdk.Room{}, sdk.NotFound("no room " + id)
 	}
 	c, err := d.app.db.GetChat(id)
 	if err != nil {

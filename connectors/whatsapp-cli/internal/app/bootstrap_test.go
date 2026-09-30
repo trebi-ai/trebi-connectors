@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"testing"
 	"time"
 
@@ -10,16 +11,16 @@ import (
 
 func TestRefreshContactsStoresContacts(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	jid := types.JID{User: "111", Server: types.DefaultUserServer}
-	f.contacts[jid] = types.ContactInfo{
+	f.AddContact(jid, types.ContactInfo{
 		Found:     true,
 		PushName:  "Push",
 		FullName:  "Full Name",
 		FirstName: "First",
-	}
+	})
 
 	if err := a.refreshContacts(context.Background()); err != nil {
 		t.Fatalf("refreshContacts: %v", err)
@@ -35,17 +36,17 @@ func TestRefreshContactsStoresContacts(t *testing.T) {
 
 func TestRefreshGroupsStoresGroupsAndChats(t *testing.T) {
 	a := newTestApp(t)
-	f := newFakeWA()
+	f := fakewa.New()
 	a.wa = f
 
 	gid := types.JID{User: "12345", Server: types.GroupServer}
 	created := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	f.groups[gid] = &types.GroupInfo{
+	f.AddGroup(&types.GroupInfo{
 		JID:          gid,
 		OwnerJID:     types.JID{User: "999", Server: types.DefaultUserServer},
 		GroupName:    types.GroupName{Name: "MyGroup"},
 		GroupCreated: created,
-	}
+	})
 
 	if err := a.refreshGroups(context.Background()); err != nil {
 		t.Fatalf("refreshGroups: %v", err)

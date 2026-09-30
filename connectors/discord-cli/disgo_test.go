@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,8 +16,8 @@ import (
 
 func testClient(t *testing.T) *client.Client {
 	t.Helper()
-	config.LoadDotEnv(".env")
-	token := os.Getenv("DISCORD_BOT_TOKEN")
+	env, _ := config.ReadDotEnv(".env")
+	token := cmp.Or(os.Getenv("DISCORD_BOT_TOKEN"), env["DISCORD_BOT_TOKEN"])
 	if token == "" {
 		t.Skip("DISCORD_BOT_TOKEN not set")
 	}
@@ -390,8 +391,8 @@ func TestChannelWorkflow(t *testing.T) {
 }
 
 func TestGateway(t *testing.T) {
-	config.LoadDotEnv(".env")
-	token := os.Getenv("DISCORD_BOT_TOKEN")
+	env, _ := config.ReadDotEnv(".env")
+	token := cmp.Or(os.Getenv("DISCORD_BOT_TOKEN"), env["DISCORD_BOT_TOKEN"])
 	if token == "" {
 		t.Skip("DISCORD_BOT_TOKEN not set")
 	}

@@ -10,15 +10,25 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/config"
 )
+
+// settingsFromCtx returns what config.Resolve found in the before hook.
+func settingsFromCtx(c *cli.Context) config.Settings {
+	s, _ := c.App.Metadata["settings"].(config.Settings) //nolint:errcheck // the zero value is no token
+	return s
+}
 
 // clientFromCtx extracts the *client.Client from the cli context.
 func clientFromCtx(c *cli.Context) (*client.Client, error) {
 	cl, ok := c.App.Metadata["client"].(*client.Client)
-	if !ok || cl == nil {
-		return nil, fmt.Errorf("no Discord token configured — set DISCORD_BOT_TOKEN or run: discord-cli auth set <token>")
+	if ok && cl != nil {
+		return cl, nil
 	}
-	return cl, nil
+	if settingsFromCtx(c).Trebi {
+		return nil, fmt.Errorf("%s is not set in Trebi", config.TokenLabel)
+	}
+	return nil, fmt.Errorf("no Discord token configured — set DISCORD_TOKEN or run: discord-cli auth set <token>")
 }
 
 // outputJSON checks the --json flag.

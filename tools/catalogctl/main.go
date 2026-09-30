@@ -3,7 +3,7 @@
 //	catalogctl validate [flags] [name...]
 //	catalogctl build --out DIR [--bin DIR] [flags]
 //	catalogctl pending [--previous FILE|URL]
-//	catalogctl protocol-entries
+//	catalogctl entries
 //	catalogctl keygen
 package main
 
@@ -41,7 +41,7 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: catalogctl validate|build|pending|protocol-entries|keygen")
+		return errors.New("usage: catalogctl validate|build|pending|entries|keygen")
 	}
 	cmd, args := args[0], args[1:]
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -105,15 +105,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		return json.NewEncoder(stdout).Encode(Pending(entries, prev))
-	case "protocol-entries":
+	case "entries":
+		// One line per entry: the name, the version, and the program that
+		// the catalog builds ("" when it builds none).
 		entries, err := loadEntries(*root, nil)
 		if err != nil {
 			return err
 		}
 		for _, e := range entries {
-			if e.Manifest.Protocol() == ProtocolConnector {
-				fmt.Fprintf(stdout, "%s\t%s\n", e.Manifest.Name, e.Manifest.Events.Command)
-			}
+			fmt.Fprintf(stdout, "%s\t%s\t%s\n", e.Manifest.Name, e.Manifest.Version, e.Manifest.CatalogBin())
 		}
 		return nil
 	case "keygen":

@@ -10,6 +10,10 @@ import (
 	"go.mau.fi/whatsmeow"
 )
 
+// DownloadTempPrefix names the temp file of a download. It is next to the
+// target, so the final rename stays on one file system.
+const DownloadTempPrefix = ".whatsapp-cli-download-"
+
 func MediaTypeFromString(mediaType string) (whatsmeow.MediaType, error) {
 	switch strings.ToLower(strings.TrimSpace(mediaType)) {
 	case "image":
@@ -46,7 +50,7 @@ func (c *Client) DownloadMediaToFile(ctx context.Context, directPath string, enc
 		return 0, fmt.Errorf("create output dir: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp(filepath.Dir(targetPath), ".whatsapp-cli-download-*")
+	tmpFile, err := os.CreateTemp(filepath.Dir(targetPath), DownloadTempPrefix+"*")
 	if err != nil {
 		return 0, fmt.Errorf("create temp file: %w", err)
 	}

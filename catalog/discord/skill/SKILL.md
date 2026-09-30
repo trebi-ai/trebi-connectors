@@ -16,8 +16,9 @@ Binary: `discord-cli`.
 
 ## Auth
 
-Token resolution order: `--token` flag → `DISCORD_TOKEN` env → `DISCORD_BOT_TOKEN` env → `~/.cli-tools/discord-cli/config.json`.
-Auto-loads `.env` from CWD (walks up parents).
+Token resolution order on its own: `--token` flag → `DISCORD_TOKEN` env → `DISCORD_BOT_TOKEN` env → the nearest `.env` from CWD up → `~/.cli-tools/discord-cli/config.json`.
+
+In Trebi (`TREBI_STATE_DIR` is set), the token comes only from the `DISCORD_TOKEN` input of the connection. `--token` and `auth set` fail in Trebi mode. Change the token in the Trebi connection settings.
 
 ```bash
 discord-cli auth set <token>       # save token to ~/.cli-tools/discord-cli/config.json
@@ -151,4 +152,4 @@ discord-cli --json ...                # JSON output (alias: -j)
 
 ## As a Trebi channel
 
-`discord-cli serve` speaks the `trebi-connector/1` protocol on stdin and stdout. The Trebi daemon starts it and gives the token in `DISCORD_TOKEN`. Do not run it by hand, except `discord-cli serve --sandbox`, which serves fake rooms for tests. The bot needs the Message Content intent.
+`discord-cli serve` speaks the `trebi-connector/1` protocol on stdin and stdout. The Trebi daemon starts it and gives the token in `DISCORD_TOKEN`. Do not run it by hand, except `discord-cli serve --sandbox`, which runs the same adapter over a fake Discord for tests. The bot needs the Message Content intent.

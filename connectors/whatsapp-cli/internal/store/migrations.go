@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -18,6 +19,19 @@ var schemaMigrations = []migration{
 	{version: 1, name: "core schema", up: migrateCoreSchema},
 	{version: 2, name: "messages display_text column", up: migrateMessagesDisplayText},
 	{version: 3, name: "messages fts", up: migrateMessagesFTS},
+	{version: 4, name: "relative media paths", up: migrateRelativeMediaPaths},
+}
+
+// SchemaVersion is the newest schema that this program knows. The store
+// keeps it in PRAGMA user_version.
+var SchemaVersion = schemaMigrations[len(schemaMigrations)-1].version
+
+// NewerSchemaError is a store from a newer version of the program. The
+// program does not change it.
+type NewerSchemaError struct{ Found, Known int }
+
+func (e *NewerSchemaError) Error() string {
+	return fmt.Sprintf("the store has schema version %d, but this whatsapp-cli knows only up to %d; update whatsapp-cli", e.Found, e.Known)
 }
 
 func (d *DB) ensureSchema() error {
@@ -38,15 +52,25 @@ func (d *DB) ensureSchema() error {
 	}
 	defer rows.Close()
 
+	found := 0
 	for rows.Next() {
 		var version int
 		if err := rows.Scan(&version); err != nil {
 			return fmt.Errorf("scan applied migration: %w", err)
 		}
 		applied[version] = true
+		found = max(found, version)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate applied migrations: %w", err)
+	}
+	rows.Close()
+	var userVersion int
+	if err := d.sql.QueryRow(`PRAGMA user_version`).Scan(&userVersion); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	if found = max(found, userVersion); found > SchemaVersion {
+		return &NewerSchemaError{Found: found, Known: SchemaVersion}
 	}
 
 	for _, m := range schemaMigrations {
@@ -64,6 +88,10 @@ func (d *DB) ensureSchema() error {
 		); err != nil {
 			return fmt.Errorf("record migration %03d: %w", m.version, err)
 		}
+	}
+
+	if _, err := d.sql.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
+		return fmt.Errorf("write schema version: %w", err)
 	}
 
 	// The FTS migration runs once, so a reopened DB must probe the table.
@@ -250,6 +278,44 @@ func migrateMessagesFTS(d *DB) error {
 	}
 
 	d.ftsEnabled = true
+	return nil
+}
+
+// migrateRelativeMediaPaths makes each media path inside the store folder
+// relative to it.
+func migrateRelativeMediaPaths(d *DB) error {
+	dir, err := filepath.Abs(filepath.Dir(d.path))
+	if err != nil {
+		return err
+	}
+	rows, err := d.sql.Query(`SELECT rowid, local_path FROM messages WHERE local_path LIKE '/%'`)
+	if err != nil {
+		return err
+	}
+	type change struct {
+		id   int64
+		path string
+	}
+	var changes []change
+	for rows.Next() {
+		var c change
+		if err := rows.Scan(&c.id, &c.path); err != nil {
+			rows.Close()
+			return err
+		}
+		if rel, err := filepath.Rel(dir, c.path); err == nil && filepath.IsLocal(rel) {
+			changes = append(changes, change{c.id, rel})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, c := range changes {
+		if _, err := d.sql.Exec(`UPDATE messages SET local_path = ? WHERE rowid = ?`, c.path, c.id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

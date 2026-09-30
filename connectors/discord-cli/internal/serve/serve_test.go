@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/fakediscord"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 	"github.com/trebi-ai/trebi-connectors/sdk/sdktest"
 )
@@ -293,9 +294,116 @@ func TestRevokedToken(t *testing.T) {
 	}
 }
 
-func TestSandboxDeclaresTheSameFeatures(t *testing.T) {
-	_, res := start(t, sdk.NewSandbox(sdk.SandboxConfig{Adapter: sdk.AdapterInfo{Name: Name}, Events: Events, Features: Features, Limits: Limits}))
-	if strings.Join(res.Features, ",") != strings.Join(Features, ",") || len(res.Login) != 0 {
-		t.Fatalf("sandbox: %+v", res)
+func TestMissingToken(t *testing.T) {
+	a, err := New(client.New(""), "1.2.3", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, res := start(t, a)
+	if len(res.Features) != len(Features) {
+		t.Fatalf("initialize: %+v", res)
+	}
+	st, err := c.WaitNote(sdk.MethodStatus)
+	if err != nil || !strings.Contains(string(st.Params), `"reason":"missing_input"`) || !strings.Contains(string(st.Params), "DISCORD_TOKEN") {
+		t.Fatalf("status %s %v", st.Params, err)
+	}
+	if err := c.Call(sdk.MethodPing, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSandbox runs the adapter over the fake Discord of serve --sandbox.
+func TestSandbox(t *testing.T) {
+	fake := fakediscord.Start()
+	t.Cleanup(fake.Close)
+	cl := client.New("any")
+	cl.BaseURL = fake.URL()
+	state := t.TempDir()
+	a, err := New(cl, "1.2.3", state, WithGatewayURL(fake.GatewayURL()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := sdktest.Start(a, sdk.WithStateDir(state))
+	t.Cleanup(func() { c.Close() }) //nolint:errcheck // the test checks its own errors
+	res, err := c.Initialize(sdk.InitializeParams{})
+	if err != nil || res.Account == nil || res.Account.ID != fakediscord.BotID {
+		t.Fatalf("initialize %+v: %v", res, err)
+	}
+	if st, err := c.WaitNote(sdk.MethodStatus); err != nil || !strings.Contains(string(st.Params), `"connected"`) {
+		t.Fatalf("status %s %v", st.Params, err)
+	}
+	var rooms sdk.RoomPage
+	if err := c.Call(sdk.MethodRoomsList, sdk.RoomQuery{Limit: 10}, &rooms); err != nil || len(rooms.Rooms) != 2 || rooms.Rooms[0].Parent != "Sandbox" {
+		t.Fatalf("rooms %+v: %v", rooms, err)
+	}
+	var dm sdk.RoomResult
+	if err := c.Call(sdk.MethodRoomsOpen, sdk.RoomOpenParams{User: fakediscord.AnaID}, &dm); err != nil || dm.Room.ID != fakediscord.DMID || dm.Room.Name != "Ana" {
+		t.Fatalf("rooms/open %+v: %v", dm, err)
+	}
+
+	var sent sdk.SendResult
+	if err := c.Call(sdk.MethodMessagesSend, sdk.SendParams{Room: fakediscord.GeneralID, Text: "hello", Format: "markdown", Key: "k1"}, &sent); err != nil {
+		t.Fatal(err)
+	}
+	var ev sdk.Event
+	n, err := c.WaitNote(sdk.MethodEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(n.Params, &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.ID != sent.MessageID || ev.Sender == nil || !ev.Sender.Self || ev.Room.Name != "general" {
+		t.Fatalf("self event %s", n.Params)
+	}
+
+	var th sdk.ThreadResult
+	if err := c.Call(sdk.MethodThreadsCreate, sdk.CreateThreadParams{Room: fakediscord.GeneralID, FromMessage: sent.MessageID, Title: "Follow up"}, &th); err != nil || th.Thread.ID != sent.MessageID {
+		t.Fatalf("threads/create %+v: %v", th, err)
+	}
+	var threads sdk.ThreadPage
+	if err := c.Call(sdk.MethodThreadsList, sdk.ThreadQuery{Room: fakediscord.GeneralID, Limit: 10}, &threads); err != nil || len(threads.Threads) != 2 {
+		t.Fatalf("threads %+v: %v", threads, err)
+	}
+	file := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(file, []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []struct {
+		method string
+		params any
+	}{
+		{sdk.MethodMessagesEdit, sdk.EditParams{Room: fakediscord.GeneralID, MessageID: sent.MessageID, Text: "edited"}},
+		{sdk.MethodMessagesSeen, sdk.SeenParams{Room: fakediscord.GeneralID, MessageID: sent.MessageID}},
+		{sdk.MethodReactionsAdd, sdk.ReactionParams{Room: fakediscord.GeneralID, MessageID: sent.MessageID, Emoji: "👍"}},
+		{sdk.MethodTyping, sdk.TypingParams{Room: fakediscord.GeneralID}},
+		{sdk.MethodMessagesSend, sdk.SendParams{Room: fakediscord.GeneralID, Thread: th.Thread.ID, Text: "in thread", Format: "markdown", Key: "k2"}},
+		{sdk.MethodMessagesSend, sdk.SendParams{Room: fakediscord.DMID, Text: "file", Format: "markdown", Key: "k3", Attachments: []sdk.Attachment{{Path: file}}}},
+	} {
+		if err := c.Call(call.method, call.params, nil); err != nil {
+			t.Fatalf("%s: %v", call.method, err)
+		}
+	}
+	var page sdk.EventPage
+	if err := c.Call(sdk.MethodMessagesHistory, sdk.HistoryQuery{Room: fakediscord.GeneralID, Limit: 10}, &page); err != nil || len(page.Events) != 1 || page.Events[0].Text != "edited" {
+		t.Fatalf("history %+v: %v", page, err)
+	}
+	var replay sdk.ReplayResult
+	if err := c.Call(sdk.MethodEventsReplay, sdk.ReplayParams{After: sent.MessageID}, &replay); err != nil || !replay.Complete || len(replay.Events) != 2 {
+		t.Fatalf("replay %+v: %v", replay, err)
+	}
+	for _, tc := range []struct {
+		method string
+		params any
+		code   string
+	}{
+		{sdk.MethodMessagesSend, sdk.SendParams{Room: "1", Text: "x", Key: "k4"}, sdk.CodeNotFound},
+		{sdk.MethodTyping, sdk.TypingParams{Room: "1"}, sdk.CodeNotFound},
+		{sdk.MethodRoomsGet, sdk.RoomParams{Room: "1"}, sdk.CodeNotFound},
+		{sdk.MethodMessagesSend, map[string]any{"room": 5}, sdk.CodeInvalid},
+	} {
+		if err := c.Call(tc.method, tc.params, nil); sdk.CodeOf(err) != tc.code {
+			t.Errorf("%s %v: got %v, want %s", tc.method, tc.params, err, tc.code)
+		}
 	}
 }

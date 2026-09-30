@@ -112,6 +112,7 @@ type config struct {
 	in       io.Reader
 	out      io.Writer
 	stateDir string
+	cacheDir string
 	log      *slog.Logger
 	maxSent  int
 }
@@ -124,6 +125,9 @@ func WithIO(r io.Reader, w io.Writer) Option {
 // WithStateDir replaces TREBI_STATE_DIR. An empty dir keeps the dedupe
 // store in memory.
 func WithStateDir(dir string) Option { return func(c *config) { c.stateDir = dir } }
+
+// WithCacheDir replaces TREBI_CACHE_DIR.
+func WithCacheDir(dir string) Option { return func(c *config) { c.cacheDir = dir } }
 
 // WithLogger replaces the stderr logger.
 func WithLogger(l *slog.Logger) Option { return func(c *config) { c.log = l } }
@@ -142,12 +146,18 @@ const stopWait = 3 * time.Second
 // Serve runs the protocol on stdin and stdout until shutdown, the end of
 // stdin, or the end of ctx.
 func Serve(ctx context.Context, a Adapter, opts ...Option) error {
-	cfg := config{in: os.Stdin, out: os.Stdout, stateDir: os.Getenv("TREBI_STATE_DIR"), maxSent: defaultMaxSent}
+	env, _ := FromEnv()
+	cfg := config{in: os.Stdin, out: os.Stdout, stateDir: env.StateDir, cacheDir: env.CacheDir, maxSent: defaultMaxSent}
 	for _, o := range opts {
 		o(&cfg)
 	}
 	if cfg.log == nil {
 		cfg.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	}
+	if fu, ok := a.(FolderUser); ok {
+		if err := fu.UseFolders(Trebi{StateDir: cfg.stateDir, CacheDir: cfg.cacheDir}); err != nil {
+			return fmt.Errorf("use folders: %w", err)
+		}
 	}
 	sent, err := newSentStore(cfg.stateDir, cfg.maxSent)
 	if err != nil {
@@ -174,6 +184,7 @@ type session struct {
 	queue    [][]byte
 	flows    map[string]*flow
 	nflows   int
+	missing  *MissingInput // set when Initialize reports a missing input
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -301,7 +312,8 @@ func (s *session) initialize(m inMsg) {
 	ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodInitialize))
 	defer cancel()
 	res, err := s.a.Initialize(ctx, p)
-	if err != nil {
+	mi, missing := asMissingInput(err)
+	if err != nil && !missing {
 		s.reply(m.ID, nil, AsError(err))
 		return
 	}
@@ -314,6 +326,9 @@ func (s *session) initialize(m inMsg) {
 	res.Features = orEmpty(res.Features)
 	res.Login = orEmpty(res.Login)
 	s.mu.Lock()
+	if missing {
+		s.missing = &mi
+	}
 	s.init = &res
 	s.features = map[string]bool{}
 	for _, f := range res.Features {
@@ -346,8 +361,9 @@ func (s *session) initialized() {
 	}
 	s.queue = nil
 	s.ready = true
+	missing := s.missing != nil
 	s.mu.Unlock()
-	if r, ok := s.a.(Runner); ok {
+	if r, ok := s.a.(Runner); ok && !missing {
 		s.wg.Add(1)
 		go func() { // ends when Run returns; Run ends with s.ctx
 			defer s.wg.Done()
@@ -360,6 +376,12 @@ func (s *session) initialized() {
 
 // status is the session state now.
 func (s *session) status(ctx context.Context) Status {
+	s.mu.Lock()
+	mi := s.missing
+	s.mu.Unlock()
+	if mi != nil {
+		return Status{State: StateAuthRequired, Reason: ReasonMissingInput, Message: mi.Error()}
+	}
 	sr, ok := s.a.(StatusReporter)
 	if !ok {
 		s.mu.Lock()
@@ -384,10 +406,14 @@ func (s *session) has(feature string) bool {
 
 func (s *session) request(m inMsg) {
 	s.mu.Lock()
-	started := s.init != nil
+	started, mi := s.init != nil, s.missing
 	s.mu.Unlock()
 	if !started {
 		s.reply(m.ID, nil, Invalid("send initialize first"))
+		return
+	}
+	if mi != nil && m.Method != MethodAuthStatus {
+		s.reply(m.ID, nil, AuthRequired(mi.Error()))
 		return
 	}
 	if f := FeatureOf(m.Method); f != "" && !s.has(f) {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -43,8 +42,13 @@ func execute(args []string) error {
 		Version:       version,
 	}
 	rootCmd.SetVersionTemplate("whatsapp-cli {{.Version}}\n")
+	rootCmd.PersistentPreRunE = func(*cobra.Command, []string) error {
+		dir, err := config.StoreDir(flags.storeDir)
+		flags.storeDir = dir
+		return err
+	}
 
-	rootCmd.PersistentFlags().StringVar(&flags.storeDir, "store", "", "store directory (default: $TREBI_STATE_DIR, $WHATSAPP_CLI_STORE_DIR, or ~/.whatsapp-cli)")
+	rootCmd.PersistentFlags().StringVar(&flags.storeDir, "store", "", "store directory (default: $WHATSAPP_CLI_STORE_DIR or ~/.whatsapp-cli; Trebi sets it with $TREBI_STATE_DIR)")
 	rootCmd.PersistentFlags().BoolVar(&flags.asJSON, "json", false, "output JSON instead of human-readable text")
 	rootCmd.PersistentFlags().DurationVar(&flags.timeout, "timeout", 5*time.Minute, "command timeout (non-sync commands)")
 
@@ -70,33 +74,32 @@ func execute(args []string) error {
 	return nil
 }
 
+// resolveStoreDir returns the store folder that PersistentPreRunE chose.
 func resolveStoreDir(flags *rootFlags) string {
-	storeDir := flags.storeDir
-	if storeDir == "" {
-		storeDir = config.DefaultStoreDir()
-	}
-	storeDir, _ = filepath.Abs(storeDir)
-	return storeDir
+	return flags.storeDir
 }
 
 func newApp(ctx context.Context, flags *rootFlags, needLock bool, allowUnauthed bool) (*app.App, *lock.Lock, error) {
-	storeDir := resolveStoreDir(flags)
+	return openApp(app.Options{
+		StoreDir:      resolveStoreDir(flags),
+		Version:       version,
+		JSON:          flags.asJSON,
+		AllowUnauthed: allowUnauthed,
+	}, needLock)
+}
 
+// openApp opens the store of opts, with the store lock when needLock is set.
+func openApp(opts app.Options, needLock bool) (*app.App, *lock.Lock, error) {
 	var lk *lock.Lock
 	if needLock {
 		var err error
-		lk, err = lock.Acquire(storeDir)
+		lk, err = lock.Acquire(opts.StoreDir)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	a, err := app.New(app.Options{
-		StoreDir:      storeDir,
-		Version:       version,
-		JSON:          flags.asJSON,
-		AllowUnauthed: allowUnauthed,
-	})
+	a, err := app.New(opts)
 	if err != nil {
 		if lk != nil {
 			_ = lk.Release()

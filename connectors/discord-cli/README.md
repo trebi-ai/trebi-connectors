@@ -14,13 +14,31 @@ go build -o discord-cli .
 
 Requires Go 1.25+.
 
-## Auth
+## Use on its own
 
-The CLI resolves the bot token in this order:
+With no `TREBI_STATE_DIR` in the env, `discord-cli` is a normal CLI. It finds the bot token in this order:
 
-1. `--token` flag
-2. `DISCORD_TOKEN` env var, then `DISCORD_BOT_TOKEN` (a `.env` file in the current or any parent directory is auto-loaded)
-3. `~/.cli-tools/discord-cli/config.json` (written by `auth set`)
+1. The `--token` flag.
+2. The env var `DISCORD_TOKEN`, then `DISCORD_BOT_TOKEN`.
+3. The nearest `.env` file, from the current folder up. It reads `DISCORD_TOKEN`, then `DISCORD_BOT_TOKEN`. It does not change the env.
+4. `~/.cli-tools/discord-cli/config.json`, which `auth set` writes.
+
+`auth show` prints the token and the place that it came from.
+
+## Use with Trebi
+
+Trebi starts `discord-cli serve` with `TREBI_STATE_DIR` set. This is Trebi mode. The Trebi values win over everything:
+
+- The token comes only from the `DISCORD_TOKEN` input of the connection. The CLI reads no `.env` file, no config file, and no `DISCORD_BOT_TOKEN`.
+- `--token` fails with "Trebi sets this value".
+- `auth set` fails with "Set this value in Trebi". Change the token in the connection settings.
+- With no token, `serve` starts and sends `status` `auth_required` with reason `missing_input`, so Trebi shows the setup form.
+- `serve` keeps its state in `TREBI_STATE_DIR`: the send dedupe file and the known DMs (`discord-dms.json`).
+- `serve --sandbox` runs the same adapter over a fake Discord in the same process, with fixed guilds, channels, and a DM. It needs no account. Outside Trebi it uses a fixed fake token.
+
+The rules for all connector programs are in "Adapter folder contract" in `../../CLAUDE.md`.
+
+## Auth commands
 
 ```bash
 # Save token to ~/.cli-tools/discord-cli/config.json (mode 0600)
@@ -106,7 +124,9 @@ main.go               # urfave/cli root, wires subcommands and resolves token
 cmd/                  # one file per noun (auth, message, reaction, thread, channel, server, listen)
 internal/client/      # Discord REST client (HTTP + multipart upload) and types
 internal/gateway/     # Discord Gateway WebSocket client (heartbeat, IDENTIFY, dispatch loop)
-internal/config/      # ~/.cli-tools/discord-cli/config.json + .env loader
+internal/config/      # the token: Trebi mode or the standalone order
+internal/serve/       # the trebi-connector/1 adapter of `serve`
+internal/fakediscord/ # the fake REST API and gateway of `serve --sandbox`
 scripts/build.sh      # build with version metadata into ./build/
 ```
 

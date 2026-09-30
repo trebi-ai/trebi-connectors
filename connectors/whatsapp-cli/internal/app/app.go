@@ -17,6 +17,7 @@ import (
 
 type WAClient interface {
 	Close()
+	CloseStore() error
 	IsAuthed() bool
 	IsConnected() bool
 	Connect(ctx context.Context, opts wa.ConnectOptions) error
@@ -57,6 +58,7 @@ type Options struct {
 	Version       string
 	JSON          bool
 	AllowUnauthed bool
+	WA            WAClient // nil opens session.db on OpenWA
 }
 
 type App struct {
@@ -80,7 +82,9 @@ func New(opts Options) (*App, error) {
 		return nil, err
 	}
 
-	return &App{opts: opts, db: db}, nil
+	a := &App{opts: opts, wa: opts.WA, db: db}
+	a.removeDownloadTemps()
+	return a, nil
 }
 
 func (a *App) OpenWA() error {
@@ -99,12 +103,17 @@ func (a *App) OpenWA() error {
 	return nil
 }
 
+// Close disconnects and closes session.db and whatsapp-cli.db.
 func (a *App) Close() {
 	if a.wa != nil {
-		a.wa.Close()
+		if err := a.wa.CloseStore(); err != nil {
+			fmt.Fprintf(os.Stderr, "close session store: %v\n", err)
+		}
 	}
 	if a.db != nil {
-		_ = a.db.Close()
+		if err := a.db.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close store: %v\n", err)
+		}
 	}
 }
 

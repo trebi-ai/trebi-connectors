@@ -6,38 +6,51 @@ import (
 	"testing"
 )
 
-func TestDefaultStoreDir(t *testing.T) {
+func TestStoreDir(t *testing.T) {
 	t.Run("trebi state dir wins", func(t *testing.T) {
-		t.Setenv(EnvStateDir, "/trebi/state")
+		t.Setenv("TREBI_STATE_DIR", "/trebi/state")
 		t.Setenv(EnvStoreDir, "/custom/store/path")
-		if got := DefaultStoreDir(); got != "/trebi/state" {
-			t.Errorf("DefaultStoreDir() = %q, want %q", got, "/trebi/state")
+		if got, err := StoreDir(""); err != nil || got != "/trebi/state" {
+			t.Errorf("StoreDir() = %q, %v, want /trebi/state", got, err)
+		}
+		if _, err := StoreDir("/flag"); err == nil || err.Error() != "--store: Trebi sets this value" {
+			t.Errorf("StoreDir(flag) in Trebi mode: %v", err)
 		}
 	})
 
-	t.Run("env var overrides default", func(t *testing.T) {
-		t.Setenv(EnvStateDir, "")
+	t.Run("flag, then env, then home", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("TREBI_STATE_DIR", "")
 		t.Setenv(EnvStoreDir, "/custom/store/path")
-		got := DefaultStoreDir()
-		if got != "/custom/store/path" {
-			t.Errorf("DefaultStoreDir() = %q, want %q", got, "/custom/store/path")
+		if got, _ := StoreDir("/flag"); got != "/flag" {
+			t.Errorf("StoreDir(flag) = %q", got)
 		}
-	})
-
-	t.Run("falls back to ~/.whatsapp-cli when env unset", func(t *testing.T) {
-		t.Setenv(EnvStateDir, "")
+		if got, _ := StoreDir(""); got != "/custom/store/path" {
+			t.Errorf("StoreDir() = %q, want the env value", got)
+		}
 		t.Setenv(EnvStoreDir, "")
-		got := DefaultStoreDir()
-		home, _ := os.UserHomeDir()
-		want := filepath.Join(home, ".whatsapp-cli")
-		if got != want {
-			t.Errorf("DefaultStoreDir() = %q, want %q", got, want)
+		if got, _ := StoreDir(""); got != filepath.Join(home, ".whatsapp-cli") {
+			t.Errorf("StoreDir() = %q, want the home default", got)
 		}
 	})
+}
 
-	t.Run("env var constant is WHATSAPP_CLI_STORE_DIR", func(t *testing.T) {
-		if EnvStoreDir != "WHATSAPP_CLI_STORE_DIR" {
-			t.Errorf("EnvStoreDir = %q, want %q", EnvStoreDir, "WHATSAPP_CLI_STORE_DIR")
-		}
-	})
+func TestDeviceSettings(t *testing.T) {
+	t.Setenv(EnvDeviceLabel, "Laptop")
+	t.Setenv(EnvDevicePlatform, "SAFARI")
+	t.Setenv(EnvDeviceName, "Office")
+
+	t.Setenv("TREBI_STATE_DIR", "")
+	if d := DeviceSettings(); d.Label != "Laptop" || d.Platform != "SAFARI" {
+		t.Errorf("standalone: %+v", d)
+	}
+	t.Setenv("TREBI_STATE_DIR", t.TempDir())
+	if d := DeviceSettings(); d.Label != "Office" || d.Platform != "" {
+		t.Errorf("Trebi mode: %+v", d)
+	}
+	os.Unsetenv(EnvDeviceName) //nolint:errcheck // t.Setenv restores it
+	if d := DeviceSettings(); d.Label != "" {
+		t.Errorf("Trebi mode reads a standalone name: %+v", d)
+	}
 }

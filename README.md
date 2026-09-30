@@ -1,6 +1,6 @@
 # trebi-connectors
 
-Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the daemon. This repository holds the public catalog, the Go SDK for the `trebi-connector/1` protocol, and the source of the CLIs that Trebi builds.
+Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the daemon. This repository holds the public catalog, the Go SDK for the `trebi-connector/1` protocol, and the source of the CLIs that Trebi builds. `CLAUDE.md` has the rules for an entry and the adapter folder contract. `.claude/skills/connector-authoring/SKILL.md` has the steps to build a connector program.
 
 ## Layout
 
@@ -18,11 +18,11 @@ Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the 
 1. Add or edit `catalog/<name>/trebi-connector.yaml`. The folder name is the `name` field.
 2. Put the skill in `catalog/<name>/skill/SKILL.md`. This is the only copy of the skill, also for a CLI in `connectors/`.
 3. Bump `version` for each change. A published version is immutable.
-4. Run `scripts/validate.sh`. Add `--conformance` to check the `serve --sandbox` command of each protocol entry.
+4. Run `scripts/validate.sh`. Add `--conformance` to run `trebi connector conformance --manifest catalog/<name>` on each entry. It needs a `trebi` with that command on `PATH`.
 
 ## Publish flow
 
-- A PR that changes `catalog/` or `schema/` runs `.github/workflows/catalog.yml`. It validates every entry and runs the conformance check on each protocol entry.
+- A PR that changes `catalog/` or `schema/` runs `.github/workflows/catalog.yml`. It validates every entry. It downloads the newest public `trebi` release, checks it against `SHA256SUMS`, and runs the conformance check on each entry.
 - A push to `main` runs the same workflow and publishes to the R2 bucket `trebi-catalog`, served at `https://catalog.trebi.ai/v1/`. The job runs in the environment `catalog-publish`.
 - The layout in the bucket is `v1/index.json`, `v1/index.json.sig`, `v1/snapshots/<name>/<version>.tar.gz`, `v1/bin/<name>/<version>/<bin>_<os>_<arch>.tar.gz`, and `v1/icons/<name>.svg`.
 - A snapshot is a deterministic tar.gz of the entry folder. `publish.sh` never writes a snapshot key again. If the key exists with other bytes, the run fails.

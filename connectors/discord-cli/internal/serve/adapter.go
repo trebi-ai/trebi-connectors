@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
@@ -92,9 +93,16 @@ var (
 	_ sdk.Editor         = (*Adapter)(nil)
 )
 
+// Option changes the adapter.
+type Option func(*Adapter)
+
+// WithGatewayURL replaces the Discord gateway URL (the sandbox fake).
+func WithGatewayURL(u string) Option { return func(a *Adapter) { a.dialURL = u } }
+
 // New builds the adapter. stateDir keeps the DM rooms; empty keeps them in
-// memory. The client gets NoRetry, so a 429 goes to the daemon.
-func New(rest *client.Client, version, stateDir string) (*Adapter, error) {
+// memory. The client gets NoRetry, so a 429 goes to the daemon. A client
+// with no token makes Initialize report the missing input.
+func New(rest *client.Client, version, stateDir string, opts ...Option) (*Adapter, error) {
 	rest.NoRetry = true
 	a := &Adapter{
 		rest: rest, version: version, stateDir: stateDir,
@@ -102,6 +110,9 @@ func New(rest *client.Client, version, stateDir string) (*Adapter, error) {
 		guilds:   map[string]string{},
 		channels: map[string]client.Channel{},
 		msgChan:  map[string]string{},
+	}
+	for _, o := range opts {
+		o(a)
 	}
 	if stateDir == "" {
 		return a, nil
@@ -127,6 +138,9 @@ func (a *Adapter) Initialize(ctx context.Context, _ sdk.InitializeParams) (sdk.I
 		Events:   Events,
 		Features: Features,
 		Limits:   Limits,
+	}
+	if a.rest.Token == "" {
+		return res, sdk.MissingInput{Name: config.EnvToken, Label: config.TokenLabel}
 	}
 	var me client.User
 	err := a.rest.DoJSON(ctx, "GET", "/users/@me", nil, &me)
@@ -338,10 +352,11 @@ func (a *Adapter) activeSince(ctx context.Context, cursor uint64) ([]string, err
 	dms := slices.Clone(a.dms)
 	a.mu.Unlock()
 	for _, dm := range dms {
-		ch, err := a.channel(ctx, dm.ID)
-		if err != nil {
+		var ch client.Channel // not from the cache: its last_message_id is old
+		if err := a.rest.DoJSON(ctx, "GET", "/channels/"+dm.ID, nil, &ch); err != nil {
 			continue
 		}
+		a.cache(ch)
 		if newer(ch) {
 			out = append(out, ch.ID)
 		}

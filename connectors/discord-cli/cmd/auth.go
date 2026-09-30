@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -42,35 +43,23 @@ func authSet(c *cli.Context) error {
 	if token == "" {
 		return fmt.Errorf("usage: discord-cli auth set <token>")
 	}
-	if err := config.Save(token); err != nil {
+	if err := config.Save(token); errors.Is(err, config.ErrSetInTrebi) {
+		return err
+	} else if err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 	fmt.Fprintln(os.Stdout, "Token saved to", config.Path())
 	return nil
 }
 
+// authShow prints the token that the other commands use.
 func authShow(c *cli.Context) error {
-	token := c.String("token")
-	source := "flag"
-
-	if token == "" {
-		token = os.Getenv("DISCORD_BOT_TOKEN")
-		source = "env (DISCORD_BOT_TOKEN)"
-	}
-	if token == "" {
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		token = cfg.Token
-		source = "config (" + config.Path() + ")"
-	}
-	if token == "" {
+	s := settingsFromCtx(c)
+	if s.Token == "" {
 		fmt.Fprintln(os.Stdout, "No token configured")
 		return nil
 	}
-
-	fmt.Fprintf(os.Stdout, "Token:  %s\nSource: %s\n", maskToken(token), source)
+	fmt.Fprintf(os.Stdout, "Token:  %s\nSource: %s\n", maskToken(s.Token), s.Source)
 	return nil
 }
 

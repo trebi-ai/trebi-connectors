@@ -5,7 +5,7 @@ description: >
   Use when the user wants to send WhatsApp messages (text or files), sync/fetch
   latest messages, search message history, manage groups/chats/contacts, download
   media, backfill older history, or stream live events. Authenticates once via QR;
-  session + local SQLite store under ~/.whatsapp-cli.
+  session + local SQLite store under ~/.whatsapp-cli, or in the connection folder in Trebi.
   Triggers: "send WhatsApp", "check my WhatsApp", "sync WhatsApp", "latest messages",
   "WhatsApp group", "message someone on WhatsApp", "pull WhatsApp history", "whatsapp-cli".
 ---
@@ -33,7 +33,7 @@ Not affiliated with WhatsApp.
 
 - Binary installed: `whatsapp-cli` on PATH (Trebi installs it from the catalog, or run `connectors/whatsapp-cli/scripts/build.sh`)
 - Initial auth: `whatsapp-cli auth` (scan QR once)
-- Store directory: `~/.whatsapp-cli` (override with `--store DIR` or `WHATSAPP_CLI_STORE_DIR`)
+- Store directory: `~/.whatsapp-cli` (override with `--store DIR` or `WHATSAPP_CLI_STORE_DIR`). In Trebi, the connection sets the store. Do not pass `--store` in a Trebi run: it fails with "Trebi sets this value".
 - Prefer `--json` when parsing output
 
 ## Global flags
@@ -47,7 +47,7 @@ Place global flags before the subcommand (cobra style also accepts them after):
 | `--timeout D` | Timeout for non-sync commands (default `5m`) |
 | `-v` / `--version` | Print version |
 
-Env: `WHATSAPP_CLI_STORE_DIR`, `WHATSAPP_CLI_DEVICE_LABEL`, `WHATSAPP_CLI_DEVICE_PLATFORM`.
+Env on its own: `WHATSAPP_CLI_STORE_DIR`, `WHATSAPP_CLI_DEVICE_LABEL`, `WHATSAPP_CLI_DEVICE_PLATFORM`. In Trebi (`TREBI_STATE_DIR` is set), the CLI reads none of them: the store is `TREBI_STATE_DIR` and the device name is the `WA_DEVICE_NAME` input.
 
 ## Auth & connection
 
@@ -290,8 +290,8 @@ whatsapp-cli --json chats list --limit 100000 \
 - Source: `connectors/whatsapp-cli/` in `github.com/trebi-ai/trebi-connectors`
 - Build: `connectors/whatsapp-cli/scripts/build.sh` → `connectors/whatsapp-cli/build/whatsapp-cli`
 - Binary name: `whatsapp-cli`. Trebi installs it into the connector folder from the catalog.
-- Store: `$TREBI_STATE_DIR` when Trebi runs the CLI, else `$WHATSAPP_CLI_STORE_DIR`, else `~/.whatsapp-cli`
-- Trebi channel: `whatsapp-cli serve` speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts it. While it runs, the send commands forward to it. `serve --sandbox` serves fake rooms for tests.
+- Store: `$TREBI_STATE_DIR` when Trebi runs the CLI (then `--store` is an error), else `--store`, `$WHATSAPP_CLI_STORE_DIR`, or `~/.whatsapp-cli`
+- Trebi channel: `whatsapp-cli serve` speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts it. While it runs, the send commands forward to it. `serve --sandbox` runs the same adapter over a fake WhatsApp for tests.
 - Module: `github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli` (cobra, not urfave/cli)
 
 When in doubt: `whatsapp-cli <command> --help`.
