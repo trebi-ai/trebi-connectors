@@ -808,7 +808,7 @@ func deriveFeatures(a Adapter, declared []string) []string {
 	if len(declared) == 0 {
 		var out []string
 		for _, f := range Features() {
-			if impl[f] && f != FeatureAttachmentsIn && f != FeatureAttachmentsOut {
+			if impl[f] && f != FeatureAttachmentsIn && f != FeatureAttachmentsOut && f != FeatureReplies {
 				out = append(out, f)
 			}
 		}
@@ -824,7 +824,8 @@ func deriveFeatures(a Adapter, declared []string) []string {
 }
 
 // implements reports whether a has the interface of a feature. The
-// attachment features have no method, so any adapter may declare them.
+// attachment features and replies have no method, so any adapter may
+// declare them.
 func implements(a Adapter, feature string) bool {
 	var ok bool
 	switch feature {
@@ -848,7 +849,7 @@ func implements(a Adapter, feature string) bool {
 		_, ok = a.(Reactor)
 	case FeatureEdit:
 		_, ok = a.(Editor)
-	case FeatureAttachmentsIn, FeatureAttachmentsOut:
+	case FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies:
 		ok = true
 	}
 	return ok

@@ -171,9 +171,9 @@ func TestDeriveFeatures(t *testing.T) {
 	if got := deriveFeatures(a, nil); len(got) != 10 || got[0] != FeatureRoomsList {
 		t.Fatalf("derived %v", got)
 	}
-	got := deriveFeatures(struct{ Adapter }{a}, []string{FeatureTyping, FeatureAttachmentsIn, "bogus"})
-	if strings.Join(got, ",") != FeatureAttachmentsIn {
-		t.Fatalf("a bare adapter keeps only attachment features, got %v", got)
+	got := deriveFeatures(struct{ Adapter }{a}, []string{FeatureTyping, FeatureAttachmentsIn, FeatureReplies, "bogus"})
+	if strings.Join(got, ",") != FeatureAttachmentsIn+","+FeatureReplies {
+		t.Fatalf("a bare adapter keeps only the features with no method, got %v", got)
 	}
 }
 
@@ -205,6 +205,7 @@ func fixtureTypes() map[string]func() any {
 		"empty.result":             func() any { return &Empty{} },
 		"event.message":            func() any { return &Event{} },
 		"event.message.thread":     func() any { return &Event{} },
+		"event.message.bot":        func() any { return &Event{} },
 		"event.reaction":           func() any { return &Event{} },
 		"status.connected":         func() any { return &Status{} },
 		"status.auth_required":     func() any { return &Status{} },

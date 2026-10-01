@@ -147,7 +147,7 @@ func TestFlows(t *testing.T) {
 				Adapter:  sdk.AdapterInfo{Name: "discord-cli", Version: "0.4.2"},
 				Account:  bot,
 				Events:   []sdk.EventDecl{{Type: "message"}, {Type: "reaction"}},
-				Features: []string{"rooms.list", "threads", "typing", "seen", "reactions", "edit"},
+				Features: []string{"rooms.list", "threads", "typing", "seen", "reactions", "edit", "replies"},
 				Limits:   sdk.Limits{MaxText: 2000, Formats: []string{"markdown"}},
 			},
 			account: bot, loggedIn: true,

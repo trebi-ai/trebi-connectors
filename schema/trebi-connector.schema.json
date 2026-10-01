@@ -161,7 +161,7 @@
         "features": {
           "type": "array",
           "items": {
-            "enum": ["rooms.list", "rooms.open", "threads", "threads.create", "history", "replay", "typing", "seen", "reactions", "edit", "attachments.in", "attachments.out"]
+            "enum": ["rooms.list", "rooms.open", "threads", "threads.create", "history", "replay", "typing", "seen", "reactions", "edit", "attachments.in", "attachments.out", "replies"]
           }
         },
         "limits": {

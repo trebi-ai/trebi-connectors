@@ -51,7 +51,17 @@ Add the optional interfaces for the features you have:
 | `Authenticator` | `setup.login` | `auth/begin`, `auth/submit`, `auth/cancel`, `auth/logout` |
 | `Runner` | | receives the `Emitter` after `initialized` |
 
-The features `attachments.in` and `attachments.out` have no method. Put them in `InitializeResult.Features`. When `Features` is not empty, the SDK keeps only the listed features that the adapter can serve, in the listed order. When it is empty, the SDK lists every method feature the adapter implements. Without `RoomGetter`, the SDK answers `rooms/get` from the pages of `ListRooms`.
+The features `attachments.in`, `attachments.out`, and `replies` have no method. Put them in `InitializeResult.Features`. Declare `replies` when the adapter sets `reply_to` on an inbound quoted reply and honours `SendParams.ReplyTo` on send. When `Features` is not empty, the SDK keeps only the listed features that the adapter can serve, in the listed order. When it is empty, the SDK lists every method feature the adapter implements. Without `RoomGetter`, the SDK answers `rooms/get` from the pages of `ListRooms`.
+
+## Event fields
+
+- `text` is what a person sees. Put the message body first. Then add the readable parts of rich content (embeds, blocks, captions), one part per line. Never put raw JSON in `text`. Put the structured content in `data`, for example `data.embeds`.
+- `reply_to` is the id of the message that this message quotes or answers. The daemon follows it to the root of the conversation.
+- `sender.bot` is true when a bot or a webhook wrote the message. The trigger key `from` reads it. When an adapter does not set it, the daemon treats each sender as a person.
+
+## Read a conversation
+
+The CLI of a channel connector has a history command. The command reads the messages of a room or a thread with `--before`, `--after`, and `--limit`. A run uses it to read the earlier messages of a conversation. The skill of the connector has a section "Read a conversation" that shows the command.
 
 ## A minimal channel
 
@@ -102,7 +112,7 @@ Use it in SDK tests and as an example. A connector program does not use it for `
 
 ## Versions
 
-The next tag is `sdk/v0.2.0`. It adds `Trebi`, `FromEnv`, `FolderUser`, `MissingInput`, `ReasonMissingInput`, and `WithCacheDir`, and the new behavior of `NewSandbox`. The changes are additive. After the tag, do step 3 of "The SDK" in `../README.md`.
+The next tag is `sdk/v0.3.0`. It adds `Author.Bot` and the feature `replies`. The changes are additive. After the tag, do step 3 of "The SDK" in `../README.md`.
 
 ## Contract fixtures
 

@@ -85,8 +85,8 @@ const (
 )
 
 // Channel features. The SDK derives the method features from the optional
-// interfaces of an adapter. The attachment features have no method, so an
-// adapter declares them in its InitializeResult.
+// interfaces of an adapter. The attachment features and replies have no
+// method, so an adapter declares them in its InitializeResult.
 const (
 	FeatureRoomsList      = "rooms.list"
 	FeatureRoomsOpen      = "rooms.open"
@@ -100,6 +100,7 @@ const (
 	FeatureEdit           = "edit"
 	FeatureAttachmentsIn  = "attachments.in"
 	FeatureAttachmentsOut = "attachments.out"
+	FeatureReplies        = "replies"
 )
 
 // MaxLine is the largest line on the wire (1 MiB).
@@ -190,6 +191,7 @@ type Author struct {
 	ID   string `json:"id"`
 	Name string `json:"name,omitempty"`
 	Self bool   `json:"self,omitempty"`
+	Bot  bool   `json:"bot,omitempty"`
 }
 
 // Attachment is one file on a message.
@@ -204,13 +206,16 @@ type Attachment struct {
 
 // Event is one inbound event. ID is the dedupe key and the daemon cursor.
 type Event struct {
-	ID          string          `json:"id"`
-	Type        string          `json:"type"`
-	TS          string          `json:"ts"`
-	Room        *Room           `json:"room"`
-	Thread      *Thread         `json:"thread"`
-	Sender      *Author         `json:"sender"`
-	Text        string          `json:"text,omitempty"`
+	ID     string  `json:"id"`
+	Type   string  `json:"type"`
+	TS     string  `json:"ts"`
+	Room   *Room   `json:"room"`
+	Thread *Thread `json:"thread"`
+	Sender *Author `json:"sender"`
+	// Text is what a person sees: the body, then the readable parts of
+	// rich content, one part per line. Never raw JSON.
+	Text string `json:"text,omitempty"`
+	// ReplyTo is the id of the message that this message quotes or answers.
 	ReplyTo     string          `json:"reply_to,omitempty"`
 	Attachments []Attachment    `json:"attachments,omitempty"`
 	Data        json.RawMessage `json:"data,omitempty"`
@@ -458,6 +463,6 @@ func Features() []string {
 	return []string{
 		FeatureRoomsList, FeatureRoomsOpen, FeatureThreads, FeatureThreadsCreate, FeatureHistory,
 		FeatureReplay, FeatureTyping, FeatureSeen, FeatureReactions, FeatureEdit,
-		FeatureAttachmentsIn, FeatureAttachmentsOut,
+		FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies,
 	}
 }
