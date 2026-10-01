@@ -20,6 +20,7 @@ var schemaMigrations = []migration{
 	{version: 2, name: "messages display_text column", up: migrateMessagesDisplayText},
 	{version: 3, name: "messages fts", up: migrateMessagesFTS},
 	{version: 4, name: "relative media paths", up: migrateRelativeMediaPaths},
+	{version: 5, name: "clear chat names that are the jid", up: migrateClearJIDChatNames},
 }
 
 // SchemaVersion is the newest schema that this program knows. The store
@@ -317,6 +318,13 @@ func migrateRelativeMediaPaths(d *DB) error {
 		}
 	}
 	return nil
+}
+
+// migrateClearJIDChatNames clears the chat names that an old resolver set to
+// the JID when it did not find the name.
+func migrateClearJIDChatNames(d *DB) error {
+	_, err := d.sql.Exec(`UPDATE chats SET name = '' WHERE name = jid`)
+	return err
 }
 
 func (d *DB) tableExists(table string) (bool, error) {

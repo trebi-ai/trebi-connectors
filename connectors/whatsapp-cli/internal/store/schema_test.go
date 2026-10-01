@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOpenCreatesExpectedSchema(t *testing.T) {
@@ -111,5 +112,43 @@ func TestNewerSchemaFails(t *testing.T) {
 	var nerr *NewerSchemaError
 	if !errors.As(err, &nerr) || nerr.Found != 99 {
 		t.Fatalf("Open: %v", err)
+	}
+}
+
+func TestClearJIDChatNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "whatsapp-cli.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := "120363000000000001@g.us"
+	if err := db.UpsertChat(group, "group", group, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertChat("1@s.whatsapp.net", "dm", "Ana", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertGroup(group, "Family", "", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	// Make the store look like the previous version.
+	if _, err := db.sql.Exec(`DELETE FROM schema_migrations WHERE version = 5; PRAGMA user_version = 4`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	if db, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var raw string
+	if err := db.sql.QueryRow(`SELECT name FROM chats WHERE jid = ?`, group).Scan(&raw); err != nil || raw != "" {
+		t.Fatalf("raw name %q %v", raw, err)
+	}
+	if c, err := db.GetChat(group); err != nil || c.Name != "Family" {
+		t.Fatalf("group: %+v %v", c, err)
+	}
+	if c, err := db.GetChat("1@s.whatsapp.net"); err != nil || c.Name != "Ana" {
+		t.Fatalf("dm: %+v %v", c, err)
 	}
 }

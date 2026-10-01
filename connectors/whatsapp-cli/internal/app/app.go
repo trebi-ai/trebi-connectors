@@ -26,6 +26,8 @@ type WAClient interface {
 	RemoveEventHandler(id uint32)
 
 	ResolveChatName(ctx context.Context, chat types.JID, pushName string) string
+	KnownChatName(ctx context.Context, chat types.JID, pushName string) string
+	RememberGroup(jid types.JID, name string)
 	GetContact(ctx context.Context, jid types.JID) (types.ContactInfo, error)
 	GetAllContacts(ctx context.Context) (map[types.JID]types.ContactInfo, error)
 

@@ -38,13 +38,15 @@ type Client struct {
 	hmu      sync.Mutex
 	handlers map[uint32]func(interface{})
 	nextID   uint32
+
+	groups *groupNames
 }
 
 func New(opts Options) (*Client, error) {
 	if strings.TrimSpace(opts.StorePath) == "" {
 		return nil, fmt.Errorf("StorePath is required")
 	}
-	c := &Client{opts: opts}
+	c := &Client{opts: opts, groups: newGroupNames()}
 	if err := c.init(); err != nil {
 		return nil, err
 	}
@@ -415,29 +417,48 @@ func BestContactName(info types.ContactInfo) string {
 	return ""
 }
 
+// ResolveChatName returns the display name of a chat, or "" when it is not
+// known. It never returns the JID, and never a sender name for a group. For a
+// group, it asks WhatsApp when the cache has no entry.
 func (c *Client) ResolveChatName(ctx context.Context, chat types.JID, pushName string) string {
-	fallback := chat.String()
-
-	if chat.Server == types.GroupServer || chat.IsBroadcastList() {
-		info, err := c.GetGroupInfo(ctx, chat)
-		if err == nil && info != nil {
-			if name := strings.TrimSpace(info.GroupName.Name); name != "" {
-				return name
-			}
-		}
-	} else {
-		info, err := c.GetContact(ctx, chat.ToNonAD())
-		if err == nil {
-			if name := BestContactName(info); name != "" {
-				return name
-			}
-		}
+	if isGroupChat(chat) {
+		return c.groups.resolve(ctx, c, chat)
 	}
+	return c.contactChatName(ctx, chat, pushName)
+}
 
-	if name := strings.TrimSpace(pushName); name != "" && name != "-" {
+// KnownChatName is ResolveChatName with no network call. For a group, it
+// reads only the cache.
+func (c *Client) KnownChatName(ctx context.Context, chat types.JID, pushName string) string {
+	if isGroupChat(chat) {
+		name, _ := c.groups.cached(chat)
 		return name
 	}
-	return fallback
+	return c.contactChatName(ctx, chat, pushName)
+}
+
+// RememberGroup puts the name of a group in the cache.
+func (c *Client) RememberGroup(jid types.JID, name string) {
+	if strings.TrimSpace(name) != "" {
+		c.groups.remember(jid, name)
+	}
+}
+
+// contactChatName returns the contact name of a DM, then pushName.
+func (c *Client) contactChatName(ctx context.Context, chat types.JID, pushName string) string {
+	if info, err := c.GetContact(ctx, chat.ToNonAD()); err == nil {
+		if name := BestContactName(info); name != "" {
+			return name
+		}
+	}
+	if name := strings.TrimSpace(pushName); name != "-" {
+		return name
+	}
+	return ""
+}
+
+func isGroupChat(chat types.JID) bool {
+	return chat.Server == types.GroupServer || chat.IsBroadcastList()
 }
 
 func (c *Client) GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error) {

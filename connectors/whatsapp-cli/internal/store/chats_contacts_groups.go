@@ -21,11 +21,24 @@ func (d *DB) UpsertChat(jid, kind, name string, lastTS time.Time) error {
 	return err
 }
 
+// chatSelect reads chats with a display name. An empty chat name falls back
+// to the group subject, then to the contact name.
+const chatSelect = `
+	SELECT jid, kind, name, last_message_ts FROM (
+		SELECT c.jid AS jid,
+		       c.kind AS kind,
+		       COALESCE(NULLIF(c.name,''), NULLIF(g.name,''), NULLIF(ct.full_name,''), NULLIF(ct.push_name,''), NULLIF(ct.business_name,''), NULLIF(ct.first_name,''), '') AS name,
+		       COALESCE(c.last_message_ts,0) AS last_message_ts
+		FROM chats c
+		LEFT JOIN groups g ON g.jid = c.jid
+		LEFT JOIN contacts ct ON ct.jid = c.jid
+	) WHERE 1=1`
+
 func (d *DB) ListChats(query string, limit int) ([]Chat, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT jid, kind, COALESCE(name,''), COALESCE(last_message_ts,0) FROM chats WHERE 1=1`
+	q := chatSelect
 	var args []interface{}
 	if strings.TrimSpace(query) != "" {
 		q += ` AND (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))`
@@ -55,7 +68,7 @@ func (d *DB) ListChats(query string, limit int) ([]Chat, error) {
 }
 
 func (d *DB) GetChat(jid string) (Chat, error) {
-	row := d.sql.QueryRow(`SELECT jid, kind, COALESCE(name,''), COALESCE(last_message_ts,0) FROM chats WHERE jid = ?`, jid)
+	row := d.sql.QueryRow(chatSelect+` AND jid = ?`, jid)
 	var c Chat
 	var ts int64
 	if err := row.Scan(&c.JID, &c.Kind, &c.Name, &ts); err != nil {

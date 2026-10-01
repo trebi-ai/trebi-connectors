@@ -319,3 +319,51 @@ func TestGroupsUpsertListAndParticipantsReplace(t *testing.T) {
 		t.Fatalf("expected roles admin=1 member=1, got admin=%d member=%d", admins, members)
 	}
 }
+
+func TestChatNameFallsBackToGroupAndContact(t *testing.T) {
+	db := openTestDB(t)
+	ts := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	group, dm := "120363000000000001@g.us", "5511999999999@s.whatsapp.net"
+
+	if err := db.UpsertChat(group, "group", "", ts); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertChat(dm, "dm", "", ts); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertGroup(group, "Family", "", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertContact(dm, "5511999999999", "Sam", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	chats, err := db.ListChats("", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]string{}
+	for _, c := range chats {
+		names[c.JID] = c.Name
+	}
+	if names[group] != "Family" || names[dm] != "Sam" {
+		t.Fatalf("names: %v", names)
+	}
+	if found, err := db.ListChats("fam", 10); err != nil || len(found) != 1 || found[0].JID != group {
+		t.Fatalf("search by group name: %+v %v", found, err)
+	}
+	if c, err := db.GetChat(group); err != nil || c.Name != "Family" {
+		t.Fatalf("GetChat: %+v %v", c, err)
+	}
+
+	// A chat name wins over the group subject, and an empty upsert keeps it.
+	if err := db.UpsertChat(group, "group", "Family chat", ts); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertChat(group, "group", "", ts); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := db.GetChat(group); err != nil || c.Name != "Family chat" {
+		t.Fatalf("GetChat after empty upsert: %+v %v", c, err)
+	}
+}

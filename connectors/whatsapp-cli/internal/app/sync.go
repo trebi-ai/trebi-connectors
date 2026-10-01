@@ -105,7 +105,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 					}
 				}
 			}
-			if err := a.storeParsedMessage(ctx, pm); err == nil {
+			if err := a.storeParsedMessage(ctx, pm, liveMessage); err == nil {
 				messagesStored.Add(1)
 			}
 			if opts.DownloadMedia && pm.Media != nil && pm.ID != "" {
@@ -122,6 +122,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 				if chatID == "" {
 					continue
 				}
+				a.storeConversationName(chatID, conv.GetName())
 				for _, m := range conv.Messages {
 					lastEvent.Store(time.Now().UTC().UnixNano())
 					if m.Message == nil {
@@ -131,7 +132,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 					if pm.ID == "" || pm.Chat.IsEmpty() {
 						continue
 					}
-					if err := a.storeParsedMessage(ctx, pm); err == nil {
+					if err := a.storeParsedMessage(ctx, pm, historyMessage); err == nil {
 						messagesStored.Add(1)
 					}
 					if opts.DownloadMedia && pm.Media != nil && pm.ID != "" {
@@ -269,9 +270,28 @@ func chatKind(chat types.JID) string {
 	return "unknown"
 }
 
-func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage) error {
+// msgOrigin tells storeParsedMessage if it may ask WhatsApp for names.
+type msgOrigin int
+
+const (
+	// liveMessage may ask WhatsApp for the group info.
+	liveMessage msgOrigin = iota
+	// historyMessage uses only the cache and the store. A history sync
+	// comes in a burst just after connect.
+	historyMessage
+)
+
+func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage, origin msgOrigin) error {
 	chatJID := pm.Chat.String()
-	chatName := a.wa.ResolveChatName(ctx, pm.Chat, pm.PushName)
+	if origin == liveMessage && pm.Chat.Server == types.GroupServer {
+		a.storeGroupInfo(ctx, pm.Chat)
+	}
+	var chatName string
+	if origin == liveMessage {
+		chatName = a.wa.ResolveChatName(ctx, pm.Chat, pm.PeerPushName())
+	} else {
+		chatName = a.knownChatName(ctx, pm.Chat, pm.PeerPushName())
+	}
 	if err := a.db.UpsertChat(chatJID, chatKind(pm.Chat), chatName, pm.Timestamp); err != nil {
 		return err
 	}
@@ -311,28 +331,6 @@ func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage) error
 					info.BusinessName,
 				)
 			}
-		}
-	}
-
-	// Best-effort: store group metadata (and participants) when available.
-	if pm.Chat.Server == types.GroupServer {
-		if gi, err := a.wa.GetGroupInfo(ctx, pm.Chat); err == nil && gi != nil {
-			_ = a.db.UpsertGroup(gi.JID.String(), gi.GroupName.Name, gi.OwnerJID.String(), gi.GroupCreated)
-			var ps []store.GroupParticipant
-			for _, p := range gi.Participants {
-				role := "member"
-				if p.IsSuperAdmin {
-					role = "superadmin"
-				} else if p.IsAdmin {
-					role = "admin"
-				}
-				ps = append(ps, store.GroupParticipant{
-					GroupJID: pm.Chat.String(),
-					UserJID:  p.JID.String(),
-					Role:     role,
-				})
-			}
-			_ = a.db.ReplaceGroupParticipants(pm.Chat.String(), ps)
 		}
 	}
 

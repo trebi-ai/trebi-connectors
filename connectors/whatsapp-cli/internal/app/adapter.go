@@ -31,6 +31,13 @@ const AdapterName = "whatsapp-cli"
 // maxDownload bounds one inbound or outbound attachment.
 const maxDownload = 100 << 20
 
+// The joined groups load after a connect, at most once per
+// groupRefreshEvery.
+const (
+	groupRefreshEvery   = 10 * time.Minute
+	groupRefreshTimeout = 30 * time.Second
+)
+
 // Protocol declarations. The sandbox uses the same values.
 var (
 	AdapterEvents   = []sdk.EventDecl{{Type: "message"}, {Type: "reaction"}}
@@ -51,6 +58,10 @@ type Adapter struct {
 	mu    sync.Mutex
 	queue []any
 	wake  chan struct{}
+
+	// Only the Run loop uses groupsAt.
+	groupsAt time.Time
+	bg       sync.WaitGroup
 }
 
 // NewAdapter returns the protocol adapter of a. a must have an open
@@ -163,6 +174,9 @@ func (d *Adapter) drain() []any {
 func (d *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
 	id := d.app.wa.AddEventHandler(d.enqueue)
 	defer d.app.wa.RemoveEventHandler(id)
+	defer d.bg.Wait()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	backoff := time.Second
 	var retry <-chan time.Time
 	halted := false
@@ -225,7 +239,14 @@ func (d *Adapter) handle(ctx context.Context, e sdk.Emitter, evt any) (runState,
 		}
 	case *events.HistorySync:
 		d.storeHistory(ctx, v)
+	case *events.GroupInfo:
+		if v.Name != nil {
+			d.app.storeGroup(types.GroupInfo{JID: v.JID, GroupName: *v.Name})
+		}
+	case *events.JoinedGroup:
+		d.app.storeGroup(v.GroupInfo)
 	case *events.Connected:
+		d.refreshGroups(ctx)
 		return runConnected, e.Status(sdk.Status{State: sdk.StateConnected, Account: d.account()})
 	case *events.Disconnected:
 		return runLost, e.Status(sdk.Status{State: sdk.StateConnecting, Message: "disconnected"})
@@ -241,12 +262,30 @@ func (d *Adapter) handle(ctx context.Context, e sdk.Emitter, evt any) (runState,
 	return runSame, nil
 }
 
+// refreshGroups loads the joined groups in the background. It skips the
+// load when the last one started less than groupRefreshEvery ago.
+func (d *Adapter) refreshGroups(ctx context.Context) {
+	now := time.Now()
+	if !d.groupsAt.IsZero() && now.Sub(d.groupsAt) < groupRefreshEvery {
+		return
+	}
+	d.groupsAt = now
+	d.bg.Go(func() {
+		ctx, cancel := context.WithTimeout(ctx, groupRefreshTimeout)
+		defer cancel()
+		if err := d.app.refreshGroups(ctx); err != nil {
+			slog.Warn("load joined groups", "err", err)
+		}
+	})
+}
+
 func (d *Adapter) storeHistory(ctx context.Context, v *events.HistorySync) {
 	for _, conv := range v.Data.GetConversations() {
 		chatID := strings.TrimSpace(conv.GetID())
 		if chatID == "" {
 			continue
 		}
+		d.app.storeConversationName(chatID, conv.GetName())
 		for _, m := range conv.GetMessages() {
 			if m.GetMessage() == nil {
 				continue
@@ -255,7 +294,7 @@ func (d *Adapter) storeHistory(ctx context.Context, v *events.HistorySync) {
 			if pm.ID == "" || pm.Chat.IsEmpty() {
 				continue
 			}
-			if err := d.app.storeParsedMessage(ctx, pm); err != nil {
+			if err := d.app.storeParsedMessage(ctx, pm, historyMessage); err != nil {
 				slog.Warn("store history message", "id", pm.ID, "err", err)
 			}
 		}
@@ -274,7 +313,7 @@ func (d *Adapter) liveEvent(ctx context.Context, v *events.Message) (sdk.Event, 
 			pm.ReactionEmoji = r.GetText()
 		}
 	}
-	if err := d.app.storeParsedMessage(ctx, pm); err != nil {
+	if err := d.app.storeParsedMessage(ctx, pm, liveMessage); err != nil {
 		slog.Warn("store message", "id", pm.ID, "err", err)
 	}
 	sender := v.Info.Sender
@@ -287,7 +326,7 @@ func (d *Adapter) liveEvent(ctx context.Context, v *events.Message) (sdk.Event, 
 	}
 	ev := sdk.Event{
 		ID: pm.ID, TS: sdk.FormatTime(pm.Timestamp),
-		Room:   d.room(ctx, pm.Chat, pm.PushName),
+		Room:   d.room(ctx, pm),
 		Sender: &sdk.Author{ID: sender.ToNonAD().String(), Name: name, Self: pm.FromMe},
 	}
 	if raw, err := json.Marshal(v.Info); err == nil {
@@ -342,12 +381,14 @@ func (d *Adapter) download(ctx context.Context, pm wa.ParsedMessage) sdk.Attachm
 	return at
 }
 
-func (d *Adapter) room(ctx context.Context, chat types.JID, pushName string) *sdk.Room {
+// room is the room of a stored live message. The name comes from the cache
+// and the store, so that an event never waits for the network.
+func (d *Adapter) room(ctx context.Context, pm wa.ParsedMessage) *sdk.Room {
 	kind := sdk.RoomDM
-	if chat.Server == types.GroupServer {
+	if pm.Chat.Server == types.GroupServer {
 		kind = sdk.RoomGroup
 	}
-	return &sdk.Room{ID: chat.String(), Name: d.app.wa.ResolveChatName(ctx, chat, pushName), Kind: kind}
+	return &sdk.Room{ID: pm.Chat.String(), Name: d.app.knownChatName(ctx, pm.Chat, pm.PeerPushName()), Kind: kind}
 }
 
 // Send sends text, a reply, or files. The text is the caption of the first

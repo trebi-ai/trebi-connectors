@@ -202,7 +202,7 @@ func classifyEvent(ctx context.Context, a *App, evt interface{}) (string, string
 		pm := wa.ParseLiveMessage(v)
 		// Persist so media download / offline search work while listen is the
 		// only long-running process (same path sync uses).
-		_ = a.storeParsedMessage(ctx, pm)
+		_ = a.storeParsedMessage(ctx, pm, liveMessage)
 		chat := pm.Chat.String()
 		sender := pm.SenderJID
 		return "message", "messages", chat, sender, pm.FromMe, normalizeMessage(ctx, a, pm)
@@ -553,7 +553,7 @@ func classifyEvent(ctx context.Context, a *App, evt interface{}) (string, string
 
 func normalizeMessage(ctx context.Context, a *App, pm wa.ParsedMessage) map[string]any {
 	chatJID := pm.Chat.String()
-	chatName := a.wa.ResolveChatName(ctx, pm.Chat, pm.PushName)
+	chatName := a.knownChatName(ctx, pm.Chat, pm.PeerPushName())
 
 	out := map[string]any{
 		"id":        pm.ID,

@@ -36,6 +36,15 @@ type ParsedMessage struct {
 	ReactionEmoji  string
 }
 
+// PeerPushName is the push name of the other person. It is "" for an own
+// message, because then the push name is the name of the account.
+func (pm ParsedMessage) PeerPushName() string {
+	if pm.FromMe {
+		return ""
+	}
+	return pm.PushName
+}
+
 func ParseLiveMessage(evt *events.Message) ParsedMessage {
 	msg := ParsedMessage{
 		Chat:      evt.Info.Chat,

@@ -52,13 +52,15 @@ type Client struct {
 
 	contacts map[types.JID]types.ContactInfo
 	groups   map[types.JID]*types.GroupInfo
+	names    map[types.JID]string // the RememberGroup cache
 
 	onDemandHistory func(lastKnown types.MessageInfo, count int) *events.HistorySync
 
-	sent      []*waProto.Message
-	reactions []string
-	reads     []string
-	typing    []string
+	sent       []*waProto.Message
+	groupCalls int
+	reactions  []string
+	reads      []string
+	typing     []string
 
 	// Sandbox only.
 	session   string // session file; "" keeps the login in memory
@@ -75,6 +77,7 @@ func New() *Client {
 		handlers:      map[uint32]func(interface{}){},
 		contacts:      map[types.JID]types.ContactInfo{},
 		groups:        map[types.JID]*types.GroupInfo{},
+		names:         map[types.JID]string{},
 		nextHandlerID: 1,
 		uploads:       map[string][]byte{},
 	}
@@ -169,6 +172,13 @@ func (f *Client) AddGroup(g *types.GroupInfo) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.groups[g.JID] = g
+}
+
+// GroupInfoCalls returns the number of GetGroupInfo calls.
+func (f *Client) GroupInfoCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.groupCalls
 }
 
 // SetConnectEvents sets the events that each Connect emits.
@@ -293,22 +303,41 @@ func (f *Client) RemoveEventHandler(id uint32) {
 	delete(f.handlers, id)
 }
 
-// ResolveChatName follows wa.Client: the group or contact name first, then
-// the push name.
+// ResolveChatName follows wa.Client: the group name for a group, or the
+// contact name and then the push name for a DM. It returns "" when the name
+// is not known.
 func (f *Client) ResolveChatName(ctx context.Context, chat types.JID, pushName string) string {
 	if chat.Server == types.GroupServer {
-		if gi, _ := f.GetGroupInfo(ctx, chat); gi != nil && gi.GroupName.Name != "" {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if name := f.names[chat]; name != "" {
+			return name
+		}
+		if gi := f.groups[chat]; gi != nil {
 			return gi.GroupName.Name
 		}
-	} else if info, _ := f.GetContact(ctx, chat.ToNonAD()); info.Found {
+		return ""
+	}
+	if info, _ := f.GetContact(ctx, chat.ToNonAD()); info.Found {
 		if name := wa.BestContactName(info); name != "" {
 			return name
 		}
 	}
-	if pushName != "" && pushName != "-" {
+	if pushName != "-" {
 		return pushName
 	}
-	return chat.String()
+	return ""
+}
+
+// KnownChatName is ResolveChatName. The fake has no network.
+func (f *Client) KnownChatName(ctx context.Context, chat types.JID, pushName string) string {
+	return f.ResolveChatName(ctx, chat, pushName)
+}
+
+func (f *Client) RememberGroup(jid types.JID, name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.names[jid] = name
 }
 
 func (f *Client) GetContact(ctx context.Context, jid types.JID) (types.ContactInfo, error) {
@@ -343,6 +372,7 @@ func (f *Client) GetJoinedGroups(ctx context.Context) ([]*types.GroupInfo, error
 func (f *Client) GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.groupCalls++
 	return f.groups[jid], nil
 }
 

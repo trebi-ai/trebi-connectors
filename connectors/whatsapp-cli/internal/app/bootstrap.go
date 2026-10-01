@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"time"
 )
 
 func (a *App) refreshContacts(ctx context.Context) error {
@@ -26,6 +25,7 @@ func (a *App) refreshContacts(ctx context.Context) error {
 	return nil
 }
 
+// refreshGroups loads the joined groups into the store and the name cache.
 func (a *App) refreshGroups(ctx context.Context) error {
 	if err := a.OpenWA(); err != nil {
 		return err
@@ -34,13 +34,11 @@ func (a *App) refreshGroups(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
 	for _, g := range groups {
 		if g == nil {
 			continue
 		}
-		_ = a.db.UpsertGroup(g.JID.String(), g.GroupName.Name, g.OwnerJID.String(), g.GroupCreated)
-		_ = a.db.UpsertChat(g.JID.String(), "group", g.GroupName.Name, now)
+		a.storeGroup(*g)
 	}
 	return nil
 }
