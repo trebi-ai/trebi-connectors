@@ -107,6 +107,12 @@ func extractWAProto(m *waProto.Message, pm *ParsedMessage) {
 		pm.Text = m.GetConversation()
 	case m.GetExtendedTextMessage() != nil:
 		pm.Text = m.GetExtendedTextMessage().GetText()
+	case m.GetButtonsResponseMessage() != nil:
+		pm.Text = m.GetButtonsResponseMessage().GetSelectedDisplayText()
+	case m.GetTemplateButtonReplyMessage() != nil:
+		pm.Text = m.GetTemplateButtonReplyMessage().GetSelectedDisplayText()
+	case m.GetListResponseMessage() != nil:
+		pm.Text = m.GetListResponseMessage().GetTitle()
 	}
 
 	if img := m.GetImageMessage(); img != nil {

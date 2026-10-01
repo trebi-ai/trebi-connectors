@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -189,23 +190,23 @@ func (a *Adapter) messageEvent(ctx context.Context, m client.Message, raw json.R
 	}
 	ev := sdk.Event{
 		ID: m.ID, Type: "message", TS: sdk.FormatTime(m.Timestamp),
-		Room: &room, Thread: thread, Text: m.Content, Raw: raw,
+		Room: &room, Thread: thread, Text: messageText(m), Raw: raw,
 	}
 	data := map[string]any{}
 	if m.GuildID != "" {
 		data["guild_id"] = m.GuildID
 	}
 	if m.Author != nil {
-		ev.Sender = &sdk.Author{ID: m.Author.ID, Name: displayName(*m.Author), Self: a.isSelf(m.Author.ID)}
-		if m.Author.Bot {
-			data["bot"] = true
-		}
+		ev.Sender = &sdk.Author{ID: m.Author.ID, Name: displayName(*m.Author), Self: a.isSelf(m.Author.ID), Bot: m.Author.Bot}
+	}
+	if len(m.Embeds) > 0 {
+		data["embeds"] = m.Embeds
 	}
 	if m.EditedTimestamp != nil {
 		data["edited_at"] = sdk.FormatTime(*m.EditedTimestamp)
 	}
 	if len(data) > 0 {
-		ev.Data, _ = json.Marshal(data) //nolint:errcheck // a map of strings and bools always encodes
+		ev.Data, _ = json.Marshal(data) //nolint:errcheck // strings and plain structs always encode
 	}
 	const typeReply = 19
 	if m.Type == typeReply && m.MessageReference != nil {
@@ -217,6 +218,35 @@ func (a *Adapter) messageEvent(ctx context.Context, m client.Message, raw json.R
 		})
 	}
 	return ev
+}
+
+// messageText is the content, then the readable parts of each embed.
+func messageText(m client.Message) string {
+	parts := []string{m.Content}
+	for _, e := range m.Embeds {
+		if e.Author != nil {
+			parts = append(parts, e.Author.Name)
+		}
+		parts = append(parts, e.Title, e.Description)
+		for _, f := range e.Fields {
+			name, value := strings.TrimSpace(f.Name), strings.TrimSpace(f.Value)
+			if name != "" && value != "" {
+				parts = append(parts, name+": "+value)
+			} else {
+				parts = append(parts, name+value)
+			}
+		}
+		if e.Footer != nil {
+			parts = append(parts, e.Footer.Text)
+		}
+	}
+	var out []string
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // reactionEvent maps MESSAGE_REACTION_ADD. The id is

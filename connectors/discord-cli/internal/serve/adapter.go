@@ -54,6 +54,7 @@ var (
 		sdk.FeatureRoomsList, sdk.FeatureRoomsOpen, sdk.FeatureThreads, sdk.FeatureThreadsCreate,
 		sdk.FeatureHistory, sdk.FeatureReplay, sdk.FeatureTyping, sdk.FeatureSeen,
 		sdk.FeatureReactions, sdk.FeatureEdit, sdk.FeatureAttachmentsIn, sdk.FeatureAttachmentsOut,
+		sdk.FeatureReplies,
 	}
 	Limits = sdk.Limits{MaxText: 2000, Formats: []string{sdk.FormatMarkdown}}
 )

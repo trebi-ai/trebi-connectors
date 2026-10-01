@@ -45,6 +45,17 @@ discord-cli message bulk-delete <channel_id> <id1> <id2> ...
 Search uses flags only: `-c`/`--channel` (ID or `#name`), `-q`/`--query`, `--scan` (messages to fetch, default 100, paginates), `-n`/`--limit` (max results, 0=all).
 Matches content + embed text (title, description, footer, author, fields).
 
+## Read a conversation
+
+Read the earlier messages of a channel or a thread with `message list`. A thread id is a channel id, so give the thread id as the channel.
+
+```bash
+discord-cli message list <thread_id> --limit 50
+discord-cli message list <thread_id> --limit 50 --before <message_id>
+```
+
+Use `--before` with the oldest message id that you have to read older messages. Use `--after` to read newer messages.
+
 ## Reactions
 
 ```bash

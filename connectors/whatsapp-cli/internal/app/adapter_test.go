@@ -77,7 +77,7 @@ func live(id string, chat, sender types.JID, ts time.Time, msg *waProto.Message)
 func TestAdapterEvents(t *testing.T) {
 	f := fakewa.New()
 	c, res := startAdapter(t, f)
-	if res.Account == nil || res.Account.ID != "5511000000000@s.whatsapp.net" || len(res.Features) != 9 || res.Login[0] != "qr" {
+	if res.Account == nil || res.Account.ID != "5511000000000@s.whatsapp.net" || len(res.Features) != 10 || res.Login[0] != "qr" {
 		t.Fatalf("initialize: %+v", res)
 	}
 	waitStatus(t, c, sdk.StateConnected)
@@ -92,6 +92,12 @@ func TestAdapterEvents(t *testing.T) {
 		MediaKey: []byte("k"), FileLength: proto.Uint64(4),
 	}}))
 	f.Emit(live("M4", types.JID{User: "status", Server: types.BroadcastServer}, peer, ts, &waProto.Message{Conversation: proto.String("story")}))
+	f.Emit(live("M5", peer, peer, ts.Add(3*time.Second), &waProto.Message{ExtendedTextMessage: &waProto.ExtendedTextMessage{
+		Text: proto.String("Still waiting"), ContextInfo: &waProto.ContextInfo{StanzaID: proto.String("M1")},
+	}}))
+	f.Emit(live("M6", peer, peer, ts.Add(4*time.Second), &waProto.Message{ButtonsResponseMessage: &waProto.ButtonsResponseMessage{
+		SelectedButtonID: proto.String("b1"), Response: &waProto.ButtonsResponseMessage_SelectedDisplayText{SelectedDisplayText: "Yes"},
+	}}))
 
 	msg := waitEvent(t, c)
 	if msg.ID != "M1" || msg.Type != "message" || msg.Text != "Any news?" || msg.Room.ID != peer.String() || msg.Room.Kind != "dm" ||
@@ -105,6 +111,19 @@ func TestAdapterEvents(t *testing.T) {
 	img := waitEvent(t, c)
 	if img.Room.Kind != "group" || img.Text != "look" || len(img.Attachments) != 1 || img.Attachments[0].Path == "" || img.Attachments[0].Mime != "image/png" {
 		t.Fatalf("image: %+v", img)
+	}
+	if reply := waitEvent(t, c); reply.ID != "M5" || reply.ReplyTo != "M1" || reply.Text != "Still waiting" {
+		t.Fatalf("reply: %+v", reply)
+	}
+	if button := waitEvent(t, c); button.ID != "M6" || button.Text != "Yes" {
+		t.Fatalf("button: %+v", button)
+	}
+	var rep sdk.ReplayResult
+	if err := c.Call(sdk.MethodEventsReplay, sdk.ReplayParams{After: "M3", Limit: 10}, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Events) != 2 || rep.Events[0].ID != "M5" || rep.Events[0].ReplyTo != "M1" || rep.Events[1].Text != "Yes" {
+		t.Fatalf("stored reply: %+v", rep.Events)
 	}
 
 	f.Emit(&events.LoggedOut{})
@@ -157,7 +176,7 @@ func TestAdapterRequests(t *testing.T) {
 	if err := c.Call(sdk.MethodEventsReplay, sdk.ReplayParams{After: "H1", Limit: 10}, &rep); err != nil {
 		t.Fatal(err)
 	}
-	if !rep.Complete || len(rep.Events) != 3 || rep.Events[0].ID != "H2" || rep.Events[2].ID != "S1" || !rep.Events[2].Sender.Self {
+	if !rep.Complete || len(rep.Events) != 3 || rep.Events[0].ID != "H2" || rep.Events[2].ID != "S1" || !rep.Events[2].Sender.Self || rep.Events[2].ReplyTo != "H2" {
 		t.Fatalf("replay: %+v", rep)
 	}
 	if err := c.Call(sdk.MethodEventsReplay, sdk.ReplayParams{After: "gone", Limit: 10}, &rep); err != nil || rep.Complete {

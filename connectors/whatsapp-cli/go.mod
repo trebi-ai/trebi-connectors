@@ -36,5 +36,5 @@ require (
 
 require (
 	github.com/rs/zerolog v1.35.1
-	github.com/trebi-ai/trebi-connectors/sdk v0.2.0
+	github.com/trebi-ai/trebi-connectors/sdk v0.3.0
 )

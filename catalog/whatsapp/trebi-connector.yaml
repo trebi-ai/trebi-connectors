@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: whatsapp
 title: WhatsApp
 description: "Send and receive WhatsApp messages from your own account."
-version: 0.7.1
+version: 0.8.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -29,5 +29,5 @@ events:
     - {type: message, description: A new message in a room, schema: schemas/message.json}
     - {type: reaction, description: A reaction on a message, schema: schemas/reaction.json}
 channel:
-  features: [rooms.list, rooms.open, history, replay, typing, seen, reactions, attachments.in, attachments.out]
+  features: [rooms.list, rooms.open, history, replay, typing, seen, reactions, attachments.in, attachments.out, replies]
   limits: {max_text: 65536, formats: [text]}

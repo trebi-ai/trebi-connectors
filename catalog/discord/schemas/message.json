@@ -7,9 +7,10 @@
       "type": "string",
       "description": "The server of the message. It is not set for a direct message."
     },
-    "bot": {
-      "type": "boolean",
-      "description": "True when a bot wrote the message."
+    "embeds": {
+      "type": "array",
+      "description": "The rich embeds of the message. The readable parts are also in the event text.",
+      "items": {"type": "object"}
     },
     "edited_at": {
       "type": "string",

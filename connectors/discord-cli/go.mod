@@ -13,4 +13,4 @@ require (
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 )
 
-require github.com/trebi-ai/trebi-connectors/sdk v0.2.0
+require github.com/trebi-ai/trebi-connectors/sdk v0.3.0

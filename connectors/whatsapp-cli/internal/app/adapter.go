@@ -44,7 +44,7 @@ var (
 	AdapterFeatures = []string{
 		sdk.FeatureRoomsList, sdk.FeatureRoomsOpen, sdk.FeatureHistory, sdk.FeatureReplay,
 		sdk.FeatureTyping, sdk.FeatureSeen, sdk.FeatureReactions,
-		sdk.FeatureAttachmentsIn, sdk.FeatureAttachmentsOut,
+		sdk.FeatureAttachmentsIn, sdk.FeatureAttachmentsOut, sdk.FeatureReplies,
 	}
 	AdapterLimits = sdk.Limits{MaxText: 65536, Formats: []string{sdk.FormatText}}
 	AdapterLogin  = []string{sdk.StepQR}
@@ -437,7 +437,7 @@ func (d *Adapter) Send(ctx context.Context, m sdk.SendParams) (sdk.SendResult, e
 	}
 	if err := d.app.db.UpsertMessage(store.UpsertMessageParams{
 		ChatJID: to.String(), ChatName: name, MsgID: id, SenderName: "me",
-		Timestamp: now, FromMe: true, Text: m.Text, DisplayText: m.Text,
+		Timestamp: now, FromMe: true, Text: m.Text, DisplayText: m.Text, ReplyToID: m.ReplyTo,
 	}); err != nil {
 		slog.Warn("store sent message", "err", err)
 	}
@@ -573,7 +573,7 @@ func (d *Adapter) storedEvent(m store.Message) sdk.Event {
 	ev := sdk.Event{
 		ID: m.MsgID, Type: "message", TS: sdk.FormatTime(m.Timestamp),
 		Room:   &sdk.Room{ID: m.ChatJID, Name: m.ChatName, Kind: kind},
-		Sender: sender, Text: m.Text,
+		Sender: sender, Text: m.Text, ReplyTo: m.ReplyToID,
 	}
 	if m.MediaType != "" {
 		ev.Attachments = []sdk.Attachment{{ID: m.MsgID, Name: m.Filename, Mime: m.MimeType, Size: int64(m.FileLength), Path: d.app.MediaPath(m.LocalPath)}}

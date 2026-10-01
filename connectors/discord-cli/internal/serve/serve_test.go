@@ -143,7 +143,7 @@ func TestEvents(t *testing.T) {
 		}},
 	}
 	c, res := start(t, f.adapter(t))
-	if res.Account == nil || res.Account.ID != "9" || len(res.Features) != 12 || res.Limits.MaxText != 2000 {
+	if res.Account == nil || res.Account.ID != "9" || len(res.Features) != 13 || res.Limits.MaxText != 2000 {
 		t.Fatalf("initialize: %+v", res)
 	}
 	st, err := c.WaitNote(sdk.MethodStatus)
@@ -167,6 +167,68 @@ func TestEvents(t *testing.T) {
 	}
 	if react.ID != "555.318.👍" || react.Type != "reaction" || string(react.Data) != `{"emoji":"👍","message_id":"555"}` {
 		t.Fatalf("reaction event: %+v %s", react, react.Data)
+	}
+}
+
+func TestBotEmbedEvent(t *testing.T) {
+	f := newFake(t)
+	f.dispatch = []map[string]any{
+		guild(),
+		{"t": "MESSAGE_CREATE", "d": map[string]any{
+			"id": "700", "channel_id": "100", "guild_id": "1", "content": "",
+			"timestamp": "2026-10-01T09:30:00.000000+00:00",
+			"author":    map[string]any{"id": "77", "username": "GitHub", "bot": true},
+			"embeds": []any{map[string]any{
+				"author": map[string]any{"name": "slingdata-io/sling-cli", "url": "https://github.com"},
+				"title":  "Run failed: test", "description": "main (a1b2c3d)", "url": "https://github.com/run", "color": 15158332,
+				"fields": []any{map[string]any{"name": "Workflow", "value": "test"}},
+				"footer": map[string]any{"text": "GitHub Actions"},
+				"image":  map[string]any{"url": "https://cdn/x.png"},
+			}},
+		}},
+		{"t": "MESSAGE_CREATE", "d": map[string]any{
+			"id": "701", "channel_id": "100", "guild_id": "1", "content": "See below",
+			"timestamp": "2026-10-01T09:31:00.000000+00:00",
+			"author":    map[string]any{"id": "318", "username": "sam"},
+			"embeds":    []any{map[string]any{"title": "Failure"}},
+		}},
+		{"t": "MESSAGE_CREATE", "d": map[string]any{
+			"id": "702", "channel_id": "100", "guild_id": "1", "content": "Plain",
+			"timestamp": "2026-10-01T09:32:00.000000+00:00",
+			"author":    map[string]any{"id": "318", "username": "sam"},
+			"embeds":    []any{map[string]any{"color": 1}},
+		}},
+	}
+	c, _ := start(t, f.adapter(t))
+	if _, err := c.WaitNote(sdk.MethodStatus); err != nil {
+		t.Fatal(err)
+	}
+	evs := make([]sdk.Event, 3)
+	for i := range evs {
+		n, err := c.WaitNote(sdk.MethodEvent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(n.Params, &evs[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "slingdata-io/sling-cli\nRun failed: test\nmain (a1b2c3d)\nWorkflow: test\nGitHub Actions"
+	if evs[0].Text != want || evs[0].Sender == nil || !evs[0].Sender.Bot {
+		t.Fatalf("embed-only event: %q %+v", evs[0].Text, evs[0].Sender)
+	}
+	var data struct {
+		Bot    *bool          `json:"bot"`
+		Embeds []client.Embed `json:"embeds"`
+	}
+	if err := json.Unmarshal(evs[0].Data, &data); err != nil || data.Bot != nil || len(data.Embeds) != 1 || data.Embeds[0].Title != "Run failed: test" {
+		t.Fatalf("embed-only data: %s %v", evs[0].Data, err)
+	}
+	if evs[1].Text != "See below\nFailure" || evs[1].Sender.Bot {
+		t.Fatalf("content and embed: %q %+v", evs[1].Text, evs[1].Sender)
+	}
+	if evs[2].Text != "Plain" {
+		t.Fatalf("empty embed: %q", evs[2].Text)
 	}
 }
 

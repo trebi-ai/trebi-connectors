@@ -126,6 +126,18 @@ whatsapp-cli messages context --chat <JID> --id <MSG_ID> --before 5 --after 5
 whatsapp-cli --json messages search "keyword" | jq .
 ```
 
+## Read a conversation
+
+Read the earlier messages of a chat with `messages list`. WhatsApp has no threads. A conversation is a DM, or a reply chain in a group. `--before` and `--after` take a time.
+
+```bash
+whatsapp-cli --json messages list --chat <JID> --limit 50
+whatsapp-cli --json messages list --chat <JID> --before <time> --limit 50
+whatsapp-cli messages show --chat <JID> --id <MSG_ID>
+```
+
+In the JSON output, `ReplyToID` is the id of the quoted message. Use `messages show` with that id to read the quoted message. When the local store has no older messages, run `history backfill --chat <JID>` first, then read again.
+
 ## Send
 
 **Always confirm recipient JID + full message text with the user before sending.**

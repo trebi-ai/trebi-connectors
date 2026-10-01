@@ -56,6 +56,7 @@ type Message struct {
 	DisplayText string
 	MediaType   string
 	Snippet     string
+	ReplyToID   string
 
 	// Set by Page and FindMessage only.
 	SenderName string

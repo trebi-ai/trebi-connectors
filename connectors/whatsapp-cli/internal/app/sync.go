@@ -370,6 +370,7 @@ func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage, origi
 		FileSHA256:    fileSha,
 		FileEncSHA256: fileEncSha,
 		FileLength:    fileLen,
+		ReplyToID:     pm.ReplyToID,
 	})
 }
 

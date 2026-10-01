@@ -21,6 +21,7 @@ var schemaMigrations = []migration{
 	{version: 3, name: "messages fts", up: migrateMessagesFTS},
 	{version: 4, name: "relative media paths", up: migrateRelativeMediaPaths},
 	{version: 5, name: "clear chat names that are the jid", up: migrateClearJIDChatNames},
+	{version: 6, name: "messages reply_to_id column", up: migrateMessagesReplyTo},
 }
 
 // SchemaVersion is the newest schema that this program knows. The store
@@ -325,6 +326,19 @@ func migrateRelativeMediaPaths(d *DB) error {
 func migrateClearJIDChatNames(d *DB) error {
 	_, err := d.sql.Exec(`UPDATE chats SET name = '' WHERE name = jid`)
 	return err
+}
+
+// migrateMessagesReplyTo keeps the id of the quoted message, so history
+// and replay keep the reply chain.
+func migrateMessagesReplyTo(d *DB) error {
+	has, err := d.tableHasColumn("messages", "reply_to_id")
+	if err != nil || has {
+		return err
+	}
+	if _, err := d.sql.Exec(`ALTER TABLE messages ADD COLUMN reply_to_id TEXT`); err != nil {
+		return fmt.Errorf("add reply_to_id column: %w", err)
+	}
+	return nil
 }
 
 func (d *DB) tableExists(table string) (bool, error) {

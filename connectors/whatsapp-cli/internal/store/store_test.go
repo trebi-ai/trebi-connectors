@@ -367,3 +367,28 @@ func TestChatNameFallsBackToGroupAndContact(t *testing.T) {
 		t.Fatalf("GetChat after empty upsert: %+v %v", c, err)
 	}
 }
+
+func TestMessageReplyToID(t *testing.T) {
+	db := openTestDB(t)
+	ts := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := db.UpsertChat("123@s.whatsapp.net", "dm", "Alice", ts); err != nil {
+		t.Fatal(err)
+	}
+	p := UpsertMessageParams{ChatJID: "123@s.whatsapp.net", MsgID: "m2", Timestamp: ts, Text: "yes", ReplyToID: "m1"}
+	if err := db.UpsertMessage(p); err != nil {
+		t.Fatal(err)
+	}
+	// A later upsert with no quote keeps the stored quote.
+	p.ReplyToID = ""
+	if err := db.UpsertMessage(p); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := db.ListMessages(ListMessagesParams{ChatJID: p.ChatJID})
+	if err != nil || len(msgs) != 1 || msgs[0].ReplyToID != "m1" {
+		t.Fatalf("list: %+v %v", msgs, err)
+	}
+	page, err := db.Page(PageParams{ChatJID: p.ChatJID})
+	if err != nil || len(page) != 1 || page[0].ReplyToID != "m1" {
+		t.Fatalf("page: %+v %v", page, err)
+	}
+}
