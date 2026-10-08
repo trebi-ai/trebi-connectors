@@ -1,0 +1,242 @@
+# Contributing a connector
+
+This guide tells you how to add a connector to the Trebi catalog or change one. A connector connects Trebi to one external system. It can give three things:
+
+- **Actions.** Commands or MCP tools that an agent uses in a run.
+- **Events.** Things that happen in the system and start a job, for example a new message.
+- **A channel.** A conversation: Trebi reads messages and sends replies.
+
+Trebi reviews every entry before it goes into the catalog. You open a pull request. A maintainer reviews it and approves the CI run. CI then signs and publishes the entry to `catalog.trebi.ai`.
+
+`README.md` has the publish flow. `CLAUDE.md` has the rules for an entry and the adapter folder contract. `sdk/README.md` has the Go SDK. `.claude/skills/connector-authoring/SKILL.md` has the full steps to build a program with `serve`.
+
+## Choose a path
+
+| Path | What you write | Example |
+|---|---|---|
+| A. Actions only | A manifest and a skill. The CLI or MCP server comes from another place. | `catalog/apollo`, `catalog/google` |
+| B. Actions and events | Path A, plus a program that sends events to Trebi. | none yet |
+| C. Channel | Path B, plus the channel features: rooms, history, replies. | `catalog/discord`, `catalog/whatsapp` |
+
+Start with path A. Most connectors need only actions. Add events when a user must start a job from something that happens in the system. Add a channel when a user must talk with an agent through the system.
+
+## The pull request
+
+1. Fork the repository and make a change on your fork.
+2. Add the folder `catalog/<name>/`. The folder name is the `name` field of the manifest. It matches `^[a-z0-9][a-z0-9-]{0,39}$`. The names `email`, `webhook`, and `trebi` are reserved.
+3. Write `catalog/<name>/trebi-connector.yaml` and `catalog/<name>/skill/SKILL.md`.
+4. Set `publisher: community`. Only an entry that Trebi maintains has `publisher: trebi`.
+5. Run `scripts/validate.sh <name>`. For an entry with events, also run `scripts/validate.sh --conformance <name>`.
+6. Open the pull request against `main`. Tell what the connector does, how you tested it, and which account type you used.
+
+A change to an entry that exists must bump `version` in the same pull request. A published version is immutable.
+
+A community pull request normally changes only `catalog/`. A maintainer owns `sdk/`, `connectors/`, `schema/`, `tools/`, `scripts/`, and `.github/` (see `.github/CODEOWNERS`). If your connector needs a program in `connectors/`, open an issue first. Describe the program, and a maintainer tells you how to continue.
+
+Write all prose in ASD-STE100 Simplified Technical English: short sentences, active voice, present tense. Write one paragraph per line, with no hard wraps.
+
+## Path A: actions only
+
+### The manifest
+
+```yaml
+schema: trebi-connector/1
+name: example
+title: "Example"
+description: "Read and update tickets in Example."
+version: 0.1.0
+publisher: community
+homepage: https://example.com
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  github_release:
+    repo: example/example-cli
+    tag: "v{version}"
+    asset: "example-cli_{version}_{os}_{arch}.tar.gz"
+    checksums: "checksums.txt"
+  bin: example-cli
+  version_command: example-cli --version
+setup:
+  inputs:
+    - name: EXAMPLE_API_KEY
+      label: "API key"
+      help: "Create an API key in Example under Settings, API."
+      url: "https://example.com/settings/api"
+      secret: true
+      required: true
+actions:
+  cli: {commands: [example-cli]}
+```
+
+The schema is `schema/trebi-connector.schema.json`. The decoder is strict: an unknown key fails.
+
+- `title` and `description` are for the user. Write `description` as one sentence that tells what the user can do.
+- `actions` has `cli` or `mcp`. `cli.commands` lists the programs that an agent can call. `mcp` has exactly one of `command` (a local server), `url` (a remote server), or `name` with `registry`. `${NAME}` in `args`, `env`, `url`, and `headers` expands from the inputs.
+- `warning` is an optional sentence that the user sees before the install, for example a ban risk.
+
+### Install the program
+
+Trebi installs the program of an entry with the first method of `install` that works. Each method needs `install.bin`.
+
+| Method | Use it when | Notes |
+|---|---|---|
+| `github_release` | The program has releases on GitHub. | `tag` and `asset` take `{version}`, `{os}`, and `{arch}`. Give `checksums`: Trebi checks the asset against it. `scripts/validate.sh --check-assets` checks that the assets exist. |
+| `brew` | The program has a Homebrew formula. | The value is the formula name. |
+| `go` | The program installs with `go install`. | The value is the package path with a version. The user must have Go. |
+| `catalog` | Trebi builds the program from `connectors/<bin>`. | Only for a program in this repository. A maintainer adds it. |
+
+`version_command` prints the version of the program. Trebi runs it after the install to check the program.
+
+An entry with no `install` block expects the program on the `PATH` of the user. The connector row then shows the command as missing until the user installs it. Use this only for a program that a user installs by hand.
+
+### The CLI
+
+Trebi does not require subcommands for actions. An agent reads the skill and calls the commands. A good CLI for an agent has these properties:
+
+- It gives JSON output with a flag (for example `--json`), so an agent can parse it.
+- It reads each credential from one env name. That env name is the `name` of an input.
+- It writes errors to stderr and exits with a code that is not zero on failure.
+- It needs no prompt from a person. An interactive prompt blocks the run.
+- It has `--version`.
+
+### Inputs
+
+Each item of `setup.inputs` is one value that the user gives when they add a connection. Trebi puts the value in the env of the program under `name`.
+
+| Field | Meaning |
+|---|---|
+| `name` | The env name. It matches `^[A-Za-z_][A-Za-z0-9_]*$`. |
+| `label` | The name that the user sees, for example "API key". Never use the env name as the label. A required input must have a label. |
+| `help` | One or two sentences that tell where to get the value. |
+| `url` | The page where the user gets the value. |
+| `secret` | `true` for a token, a key, or a password. Trebi keeps it in a secret file and masks it. |
+| `required` | `true` when the connector cannot work without it. A missing required input stops the connection, and the user sees "\<label\> is missing". |
+| `default`, `choices`, `format` | An optional default value, a closed list of values, and a format hint. |
+
+### The skill
+
+`skill/SKILL.md` teaches an agent to use the commands. It is the only copy of the skill. Trebi puts it in the run when a job names the connection.
+
+```markdown
+---
+name: example-cli
+description: Read and update tickets in Example with example-cli. Use when the user asks to find, create, or close an Example ticket.
+---
+
+# example-cli
+
+## Find tickets
+...
+```
+
+- The frontmatter must have `name` and `description`. `scripts/validate.sh` checks both.
+- Show real commands with their flags and a short sample of the output.
+- Tell the agent which commands change data, so it can ask before it uses them.
+- Do not tell the agent how to set a credential. Trebi sets it.
+
+## Auth
+
+Choose one of two kinds of auth.
+
+**Inputs only.** The user pastes an API key or a token into a form. Use `setup.inputs` with `secret: true`. This works for every path, also for path A. Most connectors use it.
+
+**A login flow.** The user logs in through the UI: they scan a code, open a page, or type a code. Use `setup.login`. A login flow needs a program that speaks `trebi-connector/1` (path B or C), because the program runs the flow. List the step kinds that the program can start:
+
+| Step kind | What the user sees | Example |
+|---|---|---|
+| `qr` | A QR code to scan with a phone. | WhatsApp linked device |
+| `device_code` | A URL and a short code to type on that page. | Microsoft, GitHub device flow |
+| `url` | A button that opens a page, for example an OAuth consent page. | OAuth with a redirect |
+| `input` | A form with one or more fields, for example an SMS code. | A two-step code |
+| `wait` | A message while the program waits for the system. | An approval on another device |
+
+The flow on the wire:
+
+1. The user clicks "Log in". Trebi sends `auth/begin` with a `kind`.
+2. The program answers with the first `step`. It sends more steps with `auth/step` when the flow needs them.
+3. For an `input` step, Trebi sends the values of the user with `auth/submit`.
+4. The program sends `auth/done` with `ok` and the `account`, then `status` `connected`.
+
+The Go SDK runs this for you when the adapter implements `sdk.Authenticator`. The fixtures in `sdk/contract/auth.*.json` and `sdk/contract/flow.login.qr.jsonl` show each message.
+
+Rules for auth:
+
+- Keep the login session and each token in `TREBI_STATE_DIR`. Refresh a token in the program. Do not ask the user to log in again for an expired access token.
+- When a token cannot be refreshed, send `status` `auth_required`. Trebi then shows "Log in" to the user.
+- When a required input is missing, return `sdk.MissingInput` from `Initialize`. Never look for the value in a file in the home folder.
+- Ask only for the scopes that the connector uses. Tell the scopes in the skill.
+
+## Path B: events
+
+Events need a long-lived program that Trebi starts from `events.command`. Two protocols exist.
+
+### Protocol `lines`
+
+The program prints one event per line on stdout. Use it for a simple source that already exists, for example a CLI with a `watch` command.
+
+```yaml
+events:
+  protocol: lines
+  command: example-cli watch --json
+  format: json
+  id: id                 # the dotted path of the event id; Trebi drops a repeated id
+  ts: created_at
+  identity: author.email # the sender, for the trigger allowlist
+  restart: on-failure
+  types:
+    - {type: ticket, description: A new ticket, schema: schemas/ticket.json}
+```
+
+- `poll` (at least `10s`) runs the command again at that interval, for a command that prints and exits.
+- `catchup.command` prints the events since the last event when Trebi starts again. Trebi sets `TREBI_LAST_EVENT_ID` in its env. It needs `format: json` and `id`, and it cannot be combined with `poll`.
+- `lines` has no login flow and no channel.
+
+### Protocol `trebi-connector/1`
+
+The program is a JSON-RPC 2.0 server on stdin and stdout, one message per line. Use it for a login flow, a channel, or rich typed events. Write it with the Go SDK. A program for this protocol must have these commands:
+
+| Command | Purpose |
+|---|---|
+| `<cli> serve` | Speaks the protocol. Trebi starts it from `events.command`. |
+| `<cli> serve --sandbox` | Runs the real adapter over a fake service, with no account and no network. The conformance check uses it. |
+| `<cli> --version` | Prints the version. `install.version_command` uses it. |
+
+The program obeys the adapter folder contract in `CLAUDE.md`: durable data in `TREBI_STATE_DIR`, temp data in `TREBI_CACHE_DIR`, logs to stderr, one writer, and a clean stop on `shutdown`.
+
+### Write a good event
+
+An event is a typed `event` message. `sdk/contract/event.message.json` is an example.
+
+| Field | Rule |
+|---|---|
+| `id` | A stable id from the system, for example the message id or the delivery id. Trebi drops a second event with the same id, so a retry or a restart does not start a job two times. |
+| `type` | One of the types in `events.types`. An undeclared type counts as a parse error. |
+| `room` | Where the event happened: a chat, a channel, a repository, a list. A trigger can limit a job to some rooms. Use the same room id in every event of that room. |
+| `thread` | The thread in the room, or null. |
+| `sender` | `{id, name}` of the person or the bot. Set `bot: true` for a bot. Set `self: true` for the account itself: Trebi stores that event and does not start a job. |
+| `text` | What a person sees, in plain text. Never put raw JSON here. |
+| `data` | The structured content. Give each type a JSON Schema in `schemas/<type>.json` that describes `data`. |
+| `reply_to` | The id of the message that this message answers, when there is one. |
+
+Each schema file must be a valid JSON Schema (draft 2020-12). Give each property a `description`: an agent reads it to write a trigger.
+
+## Path C: a channel
+
+A channel adds the `channel` block. Each feature in `channel.features` must match a method that the adapter serves, and `channel.limits` must match what `initialize` returns. The adapter must not promise more than the manifest. The feature list and the SDK interface of each feature are in `sdk/README.md`. A channel CLI also has a history command that reads the earlier messages of a room. The skill shows it in a section "Read a conversation".
+
+## Checks before you open the pull request
+
+- [ ] The folder name equals `name`.
+- [ ] `version` is new for a change to an entry that exists.
+- [ ] Each required input has a `label`, and no label is an env name.
+- [ ] Each secret input has `secret: true`.
+- [ ] `skill/SKILL.md` has `name` and `description`, and its commands work.
+- [ ] Each event type has a schema in `schemas/`.
+- [ ] The program needs no prompt from a person and writes no file outside the two Trebi folders.
+- [ ] `scripts/validate.sh <name>` passes.
+- [ ] For an entry with events or a channel, `scripts/validate.sh --conformance <name>` passes. It needs a `trebi` on `PATH` that has the `connector conformance` command.
+
+## What CI does
+
+A pull request runs `.github/workflows/catalog.yml`. It validates every entry and runs the conformance check with the newest public `trebi` release. A pull request from a fork runs only after a maintainer approves the run. After the merge, CI signs the index and publishes the entry. A user then finds it in the catalog in the Trebi app.

@@ -1,6 +1,6 @@
 # trebi-connectors
 
-Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the daemon. This repository holds the public catalog, the Go SDK for the `trebi-connector/1` protocol, and the source of the CLIs that Trebi builds. `CLAUDE.md` has the rules for an entry and the adapter folder contract. `.claude/skills/connector-authoring/SKILL.md` has the steps to build a connector program.
+Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the daemon. This repository holds the public catalog, the Go SDK for the `trebi-connector/1` protocol, and the source of the CLIs that Trebi builds. `CLAUDE.md` has the rules for an entry and the adapter folder contract. `.claude/skills/connector-authoring/SKILL.md` has the steps to build a connector program. `CONTRIBUTING.md` tells how to open a pull request for a new connector.
 
 ## Layout
 
