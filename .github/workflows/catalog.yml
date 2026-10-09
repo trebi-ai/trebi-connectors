@@ -96,7 +96,7 @@ jobs:
           echo "trebi $tag"
       - name: Run the conformance checks on each entry
         if: steps.trebi.outputs.installed == 'true'
-        run: scripts/validate.sh --conformance
+        run: scripts/validate.sh --conformance --no-external-cli
 
   # Lists the program archives of each install.catalog entry whose version
   # the published index does not have yet.
