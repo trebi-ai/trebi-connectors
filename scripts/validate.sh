@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
 # Validate the catalog. With no names, it checks every entry.
 #
-#   scripts/validate.sh [--conformance] [--check-assets] [name...]
+#   scripts/validate.sh [--conformance] [--no-external-cli] [--check-assets] [name...]
 #
 # --conformance runs "trebi connector conformance --manifest catalog/<name>"
 # for each entry. When connectors/<bin> has the program of the entry, it
 # builds the program first and puts it on PATH. It needs a trebi on PATH
 # that has the conformance command.
+#
+# --no-external-cli skips the actions.cli suite for an entry whose CLI the
+# catalog does not build. CI uses it, because the runner does not have those
+# CLIs. Run the full check on your machine with the CLI installed.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 conformance=0
+external_cli=1
 flags=()
 names=()
 for a in "$@"; do
   case "$a" in
     --conformance) conformance=1 ;;
+    --no-external-cli) external_cli=0 ;;
     --check-assets) flags+=(--check-assets) ;;
     *) names+=("$a") ;;
   esac
@@ -47,7 +53,12 @@ while IFS=$'\t' read -r name version cli; do
   if [ -n "$cli" ] && [ -d "$root/connectors/$cli" ] && [ ! -x "$bin/$cli" ]; then
     "$root/connectors/$cli/scripts/build.sh" "$version" "$bin/$cli" >/dev/null
   fi
-  if trebi connector conformance --manifest "$root/catalog/$name"; then
+  suites=()
+  if [ -z "$cli" ] && [ "$external_cli" = 0 ]; then
+    echo "note $name: the catalog builds no CLI, so the actions.cli suite is skipped"
+    for s in manifest install inputs actions.mcp events.lines protocol folder; do suites+=(--suite "$s"); done
+  fi
+  if trebi connector conformance --manifest "$root/catalog/$name" ${suites[@]+"${suites[@]}"}; then
     echo "ok   $name conformance"
   else
     echo "FAIL $name conformance" >&2
