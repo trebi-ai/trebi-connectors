@@ -6,7 +6,7 @@ The module depends only on the Go standard library. Tags are `sdk/vX.Y.Z`. The v
 
 ## What the SDK does for you
 
-- It reads and writes the frames. A line is at most 1 MiB. A longer input line ends `Serve` with `ErrLineTooLong`. A longer event or result is refused.
+- It reads and writes the frames. A line is at most 4 MiB. A longer input line ends `Serve` with `ErrLineTooLong`. A longer event or result is refused.
 - It answers `ping` and `shutdown`. After `shutdown`, it cancels the context of the adapter and returns within 3 s.
 - It holds every event and status until the daemon sends `initialized`. Then it sends the first `status` and starts `Runner.Run`.
 - It drops a second `messages/send` with the same `key`. The keys stay in `$TREBI_STATE_DIR/trebi-sdk-sent.jsonl` (the newest 10000 keys), so a restart does not send a message twice.
@@ -49,9 +49,25 @@ Add the optional interfaces for the features you have:
 | `Editor` | `edit` | `messages/edit` |
 | `StatusReporter` | | `auth/status` and the first `status` |
 | `Authenticator` | `setup.login` | `auth/begin`, `auth/submit`, `auth/cancel`, `auth/logout` |
+| `Subscriber` | `subscriptions` | `subscriptions/options`, `subscriptions/sync` |
+| `SubscriptionSubmitter` | `subscriptions` | `subscriptions/submit` |
+| `WebhookReceiver` | `webhooks` | `webhook/receive` |
 | `Runner` | | receives the `Emitter` after `initialized` |
 
 The features `attachments.in`, `attachments.out`, and `replies` have no method. Put them in `InitializeResult.Features`. Declare `replies` when the adapter sets `reply_to` on an inbound quoted reply and honours `SendParams.ReplyTo` on send. When `Features` is not empty, the SDK keeps only the listed features that the adapter can serve, in the listed order. When it is empty, the SDK lists every method feature the adapter implements. Without `RoomGetter`, the SDK answers `rooms/get` from the pages of `ListRooms`.
+
+## Watch things
+
+A connector with `events.subscriptions` in its manifest lets a user watch things in the platform, for example a repository or a team. `../CONTRIBUTING.md` ("Watch things") has the manifest block, and the skill has the full steps.
+
+- `InitializeParams.Webhook` is the hosted hook of the connection: `URL` and `Secret`. It is nil when the user has no Trebi Cloud link. Then each subscription uses `poll` or `stream`.
+- `Subscriber.Options` answers the options of one dynamic field. `OptionQuery.Values` has the current form, because one field can depend on another.
+- `Subscriber.Sync` gets the full list of subscriptions each time. Make the platform match it: create what is new, update what changed, and delete what is gone. Return one `SubscriptionState` for each subscription, in the same order. The SDK refuses a result with other ids or another order.
+- `SubscriptionSubmitter.SubmitSubscription` takes the answers of a person for one `action_required` subscription. Without it, `subscriptions/submit` answers `unsupported`, and the manifest must not list the mode `manual`.
+- `WebhookReceiver.ReceiveWebhook` turns one delivery into events. Send them with `sdk.EmitterFrom(ctx)`. Check the signature first, and return `sdk.Invalid` when it is bad. The daemon drops an `invalid` delivery and does not retry it. A request with `Handshake: true` was already answered by the cloud; make no event for it.
+- `WebhookRequest.Header(name)` reads one header. `VerifyHMAC(secret, header, prefix, sha256.New, sdk.EncodingHex)` checks the common form `<prefix><HMAC of the body>`, for example `sha256=<hex>`. It compares in constant time. A platform with another form (Slack, Zoom, Trello) checks in the adapter.
+- `Emitter.SubscriptionsChanged()` asks the daemon for a new sync, for example when a manual setup gets a code from the platform.
+- `Subscription.Value(field)` returns the first value of a field.
 
 ## Event fields
 
@@ -101,6 +117,8 @@ Stdout belongs to the protocol. Write logs to stderr only. The daemon puts stder
 
 `sdk.NewSandbox(cfg)` is the reference adapter that `trebi connector conformance` must pass. It has three rooms and one thread. It serves every write feature on its rooms. It emits a `message` event with `sender.self: true` for each send. It keeps its login, rooms, and events in `$TREBI_STATE_DIR/sandbox.json` with relative paths only, so a restart or a restore stays logged in. An unknown room gives `not_found`. A send with no text and no file gives `invalid`. It writes nothing outside the state and cache folders.
 
+With `SandboxConfig.Subscriptions`, it also has the features `subscriptions` and `webhooks`. It has one dynamic room field `target` with three options. `sandbox/alpha` and `sandbox/beta` use mode `api`: with a webhook, they become `active`, and each new one gets one POST to the webhook URL. The body is `{"target": …, "text": "hello"}` and the header `x-sandbox-signature` is `sha256=<hex HMAC of the body>` with the webhook secret. `sandbox/manual` uses mode `manual`: it becomes `action_required` and asks for a `code`. After `subscriptions/submit`, it becomes `active` and gets one delivery. Without a webhook, each target becomes `polling`. `webhook/receive` checks the signature and emits one `message` event in the room of the target.
+
 Use it in SDK tests and as an example. A connector program does not use it for `serve --sandbox`: the sandbox of a program runs the real adapter of the program over a fake service, so the conformance check tests the program code. See `connectors/discord-cli/internal/fakediscord` and `connectors/whatsapp-cli/internal/wa/fakewa`.
 
 ## Tests
@@ -112,7 +130,7 @@ Use it in SDK tests and as an example. A connector program does not use it for `
 
 ## Versions
 
-The next tag is `sdk/v0.3.0`. It adds `Author.Bot` and the feature `replies`. The changes are additive. After the tag, do step 3 of "The SDK" in `../README.md`.
+`sdk/v0.4.0` adds the subscriptions: `InitializeParams.Webhook`, the interfaces `Subscriber`, `SubscriptionSubmitter`, and `WebhookReceiver`, `EmitterFrom`, `WebhookRequest.VerifyHMAC`, and the sandbox option `Subscriptions`. `MaxLine` is now 4 MiB, the same as the daemon. The `Emitter` interface gets `SubscriptionsChanged`, so a test fake that implements `Emitter` must add it. After a tag, do step 3 of "The SDK" in `../README.md`.
 
 ## Contract fixtures
 

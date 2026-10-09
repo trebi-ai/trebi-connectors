@@ -15,7 +15,7 @@ Trebi reviews every entry before it goes into the catalog. You open a pull reque
 | Path | What you write | Example |
 |---|---|---|
 | A. Actions only | A manifest and a skill. The CLI or MCP server comes from another place. | `catalog/apollo`, `catalog/google` |
-| B. Actions and events | Path A, plus a program that sends events to Trebi. | none yet |
+| B. Actions and events | Path A, plus a program that sends events to Trebi. | `catalog/github`, `catalog/linear`, `catalog/notion`, `catalog/mstodo` |
 | C. Channel | Path B, plus the channel features: rooms, history, replies. | `catalog/discord`, `catalog/whatsapp` |
 
 Start with path A. Most connectors need only actions. Add events when a user must start a job from something that happens in the system. Add a channel when a user must talk with an agent through the system.
@@ -221,6 +221,81 @@ An event is a typed `event` message. `sdk/contract/event.message.json` is an exa
 
 Each schema file must be a valid JSON Schema (draft 2020-12). Give each property a `description`: an agent reads it to write a trigger.
 
+### Watch things
+
+A user often wants events about one thing in the system: a repository, a team, a list, or a workspace. Add `events.subscriptions` to let the user choose those things. The user then opens the connector, clicks the action (for example "Watch a repository"), fills a short form, and selects the event types. Trebi gets the events by the best method that is available.
+
+```yaml
+events:
+  protocol: trebi-connector/1
+  command: linear-cli serve
+  restart: always
+  types:
+    - {type: issue, description: An issue created, changed, or removed, schema: schemas/issue.json}
+    - {type: comment, description: A comment on an issue, schema: schemas/comment.json}
+  subscriptions:
+    action: Watch a team
+    modes: [api, poll]
+    fields:
+      - name: team
+        label: Team
+        help: Leave it empty to watch every public team.
+        dynamic: true
+        room: true
+      - name: resources
+        label: Changes to
+        choices: [Issue, Comment, Project, Cycle]
+        multiple: true
+        default: Issue
+    webhook:
+      headers: [linear-signature, linear-delivery, linear-event]
+```
+
+- `subscriptions` needs `protocol: trebi-connector/1`. The program implements the SDK interfaces in `sdk/README.md` ("Watch things").
+- `action` is the verb on the button, at most 40 characters. Write it for the user: "Watch a repository", not "Create webhook".
+- `fields` is the form, at most 8 fields. A field has a `label`. It has `choices` (a closed list), `dynamic: true` (the program loads the options), or neither (free text). `multiple: true` takes a list. A connector with no fields shows one switch.
+- At most one field has `room: true`. Its value is the `room` of each event, so a trigger can limit a job to that thing. A room field is not `multiple`.
+- `webhook.headers` lists the headers that the program reads, for example the signature and the delivery id. Trebi forwards only these headers and a short default list. These names are refused: `authorization`, `cookie`, `set-cookie`, `proxy-authorization`, and each name that starts with `cf-` or `x-forwarded-`.
+- `webhook.handshake` lists the handshake rules of the system. See below.
+
+#### The four modes
+
+`modes` lists the methods that are possible. The program chooses the mode of each subscription when Trebi syncs the list. The login and the Trebi Cloud link of the user decide it.
+
+| Mode | When to use it | What the user sees |
+|---|---|---|
+| `api` | The program can register a webhook through the API of the system. | "Live" |
+| `manual` | A person must register the webhook on a settings page of the system. The program shows the URL to copy and asks for the values to paste, for example a signing secret. | "Finish the setup", then "Live" |
+| `stream` | The system has a socket or a long poll that the program holds open. | "Live" |
+| `poll` | The program reads the changes at an interval. | "Checks every few minutes" |
+
+`api` and `manual` need the `webhook` block. They also need a Trebi Cloud link, because the cloud hosts the URL. Without a link, the program has no webhook URL. Always list `poll` (or `stream`) too, so that the connector works for a user with no link. This is the poll fallback. The program then polls at an interval that the system allows, at least one minute. A switch between a webhook and a poll can repeat one change with another event id. Tell this in the skill.
+
+#### Handshake rules
+
+Some systems check the URL before they send events. The cloud answers these checks for the program, from the rules in `webhook.handshake`. It tries the rules in order, and the first match answers.
+
+| Rule | Matches when | The cloud answers | The program gets it |
+|---|---|---|---|
+| `query_echo:<param>` | the query has `<param>` | 200 `text/plain` with the value | yes, with `handshake: true` |
+| `json_echo:<field>` | the body is a JSON object with a string `<field>`, and it has no other key except `type` and `token` | 200 `application/json` `{"<field>": value}` | yes |
+| `header_echo:<header>` | the request has `<header>` | 200, the same header with the same value | yes |
+| `ok:GET`, `ok:HEAD` | the method is `GET` or `HEAD` and no echo rule matched | 200, no body | no |
+
+For example, Microsoft Graph uses `query_echo:validationToken`, Slack and Monday use `json_echo:challenge`, and Asana uses `header_echo:x-hook-secret`. A request that matches no rule is a normal delivery. It must use `POST`, `PUT`, or `PATCH`. A check that needs the app secret of the system (Zoom, X) is not supported.
+
+#### Auth scopes for webhooks
+
+A webhook needs more access than a read. Ask for the scope that lets the program create and delete webhooks, and tell it in the skill. For example, GitHub needs `admin:repo_hook`, and a fine-grained token needs "Webhooks: read and write". When the user cannot give that access, the program returns the state `error` with a short message, for example "Trebi needs admin access to octo/app". It never asks for more scopes than the connector uses.
+
+#### Rules for the program
+
+- Check the signature of each delivery. A bad signature returns `invalid`. Trebi drops it.
+- Keep the platform ids and the platform secrets in `TREBI_STATE_DIR`. A restore can give a new URL. The next sync then deletes the old webhooks and makes new ones.
+- Read a thin payload (an id only) with the API before you send the event.
+- Write each `action` text in simple words for a person who does not know webhooks.
+- The conformance check runs `serve --sandbox`: the fake system of the program must register a webhook and send one signed delivery.
+
 ## Path C: a channel
 
 A channel adds the `channel` block. Each feature in `channel.features` must match a method that the adapter serves, and `channel.limits` must match what `initialize` returns. The adapter must not promise more than the manifest. The feature list and the SDK interface of each feature are in `sdk/README.md`. A channel CLI also has a history command that reads the earlier messages of a room. The skill shows it in a section "Read a conversation".
@@ -233,6 +308,7 @@ A channel adds the `channel` block. Each feature in `channel.features` must matc
 - [ ] Each secret input has `secret: true`.
 - [ ] `skill/SKILL.md` has `name` and `description`, and its commands work.
 - [ ] Each event type has a schema in `schemas/`.
+- [ ] An entry with `events.subscriptions` lists `poll` or `stream` in `modes`, so it works with no Trebi Cloud link.
 - [ ] The program needs no prompt from a person and writes no file outside the two Trebi folders.
 - [ ] `scripts/validate.sh <name>` passes.
 - [ ] For an entry with events or a channel, `scripts/validate.sh --conformance <name>` passes. It needs a `trebi` on `PATH` that has the `connector conformance` command.

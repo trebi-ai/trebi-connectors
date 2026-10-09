@@ -2,8 +2,17 @@ package sdk_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +30,9 @@ type flowAdapter struct {
 	steps    []sdk.Step
 	account  *sdk.Account
 	loggedIn bool
+	synced   []sdk.SubscriptionState
+	submit   sdk.SubscriptionState
+	hook     sdk.Event
 
 	mu    sync.Mutex
 	sends int
@@ -89,6 +101,22 @@ func (a *flowAdapter) Typing(context.Context, string, string) error        { ret
 func (a *flowAdapter) Seen(context.Context, string, string) error          { return nil }
 func (a *flowAdapter) React(context.Context, string, string, string) error { return nil }
 func (a *flowAdapter) Edit(context.Context, sdk.EditParams) error          { return nil }
+
+func (a *flowAdapter) Options(context.Context, sdk.OptionQuery) (sdk.OptionPage, error) {
+	return sdk.OptionPage{}, nil
+}
+
+func (a *flowAdapter) Sync(context.Context, sdk.SyncParams) (sdk.SyncResult, error) {
+	return sdk.SyncResult{Subscriptions: a.synced}, nil
+}
+
+func (a *flowAdapter) SubmitSubscription(context.Context, sdk.SubmitParams) (sdk.SubscriptionState, error) {
+	return a.submit, nil
+}
+
+func (a *flowAdapter) ReceiveWebhook(ctx context.Context, _ sdk.WebhookRequest) error {
+	return sdk.EmitterFrom(ctx).Event(a.hook)
+}
 
 var (
 	ana    = &sdk.Account{ID: "5511999999999@s.whatsapp.net", Name: "Ana"}
@@ -162,6 +190,35 @@ func TestFlows(t *testing.T) {
 		if a.sends != 1 {
 			t.Fatalf("adapter sent %d times; the second send with one key must be dropped", a.sends)
 		}
+	})
+	t.Run("subscriptions", func(t *testing.T) {
+		t.Parallel()
+		u := &sdk.Account{ID: "u-1", Name: "Ana"}
+		eng := &sdk.Room{ID: "ENG", Name: "Engineering"}
+		const manual = "sub_01j9zq5a6b7c8d9e0f1g2h3j4k"
+		a := &flowAdapter{
+			result: sdk.InitializeResult{
+				Adapter:  sdk.AdapterInfo{Name: "linear-cli", Version: "0.1.0"},
+				Account:  u,
+				Events:   []sdk.EventDecl{{Type: "issue"}, {Type: "comment"}},
+				Features: []string{sdk.FeatureSubscriptions, sdk.FeatureWebhooks},
+			},
+			account: u, loggedIn: true,
+			synced: []sdk.SubscriptionState{
+				{ID: "sub_01j9zq3k4m5n6p7r8s9t0v1w2x", Title: "ENG · Issues", Room: eng, Mode: sdk.ModeAPI, State: sdk.SubscriptionActive},
+				{ID: manual, Title: "Every public team · Issues", Mode: sdk.ModeManual, State: sdk.SubscriptionActionRequired, Action: &sdk.Action{
+					Text: "Add a webhook with this URL in Linear, then paste the signing secret.",
+					Show: []sdk.ShowValue{{Label: "URL", Value: "https://in.trebi.ai/hook/Zm9vYmFyYmF6cXV4"}},
+					Ask:  []sdk.AskField{{Name: "signing_secret", Label: "Signing secret", Secret: true, Required: true}},
+				}},
+			},
+			submit: sdk.SubscriptionState{ID: manual, Title: "Every public team · Issues", Mode: sdk.ModeManual, State: sdk.SubscriptionActive},
+			hook: sdk.Event{
+				ID: "234d1a4e-b617-4388-90fe-adc3633d6b72", Type: "issue", TS: "2026-10-08T12:00:00Z", Room: eng,
+				Sender: &sdk.Author{ID: "u-2", Name: "Sam"}, Text: "ENG-42 Fix login",
+			},
+		}
+		sdktest.Run(t, a, "contract/flow.subscriptions.jsonl")
 	})
 }
 
@@ -417,5 +474,166 @@ func TestSandboxLoginCancelAndInput(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+// watcher syncs with no submit and drops each state but the first.
+type watcher struct{ bare }
+
+func (watcher) Options(context.Context, sdk.OptionQuery) (sdk.OptionPage, error) {
+	return sdk.OptionPage{}, nil
+}
+
+func (watcher) Sync(_ context.Context, p sdk.SyncParams) (sdk.SyncResult, error) {
+	var res sdk.SyncResult
+	for _, s := range p.Subscriptions[:min(1, len(p.Subscriptions))] {
+		res.Subscriptions = append(res.Subscriptions, sdk.SubscriptionState{ID: s.ID, Mode: sdk.ModePoll, State: sdk.SubscriptionPolling})
+	}
+	return res, nil
+}
+
+func TestSubscriptionGuards(t *testing.T) {
+	t.Parallel()
+	c := sdktest.Start(watcher{})
+	defer c.Close() //nolint:errcheck // the test checks the calls
+	init, err := c.Initialize(sdk.InitializeParams{Protocol: sdk.Protocol})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(init.Features, []string{sdk.FeatureSubscriptions}) {
+		t.Fatalf("features %v", init.Features)
+	}
+	var page sdk.OptionPage
+	if err := c.Call(sdk.MethodSubscriptionsOptions, sdk.OptionQuery{Field: "x"}, &page); err != nil || page.Options == nil {
+		t.Fatalf("options: %v %v", page, err)
+	}
+	one := sdk.SyncParams{Subscriptions: []sdk.Subscription{{ID: "a"}}}
+	if err := c.Call(sdk.MethodSubscriptionsSync, one, nil); err != nil {
+		t.Fatalf("sync one: %v", err)
+	}
+	two := sdk.SyncParams{Subscriptions: []sdk.Subscription{{ID: "a"}, {ID: "b"}}}
+	if err := c.Call(sdk.MethodSubscriptionsSync, two, nil); sdk.CodeOf(err) != sdk.CodePermanent {
+		t.Fatalf("a short sync result: %v", err)
+	}
+	if err := c.Call(sdk.MethodSubscriptionsSubmit, sdk.SubmitParams{ID: "a"}, nil); sdk.CodeOf(err) != sdk.CodeUnsupported {
+		t.Fatalf("submit with no submitter: %v", err)
+	}
+	if err := c.Call(sdk.MethodWebhookReceive, sdk.WebhookRequest{ID: "w"}, nil); sdk.CodeOf(err) != sdk.CodeUnsupported {
+		t.Fatalf("webhook with no receiver: %v", err)
+	}
+}
+
+func TestVerifyHMAC(t *testing.T) {
+	t.Parallel()
+	secret := []byte("s3cret")
+	body := `{"a":1}`
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(body))
+	sum := mac.Sum(nil)
+	cases := []struct {
+		name, header, prefix string
+		enc                  sdk.Encoding
+		want                 bool
+	}{
+		{"hex with prefix", "sha256=" + hex.EncodeToString(sum), "sha256=", sdk.EncodingHex, true},
+		{"upper hex", strings.ToUpper(hex.EncodeToString(sum)), "", sdk.EncodingHex, true},
+		{"base64", base64.StdEncoding.EncodeToString(sum), "", sdk.EncodingBase64, true},
+		{"wrong prefix", "sha1=" + hex.EncodeToString(sum), "sha256=", sdk.EncodingHex, false},
+		{"wrong sum", "sha256=00", "sha256=", sdk.EncodingHex, false},
+		{"empty", "", "", sdk.EncodingHex, false},
+	}
+	for _, tc := range cases {
+		r := sdk.WebhookRequest{Body: body, Headers: map[string]string{"x-sig": tc.header}}
+		if got := r.VerifyHMAC(secret, "X-Sig", tc.prefix, sha256.New, tc.enc); got != tc.want {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
+	}
+}
+
+func TestSandboxSubscriptions(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var got []sdk.WebhookRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body) //nolint:errcheck // a short read fails the signature check
+		mu.Lock()
+		got = append(got, sdk.WebhookRequest{
+			ID: strconv.Itoa(len(got)), Method: r.Method, Body: string(body),
+			Headers: map[string]string{sdk.SandboxSignature: r.Header.Get(sdk.SandboxSignature)},
+		})
+		mu.Unlock()
+	}))
+	defer srv.Close()
+	cfg := sandboxConfig()
+	cfg.Login, cfg.Subscriptions = nil, true
+	c := sdktest.Start(sdk.NewSandbox(cfg))
+	defer c.Close() //nolint:errcheck // the test checks the calls
+	res, err := c.Initialize(sdk.InitializeParams{Webhook: &sdk.Webhook{URL: srv.URL, Secret: "s3cret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(res.Features, sdk.FeatureSubscriptions) || !slices.Contains(res.Features, sdk.FeatureWebhooks) {
+		t.Fatalf("features %v", res.Features)
+	}
+	var opts sdk.OptionPage
+	if err := c.Call(sdk.MethodSubscriptionsOptions, sdk.OptionQuery{Field: "target"}, &opts); err != nil || len(opts.Options) != 3 {
+		t.Fatalf("options %+v: %v", opts, err)
+	}
+	subs := sdk.SyncParams{Subscriptions: []sdk.Subscription{
+		{ID: "a", Values: map[string][]string{"target": {sdk.SandboxAlpha}}},
+		{ID: "m", Values: map[string][]string{"target": {sdk.SandboxManual}}},
+	}}
+	var sync sdk.SyncResult
+	if err := c.Call(sdk.MethodSubscriptionsSync, subs, &sync); err != nil {
+		t.Fatal(err)
+	}
+	if a, m := sync.Subscriptions[0], sync.Subscriptions[1]; a.State != sdk.SubscriptionActive || a.Mode != sdk.ModeAPI ||
+		m.State != sdk.SubscriptionActionRequired || m.Action == nil || m.Action.Show[0].Value != srv.URL {
+		t.Fatalf("sync %+v", sync)
+	}
+	var st sdk.SubscriptionState
+	if err := c.Call(sdk.MethodSubscriptionsSubmit, sdk.SubmitParams{ID: "m", Fields: map[string]string{"code": "1"}}, &st); err != nil || st.State != sdk.SubscriptionActive {
+		t.Fatalf("submit %+v: %v", st, err)
+	}
+	if err := c.Call(sdk.MethodSubscriptionsSync, subs, &sync); err != nil || sync.Subscriptions[1].State != sdk.SubscriptionActive {
+		t.Fatalf("sync after submit %+v: %v", sync, err)
+	}
+	mu.Lock()
+	reqs := slices.Clone(got)
+	mu.Unlock()
+	if len(reqs) != 2 {
+		t.Fatalf("deliveries %d, want one for alpha and one after submit", len(reqs))
+	}
+	for _, r := range reqs {
+		if err := c.Call(sdk.MethodWebhookReceive, r, nil); err != nil {
+			t.Fatalf("receive: %v", err)
+		}
+	}
+	if ev, err := c.WaitNote(sdk.MethodEvent); err != nil || !strings.Contains(string(ev.Params), sdk.SandboxAlpha) {
+		t.Fatalf("event %s: %v", ev.Params, err)
+	}
+	forged := reqs[0]
+	forged.Body = strings.Replace(forged.Body, "hello", "hellx", 1)
+	if err := c.Call(sdk.MethodWebhookReceive, forged, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+		t.Fatalf("forged: %v", err)
+	}
+	if err := c.Call(sdk.MethodSubscriptionsSync, sdk.SyncParams{Subscriptions: []sdk.Subscription{}}, &sync); err != nil || len(sync.Subscriptions) != 0 {
+		t.Fatalf("empty sync %+v: %v", sync, err)
+	}
+}
+
+func TestSandboxSubscriptionsPoll(t *testing.T) {
+	t.Parallel()
+	cfg := sandboxConfig()
+	cfg.Login, cfg.Subscriptions = nil, true
+	c := sdktest.Start(sdk.NewSandbox(cfg))
+	defer c.Close() //nolint:errcheck // the test checks the calls
+	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
+		t.Fatal(err)
+	}
+	var sync sdk.SyncResult
+	subs := sdk.SyncParams{Subscriptions: []sdk.Subscription{{ID: "m", Values: map[string][]string{"target": {sdk.SandboxManual}}}}}
+	if err := c.Call(sdk.MethodSubscriptionsSync, subs, &sync); err != nil || sync.Subscriptions[0].State != sdk.SubscriptionPolling {
+		t.Fatalf("sync %+v: %v", sync, err)
 	}
 }

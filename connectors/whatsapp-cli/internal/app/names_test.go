@@ -19,8 +19,9 @@ import (
 
 type nopEmitter struct{}
 
-func (nopEmitter) Event(sdk.Event) error   { return nil }
-func (nopEmitter) Status(sdk.Status) error { return nil }
+func (nopEmitter) Event(sdk.Event) error       { return nil }
+func (nopEmitter) Status(sdk.Status) error     { return nil }
+func (nopEmitter) SubscriptionsChanged() error { return nil }
 
 func newNamesAdapter(t *testing.T) (*Adapter, *fakewa.Client) {
 	t.Helper()

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":2,"method":"subscriptions/sync","params":{"subscriptions":[{"id":"sub_01j9zq3k4m5n6p7r8s9t0v1w2x","values":{"team":["ENG"],"resources":["Issue","Comment"]},"types":["issue","comment"]},{"id":"sub_01j9zq5a6b7c8d9e0f1g2h3j4k","values":{"resources":["Issue"]}}]}}

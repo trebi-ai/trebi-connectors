@@ -1,7 +1,12 @@
 package sdk
 
 import (
+	"crypto/hmac"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"hash"
+	"strings"
 	"time"
 )
 
@@ -9,7 +14,8 @@ import (
 const Protocol = "trebi-connector/1"
 
 // Methods of trebi-connector/1. The daemon sends requests; the adapter sends
-// the notifications event, status, auth/step, and auth/done.
+// the notifications event, status, auth/step, auth/done, and
+// subscriptions/changed.
 const (
 	MethodInitialize  = "initialize"
 	MethodInitialized = "initialized"
@@ -39,6 +45,31 @@ const (
 	MethodThreadsCreate   = "threads/create"
 	MethodTyping          = "typing"
 	MethodReactionsAdd    = "reactions/add"
+
+	MethodSubscriptionsOptions = "subscriptions/options"
+	MethodSubscriptionsSync    = "subscriptions/sync"
+	MethodSubscriptionsSubmit  = "subscriptions/submit"
+	MethodWebhookReceive       = "webhook/receive"
+	// MethodSubscriptionsChanged asks the daemon for a new sync.
+	MethodSubscriptionsChanged = "subscriptions/changed"
+)
+
+// Subscription states.
+const (
+	SubscriptionPending        = "pending"
+	SubscriptionActive         = "active"
+	SubscriptionPolling        = "polling"
+	SubscriptionActionRequired = "action_required"
+	SubscriptionError          = "error"
+)
+
+// Subscription modes: how the platform delivers the events of one
+// subscription.
+const (
+	ModeAPI    = "api"
+	ModeManual = "manual"
+	ModeStream = "stream"
+	ModePoll   = "poll"
 )
 
 // Adapter states of the status notification.
@@ -84,7 +115,7 @@ const (
 	FormatHTML     = "html"
 )
 
-// Channel features. The SDK derives the method features from the optional
+// Features. The SDK derives the method features from the optional
 // interfaces of an adapter. The attachment features and replies have no
 // method, so an adapter declares them in its InitializeResult.
 const (
@@ -101,10 +132,12 @@ const (
 	FeatureAttachmentsIn  = "attachments.in"
 	FeatureAttachmentsOut = "attachments.out"
 	FeatureReplies        = "replies"
+	FeatureSubscriptions  = "subscriptions"
+	FeatureWebhooks       = "webhooks"
 )
 
-// MaxLine is the largest line on the wire (1 MiB).
-const MaxLine = 1 << 20
+// MaxLine is the largest line on the wire (4 MiB).
+const MaxLine = 4 << 20
 
 // TimeLayout is the event time format: UTC with microseconds.
 const TimeLayout = "2006-01-02T15:04:05.000000Z"
@@ -131,6 +164,16 @@ type InitializeParams struct {
 	Daemon   DaemonInfo   `json:"daemon"`
 	Instance InstanceInfo `json:"instance"`
 	Cursor   string       `json:"cursor,omitempty"`
+	// Webhook is the hosted hook of the connection, or nil when the user
+	// has no Trebi Cloud link.
+	Webhook *Webhook `json:"webhook,omitempty"`
+}
+
+// Webhook is the hosted URL of a connection. Secret is a suggestion for a
+// platform that accepts one.
+type Webhook struct {
+	URL    string `json:"url"`
+	Secret string `json:"secret"`
 }
 
 // AdapterInfo names the adapter build.
@@ -427,6 +470,150 @@ type ReactionParams struct {
 	Emoji     string `json:"emoji"`
 }
 
+// OptionQuery asks for the options of one dynamic field. Values is the
+// current form, because one field can depend on another.
+type OptionQuery struct {
+	Field  string              `json:"field"`
+	Query  string              `json:"q,omitempty"`
+	Values map[string][]string `json:"values,omitempty"`
+	Cursor string              `json:"cursor,omitempty"`
+	Limit  int                 `json:"limit"`
+}
+
+// FieldOption is one choice of a dynamic field.
+type FieldOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// OptionPage is a page of options.
+type OptionPage struct {
+	Options []FieldOption `json:"options"`
+	Next    string        `json:"next,omitempty"`
+}
+
+// Subscription is one thing that the user watches. Values holds the form
+// values by field name. Types is empty for every event type.
+type Subscription struct {
+	ID     string              `json:"id"`
+	Values map[string][]string `json:"values"`
+	Types  []string            `json:"types,omitempty"`
+}
+
+// Value returns the first value of a field, or "".
+func (s Subscription) Value(field string) string {
+	if v := s.Values[field]; len(v) > 0 {
+		return v[0]
+	}
+	return ""
+}
+
+// SyncParams is the full list that the platform must match. A subscription
+// that is not in the list is gone.
+type SyncParams struct {
+	Subscriptions []Subscription `json:"subscriptions"`
+}
+
+// SubscriptionState is how the adapter serves one subscription.
+type SubscriptionState struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title,omitempty"`
+	Room      *Room   `json:"room,omitempty"`
+	Mode      string  `json:"mode"`
+	State     string  `json:"state"`
+	Message   string  `json:"message,omitempty"`
+	ExpiresAt string  `json:"expires_at,omitempty"`
+	Action    *Action `json:"action,omitempty"`
+}
+
+// Action is what a person must do to finish a subscription. Write Text in
+// simple words for a person who does not know webhooks.
+type Action struct {
+	Text string      `json:"text"`
+	URL  string      `json:"url,omitempty"`
+	Show []ShowValue `json:"show,omitempty"`
+	Ask  []AskField  `json:"ask,omitempty"`
+}
+
+// ShowValue is one value that the person copies.
+type ShowValue struct {
+	Label  string `json:"label"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret,omitempty"`
+}
+
+// AskField is one field that the person fills.
+type AskField struct {
+	Name     string `json:"name"`
+	Label    string `json:"label"`
+	Help     string `json:"help,omitempty"`
+	Secret   bool   `json:"secret,omitempty"`
+	Required bool   `json:"required,omitempty"`
+}
+
+// SyncResult has one state for each subscription of the params, in order.
+type SyncResult struct {
+	Subscriptions []SubscriptionState `json:"subscriptions"`
+}
+
+// SubmitParams carries the answers of a person for one subscription.
+type SubmitParams struct {
+	ID     string            `json:"id"`
+	Fields map[string]string `json:"fields"`
+}
+
+// WebhookRequest is one request to the hosted hook of the connection.
+// Header keys are lowercase. Handshake marks a request that the cloud
+// already answered.
+type WebhookRequest struct {
+	ID          string            `json:"id"`
+	Method      string            `json:"method"`
+	Path        string            `json:"path"`
+	Query       string            `json:"query,omitempty"`
+	ContentType string            `json:"content_type,omitempty"`
+	Headers     map[string]string `json:"headers"`
+	Body        string            `json:"body"`
+	ReceivedAt  string            `json:"received_at"`
+	Handshake   bool              `json:"handshake,omitempty"`
+}
+
+// Encoding is how a platform writes a signature.
+type Encoding int
+
+// Signature encodings.
+const (
+	EncodingHex Encoding = iota
+	EncodingBase64
+)
+
+// Header returns one header. The name is not case sensitive.
+func (r WebhookRequest) Header(name string) string {
+	return r.Headers[strings.ToLower(name)]
+}
+
+// VerifyHMAC checks a header of the form "<prefix><HMAC of the body>", for
+// example "sha256=<hex>". A platform with another form checks in the
+// adapter.
+func (r WebhookRequest) VerifyHMAC(secret []byte, header, prefix string, h func() hash.Hash, enc Encoding) bool {
+	got, ok := strings.CutPrefix(r.Header(header), prefix)
+	if !ok || got == "" || len(secret) == 0 {
+		return false
+	}
+	mac := hmac.New(h, secret)
+	mac.Write([]byte(r.Body))
+	sum := mac.Sum(nil)
+	var want string
+	switch enc {
+	case EncodingBase64:
+		want = base64.StdEncoding.EncodeToString(sum)
+	default:
+		want = hex.EncodeToString(sum)
+		got = strings.ToLower(got)
+	}
+	return hmac.Equal([]byte(got), []byte(want))
+}
+
 // FormatTime writes t in the event time format.
 func FormatTime(t time.Time) string { return t.UTC().Format(TimeLayout) }
 
@@ -454,15 +641,19 @@ func FeatureOf(method string) string {
 		return FeatureSeen
 	case MethodReactionsAdd:
 		return FeatureReactions
+	case MethodSubscriptionsOptions, MethodSubscriptionsSync, MethodSubscriptionsSubmit:
+		return FeatureSubscriptions
+	case MethodWebhookReceive:
+		return FeatureWebhooks
 	}
 	return ""
 }
 
-// Features lists every channel feature in the fixed order.
+// Features lists every feature in the fixed order.
 func Features() []string {
 	return []string{
 		FeatureRoomsList, FeatureRoomsOpen, FeatureThreads, FeatureThreadsCreate, FeatureHistory,
 		FeatureReplay, FeatureTyping, FeatureSeen, FeatureReactions, FeatureEdit,
-		FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies,
+		FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies, FeatureSubscriptions, FeatureWebhooks,
 	}
 }

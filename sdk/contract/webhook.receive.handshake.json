@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":6,"method":"webhook/receive","params":{"id":"01J8Y7ZQ5W8K3N6P9R2T4V6X9Z","method":"POST","path":"/","query":"validationToken=Validation%3A+Testing","content_type":"text/plain","headers":{"content-type":"text/plain"},"body":"","received_at":"2026-10-08T12:00:01Z","handshake":true}}

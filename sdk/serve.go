@@ -75,6 +75,25 @@ type (
 	}
 )
 
+// Subscriber lets a user watch things in the platform. Sync gets the full
+// list and returns one state for each subscription, in order.
+type Subscriber interface {
+	Options(ctx context.Context, q OptionQuery) (OptionPage, error)
+	Sync(ctx context.Context, p SyncParams) (SyncResult, error)
+}
+
+// SubscriptionSubmitter takes the answers of a person for one subscription.
+// An adapter without it must not list the mode manual.
+type SubscriptionSubmitter interface {
+	SubmitSubscription(ctx context.Context, p SubmitParams) (SubscriptionState, error)
+}
+
+// WebhookReceiver turns one platform delivery into events. It sends them
+// with EmitterFrom(ctx). A bad signature returns Invalid.
+type WebhookReceiver interface {
+	ReceiveWebhook(ctx context.Context, req WebhookRequest) error
+}
+
 // StatusReporter reports the session state. The SDK sends it as the first
 // status after initialized and answers auth/status with it.
 type StatusReporter interface {
@@ -99,10 +118,21 @@ type StepSink interface {
 }
 
 // Emitter is how an adapter sends events and status. Nothing goes out
-// before initialized: the SDK queues it until then.
+// before initialized: the SDK queues it until then. SubscriptionsChanged
+// asks the daemon for a new sync, for example when a state changes.
 type Emitter interface {
 	Event(e Event) error
 	Status(s Status) error
+	SubscriptionsChanged() error
+}
+
+type emitterKey struct{}
+
+// EmitterFrom returns the Emitter of the session in the ctx of a request,
+// or nil outside one.
+func EmitterFrom(ctx context.Context) Emitter {
+	e, _ := ctx.Value(emitterKey{}).(Emitter)
+	return e
 }
 
 // Option changes how Serve runs.
@@ -134,7 +164,7 @@ func WithLogger(l *slog.Logger) Option { return func(c *config) { c.log = l } }
 
 var (
 	// ErrLineTooLong is a line over MaxLine.
-	ErrLineTooLong = errors.New("line over 1 MiB")
+	ErrLineTooLong = errors.New("line over 4 MiB")
 
 	errReplied = errors.New("replied")
 )
@@ -420,7 +450,7 @@ func (s *session) request(m inMsg) {
 		s.reply(m.ID, nil, Unsupported(f+" is not a feature of this adapter"))
 		return
 	}
-	ctx := s.ctx
+	ctx := context.WithValue(s.ctx, emitterKey{}, Emitter(emitter{s}))
 	if d := timeout(m.Method); d > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, d)
@@ -523,6 +553,40 @@ func (s *session) call(ctx context.Context, m inMsg) (any, error) {
 			return nil, err
 		}
 		return Empty{}, s.a.(Reactor).React(ctx, p.Room, p.MessageID, p.Emoji)
+	case MethodSubscriptionsOptions:
+		q := OptionQuery{Limit: 50}
+		if err := decode(m.Params, &q); err != nil {
+			return nil, err
+		}
+		page, err := s.a.(Subscriber).Options(ctx, q)
+		page.Options = orEmpty(page.Options)
+		return page, err
+	case MethodSubscriptionsSync:
+		var p SyncParams
+		if err := decode(m.Params, &p); err != nil {
+			return nil, err
+		}
+		return s.sync(ctx, p)
+	case MethodSubscriptionsSubmit:
+		var p SubmitParams
+		if err := decode(m.Params, &p); err != nil {
+			return nil, err
+		}
+		sub, ok := s.a.(SubscriptionSubmitter)
+		if !ok {
+			return nil, Unsupported("this adapter takes no answers for a subscription")
+		}
+		st, err := sub.SubmitSubscription(ctx, p)
+		if err == nil && st.ID == "" {
+			st.ID = p.ID
+		}
+		return st, err
+	case MethodWebhookReceive:
+		var p WebhookRequest
+		if err := decode(m.Params, &p); err != nil {
+			return nil, err
+		}
+		return Empty{}, s.a.(WebhookReceiver).ReceiveWebhook(ctx, p)
 	case MethodAuthStatus:
 		st := s.status(ctx)
 		return AuthStatusResult{State: st.State, Account: st.Account}, nil
@@ -561,6 +625,25 @@ func (s *session) send(ctx context.Context, p SendParams) (any, error) {
 		}
 	}
 	return r, nil
+}
+
+// sync checks that the adapter returns one state for each subscription, in
+// order.
+func (s *session) sync(ctx context.Context, p SyncParams) (any, error) {
+	res, err := s.a.(Subscriber).Sync(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	res.Subscriptions = orEmpty(res.Subscriptions)
+	if len(res.Subscriptions) != len(p.Subscriptions) {
+		return nil, Permanent(fmt.Sprintf("the adapter returns %d states for %d subscriptions", len(res.Subscriptions), len(p.Subscriptions)))
+	}
+	for i, st := range res.Subscriptions {
+		if st.ID != p.Subscriptions[i].ID {
+			return nil, Permanent("the adapter returns the states in another order")
+		}
+	}
+	return res, nil
 }
 
 // getRoom asks a RoomGetter, else pages through the room list.
@@ -740,6 +823,10 @@ func (e emitter) Event(ev Event) error {
 
 func (e emitter) Status(st Status) error { return e.s.notify(MethodStatus, st) }
 
+func (e emitter) SubscriptionsChanged() error {
+	return e.s.notify(MethodSubscriptionsChanged, Empty{})
+}
+
 // notify writes a notification, or queues it before initialized.
 func (s *session) notify(method string, params any) error {
 	b, err := marshalLine(outMsg{JSONRPC: "2.0", Method: method, Params: params})
@@ -747,7 +834,7 @@ func (s *session) notify(method string, params any) error {
 		return err
 	}
 	s.mu.Lock()
-	if !s.ready && (method == MethodEvent || method == MethodStatus) {
+	if !s.ready && (method == MethodEvent || method == MethodStatus || method == MethodSubscriptionsChanged) {
 		s.queue = append(s.queue, b)
 		s.mu.Unlock()
 		return nil
@@ -765,7 +852,7 @@ func (s *session) reply(id json.RawMessage, result any, perr *Error) {
 	}
 	err := s.write(m)
 	if errors.Is(err, ErrLineTooLong) {
-		err = s.write(outMsg{JSONRPC: "2.0", ID: id, Error: Invalid("the result is over 1 MiB")})
+		err = s.write(outMsg{JSONRPC: "2.0", ID: id, Error: Invalid("the result is over 4 MiB")})
 	}
 	if err != nil {
 		s.log.Warn("write reply", "err", err)
@@ -849,6 +936,10 @@ func implements(a Adapter, feature string) bool {
 		_, ok = a.(Reactor)
 	case FeatureEdit:
 		_, ok = a.(Editor)
+	case FeatureSubscriptions:
+		_, ok = a.(Subscriber)
+	case FeatureWebhooks:
+		_, ok = a.(WebhookReceiver)
 	case FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies:
 		ok = true
 	}
@@ -860,8 +951,10 @@ func timeout(method string) time.Duration {
 	switch method {
 	case MethodMessagesSend:
 		return 30 * time.Second
-	case MethodEventsReplay:
+	case MethodEventsReplay, MethodSubscriptionsSync:
 		return 60 * time.Second
+	case MethodSubscriptionsSubmit:
+		return 30 * time.Second
 	case MethodAuthBegin:
 		return 0
 	}

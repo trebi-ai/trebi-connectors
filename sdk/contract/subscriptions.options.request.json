@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":3,"method":"subscriptions/options","params":{"field":"team","q":"eng","values":{"resources":["Issue"]},"limit":50}}

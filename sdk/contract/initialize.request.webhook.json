@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.42.0"},"instance":{"key":"con_01j9x7k2m4q8r3t5v6w7y8z9ab","name":"linear"},"webhook":{"url":"https://in.trebi.ai/hook/Zm9vYmFyYmF6cXV4","secret":"c2VjcmV0LXN1Z2dlc3Rpb24tMzItYnl0ZXM"}}}

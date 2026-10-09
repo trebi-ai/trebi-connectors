@@ -1,10 +1,15 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,6 +39,26 @@ type SandboxConfig struct {
 	// LoginDelay is the time a login flow waits before it completes. The
 	// default is one second, so auth/cancel can end a flow first.
 	LoginDelay time.Duration
+	// Subscriptions adds the features subscriptions and webhooks: one
+	// dynamic room field "target" with the options SandboxTargets.
+	Subscriptions bool
+}
+
+// Sandbox targets. The api targets get a delivery when they become active.
+// The manual target asks for a code first.
+const (
+	SandboxAlpha  = "sandbox/alpha"
+	SandboxBeta   = "sandbox/beta"
+	SandboxManual = "sandbox/manual"
+	// SandboxSignature is the header of a sandbox delivery:
+	// "sha256=<hex HMAC of the body>" with the webhook secret.
+	SandboxSignature = "x-sandbox-signature"
+)
+
+// sandboxDelivery is the body of one sandbox delivery.
+type sandboxDelivery struct {
+	Target string `json:"target"`
+	Text   string `json:"text"`
 }
 
 // Sandbox is the reference adapter for `serve --sandbox` and for SDK tests:
@@ -49,6 +74,8 @@ type Sandbox struct {
 	st      sandboxState
 	emit    Emitter
 	inputs  map[string]chan map[string]string
+	hook    *Webhook
+	client  *http.Client
 }
 
 // sandboxState is the durable part of a sandbox. Attachment paths in it
@@ -59,6 +86,10 @@ type sandboxState struct {
 	Rooms    []Room              `json:"rooms"`
 	Threads  map[string][]Thread `json:"threads"`
 	Events   []Event             `json:"events"`
+
+	Subscriptions []Subscription               `json:"subscriptions,omitempty"`
+	States        map[string]SubscriptionState `json:"states,omitempty"`
+	Answers       map[string]map[string]string `json:"answers,omitempty"`
 }
 
 var (
@@ -77,6 +108,10 @@ var (
 	_ Seer          = (*Sandbox)(nil)
 	_ Reactor       = (*Sandbox)(nil)
 	_ Editor        = (*Sandbox)(nil)
+
+	_ Subscriber            = (*Sandbox)(nil)
+	_ SubscriptionSubmitter = (*Sandbox)(nil)
+	_ WebhookReceiver       = (*Sandbox)(nil)
 )
 
 // NewSandbox builds a sandbox with three rooms and one thread.
@@ -101,6 +136,7 @@ func NewSandbox(cfg SandboxConfig) *Sandbox {
 			Threads: map[string][]Thread{"sandbox-general": {{ID: "sandbox-thread-1", Title: "Sandbox thread"}}},
 		},
 		inputs: map[string]chan map[string]string{},
+		client: &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
@@ -131,6 +167,7 @@ func (s *Sandbox) UseFolders(t Trebi) error {
 		s.st.Threads = st.Threads
 	}
 	s.st.LoggedIn, s.st.Seq, s.st.Events = st.LoggedIn, st.Seq, st.Events
+	s.st.Subscriptions, s.st.States, s.st.Answers = st.Subscriptions, st.States, st.Answers
 	return nil
 }
 
@@ -154,19 +191,43 @@ func (s *Sandbox) save() error {
 	return os.Rename(tmp, path)
 }
 
-// Initialize answers with the configured result.
-func (s *Sandbox) Initialize(context.Context, InitializeParams) (InitializeResult, error) {
+// Initialize answers with the configured result and keeps the webhook.
+func (s *Sandbox) Initialize(_ context.Context, in InitializeParams) (InitializeResult, error) {
 	res := InitializeResult{
 		Adapter:  s.cfg.Adapter,
 		Events:   slices.Clone(s.cfg.Events),
-		Features: slices.Clone(s.cfg.Features),
+		Features: s.features(),
 		Limits:   s.cfg.Limits,
 		Login:    slices.Clone(s.cfg.Login),
 	}
+	s.mu.Lock()
+	s.hook = in.Webhook
+	s.mu.Unlock()
 	if st, _ := s.AuthStatus(context.Background()); st.Account != nil { //nolint:errcheck // AuthStatus of a sandbox never fails
 		res.Account = st.Account
 	}
 	return res, nil
+}
+
+// features are the configured features. With none configured, they are
+// the channel features of the sandbox. Subscriptions adds the two
+// subscription features.
+func (s *Sandbox) features() []string {
+	out := slices.Clone(s.cfg.Features)
+	if len(out) == 0 {
+		for _, f := range Features() {
+			switch f {
+			case FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies, FeatureSubscriptions, FeatureWebhooks:
+			default:
+				out = append(out, f)
+			}
+		}
+	}
+	out = slices.DeleteFunc(out, func(f string) bool { return f == FeatureSubscriptions || f == FeatureWebhooks })
+	if s.cfg.Subscriptions {
+		out = append(out, FeatureSubscriptions, FeatureWebhooks)
+	}
+	return out
 }
 
 // Run keeps the Emitter for the self events of each send.
@@ -592,4 +653,162 @@ func (s *Sandbox) React(_ context.Context, room, messageID, emoji string) error 
 	defer s.mu.Unlock()
 	_, err := s.room(room)
 	return err
+}
+
+// Options lists the sandbox targets for any field.
+func (s *Sandbox) Options(_ context.Context, q OptionQuery) (OptionPage, error) {
+	var page OptionPage
+	for _, t := range []string{SandboxAlpha, SandboxBeta, SandboxManual} {
+		if strings.Contains(t, strings.ToLower(q.Query)) {
+			page.Options = append(page.Options, FieldOption{Value: t, Label: strings.TrimPrefix(t, "sandbox/")})
+		}
+	}
+	return page, nil
+}
+
+// Sync makes the api targets active with a webhook, asks for a code for the
+// manual target, and polls without a webhook. Each api target that becomes
+// active gets one delivery.
+func (s *Sandbox) Sync(ctx context.Context, p SyncParams) (SyncResult, error) {
+	s.mu.Lock()
+	hook, old := s.hook, s.st.States
+	states := map[string]SubscriptionState{}
+	answers := map[string]map[string]string{}
+	var res SyncResult
+	var deliver []string
+	for _, sub := range p.Subscriptions {
+		st := s.subscriptionState(sub, hook)
+		if st.State == SubscriptionActive && st.Mode == ModeAPI && old[sub.ID].State != SubscriptionActive {
+			deliver = append(deliver, st.Room.ID)
+		}
+		if a, ok := s.st.Answers[sub.ID]; ok {
+			answers[sub.ID] = a
+		}
+		states[sub.ID] = st
+		res.Subscriptions = append(res.Subscriptions, st)
+	}
+	s.st.Subscriptions, s.st.States, s.st.Answers = slices.Clone(p.Subscriptions), states, answers
+	err := s.save()
+	s.mu.Unlock()
+	if err != nil {
+		return SyncResult{}, Transient("save the sandbox state: " + err.Error())
+	}
+	for _, target := range deliver {
+		if err := s.deliver(ctx, hook, target); err != nil {
+			return SyncResult{}, err
+		}
+	}
+	return res, nil
+}
+
+// subscriptionState is the state of one subscription now. The caller
+// holds mu.
+func (s *Sandbox) subscriptionState(sub Subscription, hook *Webhook) SubscriptionState {
+	target := sub.Value("target")
+	if target == "" {
+		for _, v := range sub.Values {
+			if len(v) > 0 && strings.HasPrefix(v[0], "sandbox/") {
+				target = v[0]
+			}
+		}
+	}
+	st := SubscriptionState{ID: sub.ID, Title: target, Room: &Room{ID: target, Name: strings.TrimPrefix(target, "sandbox/")}}
+	switch {
+	case target != SandboxAlpha && target != SandboxBeta && target != SandboxManual:
+		st.Room, st.Mode, st.State, st.Message = nil, ModePoll, SubscriptionError, "Choose a sandbox target."
+	case hook == nil:
+		st.Mode, st.State = ModePoll, SubscriptionPolling
+	case target != SandboxManual:
+		st.Mode, st.State = ModeAPI, SubscriptionActive
+	case s.st.Answers[sub.ID]["code"] != "":
+		st.Mode, st.State = ModeManual, SubscriptionActive
+	default:
+		st.Mode, st.State = ModeManual, SubscriptionActionRequired
+		st.Action = &Action{
+			Text: "Copy this address into the sandbox. Then type any code below.",
+			Show: []ShowValue{{Label: "URL", Value: hook.URL}},
+			Ask:  []AskField{{Name: "code", Label: "Code", Secret: true, Required: true}},
+		}
+	}
+	return st
+}
+
+// SubmitSubscription keeps the code of the manual target, makes it active,
+// and sends one delivery.
+func (s *Sandbox) SubmitSubscription(ctx context.Context, p SubmitParams) (SubscriptionState, error) {
+	if p.Fields["code"] == "" {
+		return SubscriptionState{}, Invalid("the code is empty")
+	}
+	s.mu.Lock()
+	hook := s.hook
+	st, ok := s.st.States[p.ID]
+	if !ok {
+		s.mu.Unlock()
+		return SubscriptionState{}, NotFound("unknown subscription")
+	}
+	if st.Mode != ModeManual || hook == nil {
+		s.mu.Unlock()
+		return SubscriptionState{}, Invalid("this subscription asks for no answer")
+	}
+	if s.st.Answers == nil {
+		s.st.Answers = map[string]map[string]string{}
+	}
+	s.st.Answers[p.ID] = map[string]string{"code": p.Fields["code"]}
+	st.State, st.Action = SubscriptionActive, nil
+	s.st.States[p.ID] = st
+	err := s.save()
+	s.mu.Unlock()
+	if err != nil {
+		return SubscriptionState{}, Transient("save the sandbox state: " + err.Error())
+	}
+	return st, s.deliver(ctx, hook, st.Room.ID)
+}
+
+// deliver posts one signed delivery for a target to the webhook URL.
+func (s *Sandbox) deliver(ctx context.Context, hook *Webhook, target string) error {
+	body, err := json.Marshal(sandboxDelivery{Target: target, Text: "hello"})
+	if err != nil {
+		return err
+	}
+	mac := hmac.New(sha256.New, []byte(hook.Secret))
+	mac.Write(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook.URL, bytes.NewReader(body))
+	if err != nil {
+		return Invalid("webhook url: " + err.Error())
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(SandboxSignature, "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return Transient("post the sandbox delivery: " + err.Error())
+	}
+	resp.Body.Close() //nolint:errcheck,gosec // the status is all the sandbox reads
+	if resp.StatusCode >= 300 {
+		return Transient("post the sandbox delivery: " + resp.Status)
+	}
+	return nil
+}
+
+// ReceiveWebhook checks the signature and emits one message event in the
+// room of the target.
+func (s *Sandbox) ReceiveWebhook(ctx context.Context, req WebhookRequest) error {
+	s.mu.Lock()
+	hook := s.hook
+	s.mu.Unlock()
+	if hook == nil || !req.VerifyHMAC([]byte(hook.Secret), SandboxSignature, "sha256=", sha256.New, EncodingHex) {
+		return Invalid("bad signature")
+	}
+	var d sandboxDelivery
+	if err := json.Unmarshal([]byte(req.Body), &d); err != nil || d.Target == "" {
+		return Invalid("the body is not a sandbox delivery")
+	}
+	e := EmitterFrom(ctx)
+	if e == nil || !s.declares("message") {
+		return nil
+	}
+	return e.Event(Event{
+		ID: "sandbox-hook-" + req.ID, Type: "message", TS: FormatTime(time.Now()),
+		Room:   &Room{ID: d.Target, Name: strings.TrimPrefix(d.Target, "sandbox/")},
+		Sender: &Author{ID: "sandbox-platform", Name: "Sandbox", Bot: true}, Text: d.Text,
+	})
 }
