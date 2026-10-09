@@ -26,13 +26,13 @@ func ServeCommand(version string) *cli.Command {
 			ctx, stop := signal.NotifyContext(c.Context, os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			s := settingsFromCtx(c)
-			cl := client.New(s.ClientID, client.Session{})
+			cl := client.New(s.ClientID, s.Tenant, client.Session{})
 			dir := s.StateDir
 			if c.Bool("sandbox") {
 				fake := fakegraph.Start()
 				fake.AutoNotify = true
 				defer fake.Close()
-				cl.ClientID, cl.GraphURL, cl.LoginURL = fakegraph.ClientID, fake.GraphURL(), fake.LoginURL()
+				cl.ClientID, cl.Tenant, cl.GraphURL, cl.LoginBase = fakegraph.ClientID, fakegraph.Tenant, fake.GraphURL(), fake.LoginBase()
 				if !s.Trebi { // never mix a fake login with the real one
 					tmp, err := os.MkdirTemp("", "mstodo-sandbox-")
 					if err != nil {

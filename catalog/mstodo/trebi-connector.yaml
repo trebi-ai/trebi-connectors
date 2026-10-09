@@ -1,8 +1,8 @@
 schema: trebi-connector/1
 name: mstodo
 title: Microsoft To Do
-description: "Start work when a task changes in a Microsoft To Do list, and read lists and tasks."
-version: 0.1.0
+description: "Start work when a task changes in a Microsoft To Do list. Read and change lists, tasks, steps, links, files, and extensions."
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -13,6 +13,15 @@ install:
   version_command: mstodo-cli --version
 setup:
   login: [device_code]
+  inputs:
+    - name: MSTODO_CLIENT_ID
+      label: "Microsoft app id"
+      help: "Optional. The application (client) id of your own Entra app, with public client flows on. Without it, the app of Trebi logs in."
+      url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    - name: MSTODO_TENANT
+      label: "Microsoft tenant"
+      help: "Optional. Use consumers for an app that accepts only personal Microsoft accounts, organizations for work accounts only, or a tenant id."
+      default: "common"
 actions:
   cli: {commands: [mstodo-cli]}
 events:

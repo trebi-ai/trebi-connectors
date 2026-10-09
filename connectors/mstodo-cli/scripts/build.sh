@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: scripts/build.sh [version] [output]
 #   version — embedded as -X main.version=<version>; default "dev"
 #   output  — the program path; default build/mstodo-cli
-#   MSTODO_CLIENT_ID — the Entra public client id; empty disables the login
+#   MSTODO_CLIENT_ID — the Entra public client id; when empty, the login needs --client-id or the env MSTODO_CLIENT_ID
 # The catalog workflow runs this on one runner for each platform.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
