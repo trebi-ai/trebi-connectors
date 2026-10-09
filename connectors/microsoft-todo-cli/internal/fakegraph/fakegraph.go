@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
 )
 
 // ClientID is the fixed app id of the sandbox.

@@ -10,7 +10,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
 )
 
 // ExtensionsCommand returns the `extensions` command: the open extensions

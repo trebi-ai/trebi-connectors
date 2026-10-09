@@ -54,7 +54,7 @@ jobs:
             tags: ""
           - cli: notion-cli
             tags: ""
-          - cli: mstodo-cli
+          - cli: microsoft-todo-cli
             tags: ""
     steps:
       - uses: actions/checkout@v4

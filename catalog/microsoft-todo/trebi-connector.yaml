@@ -1,5 +1,5 @@
 schema: trebi-connector/1
-name: mstodo
+name: microsoft-todo
 title: Microsoft To Do
 description: "Start work when a task changes in a Microsoft To Do list. Read and change lists, tasks, steps, links, files, and extensions."
 version: 0.2.0
@@ -9,24 +9,24 @@ license: MIT
 platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
 install:
   catalog: true
-  bin: mstodo-cli
-  version_command: mstodo-cli --version
+  bin: microsoft-todo-cli
+  version_command: microsoft-todo-cli --version
 setup:
   login: [device_code]
   inputs:
-    - name: MSTODO_CLIENT_ID
+    - name: MICROSOFT_TODO_CLIENT_ID
       label: "Microsoft app id"
       help: "Optional. The application (client) id of your own Entra app, with public client flows on. Without it, the app of Trebi logs in."
       url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
-    - name: MSTODO_TENANT
+    - name: MICROSOFT_TODO_TENANT
       label: "Microsoft tenant"
       help: "Optional. Use consumers for an app that accepts only personal Microsoft accounts, organizations for work accounts only, or a tenant id."
       default: "common"
 actions:
-  cli: {commands: [mstodo-cli]}
+  cli: {commands: [microsoft-todo-cli]}
 events:
   protocol: trebi-connector/1
-  command: mstodo-cli serve
+  command: microsoft-todo-cli serve
   restart: always
   types:
     - {type: task, description: "A task created, changed, or deleted in a list", schema: schemas/task.json}

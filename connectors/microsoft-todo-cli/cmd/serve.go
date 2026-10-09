@@ -7,9 +7,9 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/fakegraph"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/serve"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/fakegraph"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/serve"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
@@ -34,7 +34,7 @@ func ServeCommand(version string) *cli.Command {
 				defer fake.Close()
 				cl.ClientID, cl.Tenant, cl.GraphURL, cl.LoginBase = fakegraph.ClientID, fakegraph.Tenant, fake.GraphURL(), fake.LoginBase()
 				if !s.Trebi { // never mix a fake login with the real one
-					tmp, err := os.MkdirTemp("", "mstodo-sandbox-")
+					tmp, err := os.MkdirTemp("", "microsoft-todo-sandbox-")
 					if err != nil {
 						return err
 					}
