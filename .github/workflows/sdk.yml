@@ -6,18 +6,59 @@ on:
       - "sdk/**"
       - "connectors/**"
       - "go.work"
+      - "scripts/changed.sh"
       - ".github/workflows/sdk.yml"
   push:
     branches: [main]
     paths:
       - "sdk/**"
       - "connectors/**"
+      - "go.work"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  # Picks what to test. A change in the SDK, go.work, or this workflow tests
+  # the SDK and every CLI. A change in connectors/<cli>/ tests that CLI only.
+  changes:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    outputs:
+      sdk: ${{ steps.pick.outputs.sdk }}
+      clis: ${{ steps.pick.outputs.clis }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # The build tags of each CLI that needs them.
+          TAGS: '{"whatsapp-cli": "sqlite_fts5"}'
+        run: |
+          set -euo pipefail
+          changed="$(scripts/changed.sh "$BASE")"
+          all=false
+          if grep -qE '^(\*$|sdk/|go\.work|scripts/changed\.sh|\.github/workflows/sdk\.yml)' <<<"$changed"; then
+            all=true
+          fi
+          clis=()
+          for dir in connectors/*/; do
+            cli="$(basename "$dir")"
+            if [ "$all" = true ] || grep -q "^connectors/$cli/" <<<"$changed"; then
+              clis+=("$cli")
+            fi
+          done
+          json="$(printf '%s\n' ${clis[@]+"${clis[@]}"} | jq -Rnc --argjson tags "$TAGS" \
+            '[inputs | select(. != "") | {cli: ., tags: ($tags[.] // "")}]')"
+          echo "sdk=$all" >> "$GITHUB_OUTPUT"
+          echo "clis=$json" >> "$GITHUB_OUTPUT"
+          echo "sdk: $all"
+          echo "clis: $json"
+
   sdk:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 15
     steps:
@@ -35,27 +76,17 @@ jobs:
           go vet ./...
           go test -race ./...
 
-  # A change in the SDK rebuilds and tests every CLI in connectors/ against the SDK
-  # in the same commit, through go.work.
+  # Builds and tests each picked CLI against the SDK in the same commit,
+  # through go.work.
   channels:
+    needs: changes
+    if: needs.changes.outputs.clis != '[]'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - cli: discord-cli
-            tags: ""
-          - cli: whatsapp-cli
-            tags: sqlite_fts5
-          - cli: github-cli
-            tags: ""
-          - cli: linear-cli
-            tags: ""
-          - cli: notion-cli
-            tags: ""
-          - cli: microsoft-todo-cli
-            tags: ""
+        include: ${{ fromJSON(needs.changes.outputs.clis) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

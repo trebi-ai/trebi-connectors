@@ -9,6 +9,7 @@ on:
       - "tools/catalogctl/**"
       - "scripts/validate.sh"
       - "scripts/publish.sh"
+      - "scripts/changed.sh"
       - ".github/workflows/catalog.yml"
   push:
     branches: [main]
@@ -48,12 +49,41 @@ jobs:
         with:
           go-version: "1.26"
           cache: false
+      # A change in an entry, or in the program of the entry, checks that
+      # entry. A change in the schema, the tools, the scripts, or this
+      # workflow checks each entry.
+      - name: Pick the entries
+        id: pick
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(scripts/changed.sh "$BASE")"
+          all=false
+          if grep -qE '^(\*$|schema/|tools/catalogctl/|scripts/(validate|changed)\.sh|\.github/workflows/catalog\.yml)' <<<"$changed"; then
+            all=true
+          fi
+          names=()
+          while IFS=$'\t' read -r name _ cli; do
+            [ -n "$name" ] || continue
+            if [ "$all" = true ] || grep -q "^catalog/$name/" <<<"$changed" \
+              || { [ -n "$cli" ] && grep -q "^connectors/$cli/" <<<"$changed"; }; then
+              names+=("$name")
+            fi
+          done < <(cd tools/catalogctl && GOWORK=off go run . entries --root ../..)
+          echo "entries: ${names[*]-none}"
+          if [ ${#names[@]} -eq 0 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "names=${names[*]}" >> "$GITHUB_OUTPUT"
+          fi
       # trebi is private now, so the release download needs an app token. A
       # fork PR gets no secrets: it tries the public download, and skips the
       # check when that fails. A maintainer then runs it before the merge.
       - name: Get a token for the trebi releases
         id: app
-        if: env.HAS_APP_KEY == 'true'
+        if: steps.pick.outputs.run == 'true' && env.HAS_APP_KEY == 'true'
         uses: actions/create-github-app-token@v3.2.0
         with:
           client-id: "Iv23liHamBzMshOMTWIG"
@@ -63,6 +93,7 @@ jobs:
           permission-contents: read
       - name: Install trebi
         id: trebi
+        if: steps.pick.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
@@ -94,9 +125,12 @@ jobs:
           echo "$(dirname "$bin")" >> "$GITHUB_PATH"
           echo "installed=true" >> "$GITHUB_OUTPUT"
           echo "trebi $tag"
-      - name: Run the conformance checks on each entry
+      - name: Run the conformance checks on the picked entries
         if: steps.trebi.outputs.installed == 'true'
-        run: scripts/validate.sh --conformance --no-external-cli
+        env:
+          NAMES: ${{ steps.pick.outputs.names }}
+        # NAMES is split into one argument per entry.
+        run: scripts/validate.sh --conformance --no-external-cli $NAMES
 
   # Lists the program archives of each install.catalog entry whose version
   # the published index does not have yet.

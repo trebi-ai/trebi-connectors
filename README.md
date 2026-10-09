@@ -22,7 +22,8 @@ Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the 
 
 ## Publish flow
 
-- A PR that changes `catalog/` or `schema/` runs `.github/workflows/catalog.yml`. It validates every entry. It downloads the newest public `trebi` release, checks it against `SHA256SUMS`, and runs the conformance check on each entry.
+- A PR that changes `catalog/` or `schema/` runs `.github/workflows/catalog.yml`. It validates every entry. It downloads the newest `trebi` release, checks it against `SHA256SUMS`, and runs the conformance check on each entry that the PR changes. A change in an entry or in its program checks that entry. A change in `schema/`, `tools/catalogctl/`, the scripts, or the workflow checks each entry.
+- A change in `sdk/` or `connectors/` runs `.github/workflows/sdk.yml`. It tests the SDK and each CLI that the change touches. A change in `sdk/`, `go.work`, or the workflow tests the SDK and every CLI. `scripts/changed.sh` lists the changed files for both workflows.
 - A push to `main` runs the same workflow and publishes to the R2 bucket `trebi-catalog`, served at `https://catalog.trebi.ai/v1/`. The job runs in the environment `catalog-publish`.
 - The layout in the bucket is `v1/index.json`, `v1/index.json.sig`, `v1/snapshots/<name>/<version>.tar.gz`, `v1/bin/<name>/<version>/<bin>_<os>_<arch>.tar.gz`, and `v1/icons/<name>.svg`.
 - A snapshot is a deterministic tar.gz of the entry folder. `publish.sh` never writes a snapshot key again. If the key exists with other bytes, the run fails.
