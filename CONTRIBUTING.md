@@ -27,7 +27,7 @@ Start with path A. Most connectors need only actions. Add events when a user mus
 3. Write `catalog/<name>/trebi-connector.yaml` and `catalog/<name>/skill/SKILL.md`.
 4. Set `publisher: community`. Only an entry that Trebi maintains has `publisher: trebi`.
 5. Run `scripts/validate.sh <name>`. For an entry with events, also run `scripts/validate.sh --conformance <name>`.
-6. Open the pull request against `main`. Tell what the connector does, how you tested it, and which account type you used.
+6. Open the pull request against `main`. Fill in the template: what the connector does, how you tested it, and which account type you used. "Testing" tells how to test against the real system.
 
 A change to an entry that exists must bump `version` in the same pull request. A published version is immutable.
 
@@ -313,6 +313,36 @@ A channel adds the `channel` block. Each feature in `channel.features` must matc
 - [ ] `scripts/validate.sh <name>` passes.
 - [ ] For an entry with events or a channel, `scripts/validate.sh --conformance <name>` passes. It needs a `trebi` on `PATH` that has the `connector conformance` command.
 
+## Testing
+
+Two levels of tests exist. CI runs the first level on each pull request. You run the second level on your own machine.
+
+### Tests in CI, with no credentials
+
+These tests must pass before a merge. They need no account and no secret:
+
+- `scripts/validate.sh <name>` checks the manifest, the skill, and the schemas.
+- The unit tests of a program in `connectors/` run each command against the fake system of the program.
+- `scripts/validate.sh --conformance <name>` runs `serve --sandbox` against the same fake system.
+
+The fake system is the contract of the program. Make it behave like the real system: the same paths, the same payload forms, and the same errors.
+
+### Live tests, on your machine
+
+CI never has credentials for a live system. GitHub gives no secrets to a pull request from a fork, and Trebi does not put test accounts in this repository. Do not add a workflow that sends a secret to the code of a pull request.
+
+Test against the real system with your own account:
+
+1. Build the program, or install the CLI of the entry.
+2. Log in with your own account. Use a test account or a test workspace when the system has one.
+3. Run each command that the pull request adds or changes. For an entry with events, start `serve` and make each event happen one time.
+4. Write the result in the pull request: the account type, the trebi version, each command, and what it did. The template has the fields.
+5. When the real system does not do what the docs say, change the fake system to do the same, and add a test. The difference is then checked on each pull request.
+
+Do not put a token, a key, a password, or personal data in the pull request, in the test data, or in the output that you paste. Replace ids and email addresses with examples.
+
+A maintainer reads your result and can run the live tests again before the merge. A live test is not a merge gate. A pull request with good fake-system tests and a clear live result can merge when CI passes.
+
 ## What CI does
 
-A pull request runs `.github/workflows/catalog.yml`. It validates every entry and runs the conformance check with the newest public `trebi` release. A pull request from a fork runs only after a maintainer approves the run. After the merge, CI signs the index and publishes the entry. A user then finds it in the catalog in the Trebi app.
+A pull request runs `.github/workflows/catalog.yml`. It validates every entry and runs the conformance check with the newest `trebi` release. A pull request from a fork runs only after a maintainer approves the run. When the run cannot download `trebi`, it skips the conformance check and shows a notice. A maintainer then runs the check before the merge. After the merge, CI signs the index and publishes the entry. A user then finds it in the catalog in the Trebi app.

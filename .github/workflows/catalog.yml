@@ -40,34 +40,62 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 15
+    env:
+      HAS_APP_KEY: ${{ secrets.GH_APP_SECRET != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
           cache: false
-      # The newest public release of trebi. It needs no token, so a fork PR
-      # runs the full check too.
+      # trebi is private now, so the release download needs an app token. A
+      # fork PR gets no secrets: it tries the public download, and skips the
+      # check when that fails. A maintainer then runs it before the merge.
+      - name: Get a token for the trebi releases
+        id: app
+        if: env.HAS_APP_KEY == 'true'
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: "Iv23liHamBzMshOMTWIG"
+          private-key: ${{ secrets.GH_APP_SECRET }}
+          owner: trebi-ai
+          repositories: trebi
+          permission-contents: read
       - name: Install trebi
+        id: trebi
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -euo pipefail
           repo=https://github.com/trebi-ai/trebi
-          tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$repo/releases/latest")"
-          tag="${tag##*/}"
-          asset="trebi_${tag#v}_linux_amd64.tar.gz"
           dir="$RUNNER_TEMP/trebi"
           rm -rf "$dir" && mkdir -p "$dir"
-          for f in "$asset" SHA256SUMS; do
-            curl -fsSL --retry 3 -o "$dir/$f" "$repo/releases/download/$tag/$f"
-          done
+          if [ -n "$GH_TOKEN" ]; then
+            tag="$(gh release view -R trebi-ai/trebi --json tagName -q .tagName)"
+            asset="trebi_${tag#v}_linux_amd64.tar.gz"
+            gh release download "$tag" -R trebi-ai/trebi -D "$dir" -p "$asset" -p SHA256SUMS
+          else
+            if ! tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$repo/releases/latest")"; then
+              echo "::notice::The trebi release is not public and this run has no GH_APP_SECRET. The conformance check is skipped. A maintainer runs it before the merge."
+              echo "installed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            tag="${tag##*/}"
+            asset="trebi_${tag#v}_linux_amd64.tar.gz"
+            for f in "$asset" SHA256SUMS; do
+              curl -fsSL --retry 3 -o "$dir/$f" "$repo/releases/download/$tag/$f"
+            done
+          fi
           (cd "$dir" && grep -E "[[:space:]]\*?${asset}\$" SHA256SUMS | sha256sum -c -)
           tar -xzf "$dir/$asset" -C "$dir"
           bin="$(find "$dir" -type f -name trebi | head -n 1)"
           [ -n "$bin" ] || { echo "::error::$asset has no trebi program"; exit 1; }
           chmod +x "$bin"
           echo "$(dirname "$bin")" >> "$GITHUB_PATH"
+          echo "installed=true" >> "$GITHUB_OUTPUT"
           echo "trebi $tag"
       - name: Run the conformance checks on each entry
+        if: steps.trebi.outputs.installed == 'true'
         run: scripts/validate.sh --conformance
 
   # Lists the program archives of each install.catalog entry whose version
