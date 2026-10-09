@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/fakegraph"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/fakegraph"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 	"github.com/trebi-ai/trebi-connectors/sdk/sdktest"
 )
@@ -95,7 +95,7 @@ func start(t *testing.T, hook bool, opts ...Option) *rig {
 	r.a = a
 	r.conn = sdktest.Start(a, sdk.WithStateDir(r.dir))
 	t.Cleanup(func() { r.conn.Close() }) //nolint:errcheck // the test is over
-	p := sdk.InitializeParams{Instance: sdk.InstanceInfo{Key: "mstodo", Name: "To Do"}}
+	p := sdk.InitializeParams{Instance: sdk.InstanceInfo{Key: "microsoft-todo", Name: "To Do"}}
 	if hook {
 		r.hook = newHook(t)
 		p.Webhook = &sdk.Webhook{URL: r.hook.URL(), Secret: "unused"}

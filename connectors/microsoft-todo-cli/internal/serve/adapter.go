@@ -1,4 +1,4 @@
-// Package serve is the trebi-connector/1 adapter of mstodo-cli. Graph
+// Package serve is the trebi-connector/1 adapter of microsoft-todo-cli. Graph
 // change notifications give the events through the hosted webhook; a delta
 // query every few minutes is the fallback.
 package serve
@@ -15,19 +15,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // Name is the adapter name in initialize.
-const Name = "mstodo-cli"
+const Name = "microsoft-todo-cli"
 
 // TypeTask is the one event type.
 const TypeTask = "task"
 
 const (
-	stateFile    = "mstodo-state.json"
+	stateFile    = "microsoft-todo-state.json"
 	stateVersion = 1
 	// lifetime is the longest expiry that Graph allows for To Do.
 	lifetime = 4230 * time.Minute
@@ -99,7 +99,7 @@ func New(cl *client.Client, version, stateDir string, opts ...Option) (*Adapter,
 	a := &Adapter{
 		cl: cl, version: version, stateDir: stateDir,
 		tick: time.Minute, pollEvery: 5 * time.Minute, now: time.Now,
-		log: slog.Default().With("source", "mstodo"),
+		log: slog.Default().With("source", "microsoft-todo"),
 		st:  state{Version: stateVersion, Subs: map[string]*entry{}, Delta: map[string]string{}},
 	}
 	for _, o := range opts {
@@ -123,7 +123,7 @@ func New(cl *client.Client, version, stateDir string, opts ...Option) (*Adapter,
 		return nil, fmt.Errorf("parse state: %w", err)
 	}
 	if st.Version > stateVersion {
-		a.stateErr = fmt.Errorf("the state is from a newer mstodo-cli (version %d); update mstodo-cli", st.Version)
+		a.stateErr = fmt.Errorf("the state is from a newer microsoft-todo-cli (version %d); update microsoft-todo-cli", st.Version)
 		return a, nil
 	}
 	if st.Subs != nil {
@@ -205,7 +205,7 @@ func (a *Adapter) report(e sdk.Emitter, err error) {
 		}
 		return
 	}
-	a.log.Warn("mstodo.background", "err", err)
+	a.log.Warn("background", "err", err)
 }
 
 // AuthStatus checks the token with one cheap To Do read. The account comes

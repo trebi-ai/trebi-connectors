@@ -17,8 +17,8 @@ const AuthFile = "auth.json"
 
 // Env names of the Microsoft app. They are also the connection inputs.
 const (
-	EnvClientID = "MSTODO_CLIENT_ID"
-	EnvTenant   = "MSTODO_TENANT"
+	EnvClientID = "MICROSOFT_TODO_CLIENT_ID"
+	EnvTenant   = "MICROSOFT_TODO_TENANT"
 )
 
 // DefaultTenant accepts work, school, and personal accounts.
@@ -65,7 +65,7 @@ func Resolve(f Flags, buildID string) (Settings, error) {
 		return s, nil
 	}
 	home, _ := os.UserHomeDir() //nolint:errcheck // an empty home gives a relative path
-	s := Settings{StateDir: filepath.Join(home, ".cli-tools", "mstodo-cli")}
+	s := Settings{StateDir: filepath.Join(home, ".cli-tools", "microsoft-todo-cli")}
 	s.ClientID, s.Source = pick(
 		source{f.ClientID, "flag (--client-id)"},
 		source{os.Getenv(EnvClientID), "env (" + EnvClientID + ")"},

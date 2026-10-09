@@ -7,7 +7,7 @@ use (
 	./connectors/github-cli
 	./connectors/linear-cli
 	./connectors/notion-cli
-	./connectors/mstodo-cli
+	./connectors/microsoft-todo-cli
 )
 
 // The CLIs build against the SDK in this commit, also before its tag

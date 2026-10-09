@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/cmd"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/fakegraph"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/cmd"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/fakegraph"
 )
 
 // cliRig runs the app against one fake Graph, in a temp home.
@@ -30,8 +30,8 @@ func newRig(t *testing.T) *cliRig {
 	t.Cleanup(r.fake.Close)
 	t.Setenv("HOME", r.home)
 	t.Setenv("TREBI_STATE_DIR", "")
-	t.Setenv("MSTODO_CLIENT_ID", fakegraph.ClientID)
-	t.Setenv("MSTODO_TENANT", fakegraph.Tenant)
+	t.Setenv("MICROSOFT_TODO_CLIENT_ID", fakegraph.ClientID)
+	t.Setenv("MICROSOFT_TODO_TENANT", fakegraph.Tenant)
 	return r
 }
 
@@ -40,7 +40,7 @@ func (r *cliRig) run(args ...string) string {
 	r.t.Helper()
 	out, err := r.try(args...)
 	if err != nil {
-		r.t.Fatalf("mstodo-cli %s: %v", strings.Join(args, " "), err)
+		r.t.Fatalf("microsoft-todo-cli %s: %v", strings.Join(args, " "), err)
 	}
 	return out
 }
@@ -51,7 +51,7 @@ func (r *cliRig) try(args ...string) (string, error) {
 	app.Writer, app.ErrWriter = &out, &errOut
 	app.Metadata[cmd.MetaGraphURL] = r.fake.GraphURL()
 	app.Metadata[cmd.MetaLoginBase] = r.fake.LoginBase()
-	err := app.Run(append([]string{"mstodo-cli"}, args...))
+	err := app.Run(append([]string{"microsoft-todo-cli"}, args...))
 	return out.String(), err
 }
 
@@ -60,7 +60,7 @@ func (r *cliRig) jsonOf(v any, args ...string) {
 	r.t.Helper()
 	out := r.run(append(args, "--json")...)
 	if err := json.Unmarshal([]byte(out), v); err != nil {
-		r.t.Fatalf("mstodo-cli %s: %v\n%s", strings.Join(args, " "), err, out)
+		r.t.Fatalf("microsoft-todo-cli %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestCLI(t *testing.T) {
 	}
 	r.run("lists", "delete", "--list", "Trip")
 	r.run("auth", "logout")
-	if _, err := os.Stat(filepath.Join(r.home, ".cli-tools", "mstodo-cli", "auth.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(r.home, ".cli-tools", "microsoft-todo-cli", "auth.json")); !os.IsNotExist(err) {
 		t.Fatalf("auth.json after logout: %v", err)
 	}
 }
@@ -178,7 +178,7 @@ func TestWatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- app.RunContext(ctx, []string{"mstodo-cli", "watch", "--list", "Work", "--interval", "50ms"})
+		done <- app.RunContext(ctx, []string{"microsoft-todo-cli", "watch", "--list", "Work", "--interval", "50ms"})
 	}()
 	time.Sleep(150 * time.Millisecond)
 	var task client.Task

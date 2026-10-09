@@ -15,7 +15,7 @@ Trebi reviews every entry before it goes into the catalog. You open a pull reque
 | Path | What you write | Example |
 |---|---|---|
 | A. Actions only | A manifest and a skill. The CLI or MCP server comes from another place. | `catalog/apollo`, `catalog/google` |
-| B. Actions and events | Path A, plus a program that sends events to Trebi. | `catalog/github`, `catalog/linear`, `catalog/notion`, `catalog/mstodo` |
+| B. Actions and events | Path A, plus a program that sends events to Trebi. | `catalog/github`, `catalog/linear`, `catalog/notion`, `catalog/microsoft-todo` |
 | C. Channel | Path B, plus the channel features: rooms, history, replies. | `catalog/discord`, `catalog/whatsapp` |
 
 Start with path A. Most connectors need only actions. Add events when a user must start a job from something that happens in the system. Add a channel when a user must talk with an agent through the system.

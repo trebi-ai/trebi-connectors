@@ -10,8 +10,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/config"
 )
 
 // settingsFromCtx returns what config.Resolve found in the before hook.
@@ -32,7 +32,7 @@ func clientFromCtx(c *cli.Context) (*client.Client, error) {
 		if s.Trebi {
 			return nil, errors.New("not logged in: log in to Microsoft in Trebi")
 		}
-		return nil, errors.New("not logged in: run mstodo-cli auth login")
+		return nil, errors.New("not logged in: run microsoft-todo-cli auth login")
 	}
 	cl := newClient(c, sess)
 	if !s.Trebi {

@@ -340,7 +340,7 @@ func (t tokenResponse) account() (id, name string) {
 // BeginDeviceCode starts a device code login.
 func (c *Client) BeginDeviceCode(ctx context.Context) (DeviceCode, error) {
 	if c.ClientID == "" {
-		return DeviceCode{}, errors.New("no Microsoft app id: set MSTODO_CLIENT_ID")
+		return DeviceCode{}, errors.New("no Microsoft app id: set MICROSOFT_TODO_CLIENT_ID")
 	}
 	var dc DeviceCode
 	err := c.form(ctx, c.loginURL("")+"/devicecode", url.Values{"client_id": {c.ClientID}, "scope": {Scopes}}, &dc)

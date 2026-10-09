@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/fakegraph"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/fakegraph"
 )
 
 // login runs the device code login on a fake and returns the client.

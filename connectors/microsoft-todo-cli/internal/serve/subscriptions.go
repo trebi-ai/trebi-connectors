@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
@@ -97,7 +97,7 @@ func (a *Adapter) Sync(ctx context.Context, p sdk.SyncParams) (sdk.SyncResult, e
 	slices.Sort(gone)
 	for _, id := range slices.Compact(gone) {
 		if err := a.cl.DeleteSubscription(ctx, id); err != nil {
-			a.log.Warn("mstodo.subscription.delete", "graph_id", id, "err", err)
+			a.log.Warn("subscription.delete", "graph_id", id, "err", err)
 		}
 	}
 	return res, nil
@@ -127,7 +127,7 @@ func (a *Adapter) syncOne(ctx context.Context, s sdk.Subscription, hook string, 
 		return fail(err.Error()), nil
 	}
 	if err := a.baseline(ctx, l.ID); err != nil {
-		a.log.Warn("mstodo.delta", "list", l.ID, "err", err)
+		a.log.Warn("delta", "list", l.ID, "err", err)
 	}
 	a.mu.Lock()
 	var prior entry
@@ -147,7 +147,7 @@ func (a *Adapter) syncOne(ctx context.Context, s sdk.Subscription, hook string, 
 	}
 	if prior.GraphID != "" {
 		if err := a.cl.DeleteSubscription(ctx, prior.GraphID); err != nil {
-			a.log.Warn("mstodo.subscription.delete", "graph_id", prior.GraphID, "err", err)
+			a.log.Warn("subscription.delete", "graph_id", prior.GraphID, "err", err)
 		}
 	}
 	if hook == "" {
@@ -420,7 +420,7 @@ func (a *Adapter) changeEvent(ctx context.Context, n notification, e entry, rece
 	return taskEvent(fmt.Sprintf("%s:%s:%s:%s", n.SubscriptionID, taskID, n.ChangeType, t.LastModifiedDateTime), n.ChangeType, t, e, ts), true, nil
 }
 
-// taskData is the data of a task event. catalog/mstodo/schemas/task.json
+// taskData is the data of a task event. catalog/microsoft-todo/schemas/task.json
 // describes it.
 type taskData struct {
 	Change         string   `json:"change"`

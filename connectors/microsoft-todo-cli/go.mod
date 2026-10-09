@@ -1,4 +1,4 @@
-module github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli
+module github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli
 
 go 1.25.5
 

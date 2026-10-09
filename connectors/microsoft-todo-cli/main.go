@@ -8,8 +8,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/cmd"
-	"github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/cmd"
+	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/config"
 )
 
 var (
@@ -28,7 +28,7 @@ func init() {
 
 func newApp() *cli.App {
 	return &cli.App{
-		Name:    "mstodo-cli",
+		Name:    "microsoft-todo-cli",
 		Usage:   "Microsoft To Do CLI",
 		Version: version,
 		Flags: []cli.Flag{

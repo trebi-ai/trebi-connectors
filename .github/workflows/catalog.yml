@@ -143,7 +143,7 @@ jobs:
       CC: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || '' }}
       # The OAuth app ids of the device logins. Empty builds need a token.
       TREBI_GITHUB_CLIENT_ID: ${{ vars.TREBI_GITHUB_CLIENT_ID }}
-      MSTODO_CLIENT_ID: ${{ vars.MSTODO_CLIENT_ID }}
+      MICROSOFT_TODO_CLIENT_ID: ${{ vars.MICROSOFT_TODO_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

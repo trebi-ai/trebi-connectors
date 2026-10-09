@@ -42,7 +42,7 @@ func TestResolveStandalone(t *testing.T) {
 	if err != nil || s.Trebi || s.ClientID != "env" || s.Tenant != DefaultTenant {
 		t.Fatalf("env: %+v %v", s, err)
 	}
-	if s.AuthPath() != filepath.Join(home, ".cli-tools", "mstodo-cli", AuthFile) {
+	if s.AuthPath() != filepath.Join(home, ".cli-tools", "microsoft-todo-cli", AuthFile) {
 		t.Fatalf("auth path: %s", s.AuthPath())
 	}
 	if s, _ := Resolve(Flags{ClientID: "flag", Tenant: "consumers"}, "build"); s.ClientID != "flag" || s.Tenant != "consumers" {
