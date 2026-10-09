@@ -9,7 +9,7 @@ Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the 
 | `catalog/` | One folder per connector: `trebi-connector.yaml`, `skill/`, and event schemas. Trebi writes and reviews every entry. |
 | `schema/` | The manifest JSON Schema. It is vendored byte-identical from `trebi/internal/connectors/manifest/schema.json`. Do not edit it here. |
 | `sdk/` | The Go SDK for `trebi-connector/1` (module `github.com/trebi-ai/trebi-connectors/sdk`). See `sdk/README.md`. |
-| `connectors/` | The source of the programs that the catalog builds and hosts: `whatsapp-cli` and `discord-cli`. Each is a normal CLI plus a `serve` command that speaks the protocol. See `connectors/README.md`. |
+| `connectors/` | The source of the programs that the catalog builds and hosts: `whatsapp-cli`, `discord-cli`, `github-cli`, `linear-cli`, `notion-cli`, and `mstodo-cli`. Each is a normal CLI plus a `serve` command that speaks the protocol. See `connectors/README.md`. |
 | `tools/catalogctl/` | Validates the entries, builds the snapshots, and writes and signs `index.json`. |
 | `scripts/` | `validate.sh` checks the catalog. `publish.sh` uploads the catalog to R2. |
 
@@ -43,6 +43,7 @@ A developer can also use `go install`. The program then shows the module version
 
 ```bash
 go install github.com/trebi-ai/trebi-connectors/connectors/discord-cli@latest
+go install github.com/trebi-ai/trebi-connectors/connectors/github-cli@latest
 CGO_ENABLED=1 go install -tags sqlite_fts5 github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/cmd/whatsapp-cli@latest
 ```
 
@@ -60,6 +61,7 @@ The CLIs in `connectors/` require the SDK by its tag `sdk/vX.Y.Z`. The committed
 (cd sdk && go test ./...)
 (cd connectors/discord-cli && go test ./...)
 (cd connectors/whatsapp-cli && CGO_ENABLED=1 go test -tags sqlite_fts5 ./...)
+for c in github-cli linear-cli notion-cli mstodo-cli; do (cd connectors/$c && go test ./...); done
 (cd tools/catalogctl && GOWORK=off go test ./...)
 scripts/validate.sh --conformance
 ```

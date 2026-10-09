@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a database event.",
+  "required": [
+    "database_id"
+  ],
+  "properties": {
+    "database_id": {
+      "type": "string",
+      "description": "The id of the database."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the database. It is empty when the database is deleted."
+    },
+    "url": {
+      "type": "string",
+      "description": "The link to the database in Notion."
+    },
+    "change": {
+      "type": "string",
+      "description": "What changed, from the Notion event type, for example created, schema_updated, moved, or deleted."
+    }
+  }
+}

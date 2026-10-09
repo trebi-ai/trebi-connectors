@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a comment event.",
+  "required": [
+    "action",
+    "id"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "What changed: create, update, or remove."
+    },
+    "id": {
+      "type": "string",
+      "description": "The Linear id of the comment."
+    },
+    "body": {
+      "type": "string",
+      "description": "The text of the comment, in Markdown."
+    },
+    "url": {
+      "type": "string",
+      "description": "The link to the comment in Linear."
+    },
+    "issue": {
+      "type": "object",
+      "description": "The issue of the comment.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The Linear id of the issue."
+        },
+        "identifier": {
+          "type": "string",
+          "description": "The short name of the issue, for example ENG-42."
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the issue."
+        }
+      }
+    }
+  }
+}

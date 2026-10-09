@@ -1,11 +1,15 @@
 # connectors
 
-The source of the programs that the catalog builds and hosts. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
+The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `mstodo-cli` watch things: they have subscriptions and webhooks, and send no messages. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
 
 | CLI | Module | Catalog entry |
 |---|---|---|
 | `whatsapp-cli` | `github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli` | `catalog/whatsapp` |
 | `discord-cli` | `github.com/trebi-ai/trebi-connectors/connectors/discord-cli` | `catalog/discord` |
+| `github-cli` | `github.com/trebi-ai/trebi-connectors/connectors/github-cli` | `catalog/github` |
+| `linear-cli` | `github.com/trebi-ai/trebi-connectors/connectors/linear-cli` | `catalog/linear` |
+| `notion-cli` | `github.com/trebi-ai/trebi-connectors/connectors/notion-cli` | `catalog/notion` |
+| `mstodo-cli` | `github.com/trebi-ai/trebi-connectors/connectors/mstodo-cli` | `catalog/mstodo` |
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
@@ -47,11 +51,35 @@ Warning: whatsapp-cli uses the WhatsApp Web protocol. WhatsApp can ban an accoun
 - `rooms.list` lists the guild text and announcement channels and the known DMs.
 - Outbound attachments are at most 25 MiB each.
 
+## Connectors that watch things
+
+These four CLIs have the `subscriptions` feature, and the `webhooks` feature for a connection with a hosted hook (Trebi Cloud). Without a hook, each one checks the platform at an interval and reports the mode `poll`. `CONTRIBUTING.md` has the rules in "Watch things".
+
+| CLI | Login | Form | Modes | Signature |
+|---|---|---|---|---|
+| `github-cli` | `device_code`, or the "Personal access token" input | `repository` (dynamic, room) | `api`, `poll` | `x-hub-signature-256` with the hook secret |
+| `linear-cli` | the "API key" input | `team` (dynamic, room), `resources` (choices, multiple) | `api`, `poll` | `linear-signature` with the webhook secret |
+| `notion-cli` | the "Integration secret" input | none | `manual`, `poll` | `x-notion-signature` with the verification token |
+| `mstodo-cli` | `device_code` | `list` (dynamic, room) | `api`, `poll` | `clientState` in the body, with a `validationToken` handshake |
+
+## github-cli
+
+- Login: the device flow with the Trebi GitHub OAuth app, scopes `repo` and `admin:repo_hook`. The build sets the app id with `TREBI_GITHUB_CLIENT_ID`. The token goes to `auth.json` in the state folder. The "Personal access token" input wins over the login.
+- Events: `push`, `pull_request`, `pull_request_review`, `issues`, `issue_comment`, `release`, `workflow_run`. The room is the repository. The thread of an issue or a pull request is its number.
+- Sync with a hook: one GitHub webhook for each repository, with the union of the event types of its subscriptions. The adapter keeps its hooks in `github-hooks.json` and deletes the ones that no subscription uses. 403 or 404 gives the state `error` with "Trebi needs admin access to <repo>".
+- Sync without a hook: the adapter reads `GET /repos/{repo}/events` with `If-None-Match`, at least every 60 s. The first read only finds the position. A poll event id starts with `poll:`.
+- `webhook/receive` checks `x-hub-signature-256` against the current secret and the last three secrets. A `ping` gives no event.
+
+## linear-cli, notion-cli, and mstodo-cli
+
+The README of each CLI has the details: the GraphQL webhook of Linear, the manual setup of a Notion integration webhook, and the Graph subscriptions of Microsoft To Do, which expire and renew.
+
 ## Build and test
 
 ```bash
 cd connectors/discord-cli && go test ./...
 cd connectors/whatsapp-cli && CGO_ENABLED=1 go test -tags sqlite_fts5 ./...
+cd connectors/github-cli && go test -race ./...
 ```
 
 ## Release

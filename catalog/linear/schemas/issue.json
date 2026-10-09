@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of an issue event.",
+  "required": [
+    "action",
+    "id"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "What changed: create, update, or remove."
+    },
+    "id": {
+      "type": "string",
+      "description": "The Linear id of the issue."
+    },
+    "identifier": {
+      "type": "string",
+      "description": "The short name of the issue, for example ENG-42."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the issue."
+    },
+    "url": {
+      "type": "string",
+      "description": "The link to the issue in Linear."
+    },
+    "state": {
+      "type": "string",
+      "description": "The workflow state of the issue, for example Todo or Done."
+    },
+    "team": {
+      "type": "object",
+      "description": "The team of the issue.",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "The team key, for example ENG. It is also the event room."
+        },
+        "name": {
+          "type": "string",
+          "description": "The team name."
+        }
+      }
+    }
+  }
+}

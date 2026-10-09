@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a workflow run event.",
+  "required": [
+    "repository",
+    "action",
+    "run_id"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example opened or closed."
+    },
+    "run_id": {
+      "type": "integer",
+      "description": "The id of the run."
+    },
+    "name": {
+      "type": "string",
+      "description": "The name of the workflow."
+    },
+    "status": {
+      "type": "string",
+      "description": "queued, in_progress, or completed."
+    },
+    "conclusion": {
+      "type": "string",
+      "description": "success, failure, or another result when the run is completed."
+    },
+    "branch": {
+      "type": "string",
+      "description": "The branch of the run."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the run."
+    }
+  }
+}

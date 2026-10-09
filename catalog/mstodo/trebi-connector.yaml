@@ -1,0 +1,34 @@
+schema: trebi-connector/1
+name: mstodo
+title: Microsoft To Do
+description: "Start work when a task changes in a Microsoft To Do list, and read lists and tasks."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: mstodo-cli
+  version_command: mstodo-cli --version
+setup:
+  login: [device_code]
+actions:
+  cli: {commands: [mstodo-cli]}
+events:
+  protocol: trebi-connector/1
+  command: mstodo-cli serve
+  restart: always
+  types:
+    - {type: task, description: "A task created, changed, or deleted in a list", schema: schemas/task.json}
+  subscriptions:
+    action: Watch a list
+    modes: [api, poll]
+    fields:
+      - name: list
+        label: List
+        dynamic: true
+        required: true
+        room: true
+    webhook:
+      handshake: ["query_echo:validationToken"]

@@ -1,0 +1,46 @@
+schema: trebi-connector/1
+name: linear
+title: Linear
+description: "Start work when an issue or a comment changes in Linear, and read teams and issues."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: linear-cli
+  version_command: linear-cli --version
+setup:
+  inputs:
+    - name: LINEAR_API_KEY
+      label: API key
+      help: In Linear, open Settings, then Security & access, and make a personal API key. To watch a team with a live link, the key must belong to a Linear admin.
+      url: https://linear.app/settings/account/security
+      secret: true
+      required: true
+actions:
+  cli: {commands: [linear-cli]}
+events:
+  protocol: trebi-connector/1
+  command: linear-cli serve
+  restart: always
+  types:
+    - {type: issue, description: "An issue created, changed, or removed", schema: schemas/issue.json}
+    - {type: comment, description: A comment on an issue, schema: schemas/comment.json}
+  subscriptions:
+    action: Watch a team
+    modes: [api, poll]
+    fields:
+      - name: team
+        label: Team
+        help: Leave it empty to watch every public team.
+        dynamic: true
+        room: true
+      - name: resources
+        label: Changes to
+        choices: [Issue, Comment, Project, Cycle]
+        multiple: true
+        default: Issue
+    webhook:
+      headers: [linear-signature, linear-delivery, linear-event]

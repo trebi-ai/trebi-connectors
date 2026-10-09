@@ -1,0 +1,47 @@
+schema: trebi-connector/1
+name: github
+title: GitHub
+description: "Start work when something happens in a GitHub repository, and read repositories, events, and webhooks."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: github-cli
+  version_command: github-cli --version
+setup:
+  login: [device_code]
+  inputs:
+    - name: GITHUB_TOKEN
+      label: Personal access token
+      help: "Optional. Use it in place of Log in. Make a fine-grained token with the permissions Webhooks: read and write, and Contents: read."
+      url: https://github.com/settings/personal-access-tokens/new
+      secret: true
+actions:
+  cli: {commands: [github-cli]}
+events:
+  protocol: trebi-connector/1
+  command: github-cli serve
+  restart: always
+  types:
+    - {type: push, description: Commits pushed to a branch, schema: schemas/push.json}
+    - {type: pull_request, description: "A pull request opened, changed, or closed", schema: schemas/pull_request.json}
+    - {type: pull_request_review, description: A review on a pull request, schema: schemas/pull_request_review.json}
+    - {type: issues, description: "An issue opened, changed, or closed", schema: schemas/issues.json}
+    - {type: issue_comment, description: A comment on an issue or a pull request, schema: schemas/issue_comment.json}
+    - {type: release, description: A release published or changed, schema: schemas/release.json}
+    - {type: workflow_run, description: An Actions workflow run that starts or ends, schema: schemas/workflow_run.json}
+  subscriptions:
+    action: Watch a repository
+    modes: [api, poll]
+    fields:
+      - name: repository
+        label: Repository
+        help: Trebi adds a webhook to the repository. You must be an admin of it.
+        dynamic: true
+        required: true
+        room: true
+    webhook:
+      headers: [x-hub-signature-256, x-github-event, x-github-delivery]

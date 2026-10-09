@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of an issue event.",
+  "required": [
+    "repository",
+    "action",
+    "number"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example opened or closed."
+    },
+    "number": {
+      "type": "integer",
+      "description": "The number of the issue or the pull request."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the issue or the pull request."
+    },
+    "state": {
+      "type": "string",
+      "description": "open or closed."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the issue."
+    },
+    "author": {
+      "type": "string",
+      "description": "The login of the author."
+    },
+    "labels": {
+      "type": "array",
+      "description": "The label names.",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

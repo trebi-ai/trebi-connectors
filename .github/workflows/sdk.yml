@@ -35,7 +35,7 @@ jobs:
           go vet ./...
           go test -race ./...
 
-  # A change in the SDK rebuilds and tests every channel CLI against the SDK
+  # A change in the SDK rebuilds and tests every CLI in connectors/ against the SDK
   # in the same commit, through go.work.
   channels:
     runs-on: [self-hosted, Linux, X64]
@@ -48,6 +48,14 @@ jobs:
             tags: ""
           - cli: whatsapp-cli
             tags: sqlite_fts5
+          - cli: github-cli
+            tags: ""
+          - cli: linear-cli
+            tags: ""
+          - cli: notion-cli
+            tags: ""
+          - cli: mstodo-cli
+            tags: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

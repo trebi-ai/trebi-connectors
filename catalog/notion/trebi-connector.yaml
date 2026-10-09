@@ -1,0 +1,35 @@
+schema: trebi-connector/1
+name: notion
+title: Notion
+description: "Start jobs when pages and databases change in your Notion workspace, and search pages."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: notion-cli
+  version_command: notion-cli --version
+setup:
+  inputs:
+    - name: NOTION_TOKEN
+      label: Integration secret
+      help: In Notion, make an internal integration and copy its secret. Then share the pages and databases to watch with the integration.
+      url: https://www.notion.so/profile/integrations
+      secret: true
+      required: true
+actions:
+  cli: {commands: [notion-cli]}
+events:
+  protocol: trebi-connector/1
+  command: notion-cli serve
+  restart: always
+  types:
+    - {type: page, description: A page changed, schema: schemas/page.json}
+    - {type: database, description: A database changed, schema: schemas/database.json}
+  subscriptions:
+    action: Watch this workspace
+    modes: [manual, poll]
+    webhook:
+      headers: [x-notion-signature]

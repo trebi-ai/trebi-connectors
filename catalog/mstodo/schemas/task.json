@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a task event.",
+  "required": [
+    "change",
+    "task_id",
+    "list_id"
+  ],
+  "properties": {
+    "change": {
+      "type": "string",
+      "enum": ["created", "updated", "deleted"],
+      "description": "What happened to the task."
+    },
+    "task_id": {
+      "type": "string",
+      "description": "The id of the task."
+    },
+    "list_id": {
+      "type": "string",
+      "description": "The id of the list that holds the task."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the task. A deleted task has no title."
+    },
+    "status": {
+      "type": "string",
+      "description": "The status of the task, for example notStarted, inProgress, or completed."
+    },
+    "importance": {
+      "type": "string",
+      "description": "The importance of the task: low, normal, or high."
+    },
+    "note": {
+      "type": "string",
+      "description": "The note of the task."
+    },
+    "due": {
+      "type": "string",
+      "description": "The due date and time of the task, in the time zone of the task."
+    },
+    "completed_at": {
+      "type": "string",
+      "description": "When the task was completed."
+    },
+    "modified_at": {
+      "type": "string",
+      "description": "When the task last changed."
+    }
+  }
+}

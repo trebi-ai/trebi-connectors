@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a review event.",
+  "required": [
+    "repository",
+    "action",
+    "number"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example opened or closed."
+    },
+    "number": {
+      "type": "integer",
+      "description": "The number of the issue or the pull request."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the issue or the pull request."
+    },
+    "state": {
+      "type": "string",
+      "description": "approved, changes_requested, or commented."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the review."
+    },
+    "author": {
+      "type": "string",
+      "description": "The login of the reviewer."
+    },
+    "body": {
+      "type": "string",
+      "description": "The text of the review."
+    }
+  }
+}

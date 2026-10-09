@@ -4,6 +4,10 @@ use (
 	./sdk
 	./connectors/discord-cli
 	./connectors/whatsapp-cli
+	./connectors/github-cli
+	./connectors/linear-cli
+	./connectors/notion-cli
+	./connectors/mstodo-cli
 )
 
 // The CLIs build against the SDK in this commit, also before its tag

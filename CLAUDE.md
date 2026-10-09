@@ -8,7 +8,7 @@ Instructions for humans and coding agents who work in `trebi-connectors`.
 
 - The public catalog. Trebi writes and reviews every entry. CI signs and publishes it to `catalog.trebi.ai`.
 - The Go SDK for the `trebi-connector/1` protocol.
-- The source of the programs that the catalog builds: `whatsapp-cli` and `discord-cli`.
+- The source of the programs that the catalog builds: `whatsapp-cli`, `discord-cli`, `github-cli`, `linear-cli`, `notion-cli`, and `mstodo-cli`.
 
 The daemon owns the protocol, the manifest schema, and the conformance checks. This repository implements them. `README.md` has the publish flow and the SDK release steps.
 

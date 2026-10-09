@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a page event.",
+  "required": [
+    "page_id"
+  ],
+  "properties": {
+    "page_id": {
+      "type": "string",
+      "description": "The id of the page."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the page. It is empty when the page is deleted."
+    },
+    "url": {
+      "type": "string",
+      "description": "The link to the page in Notion."
+    },
+    "change": {
+      "type": "string",
+      "description": "What changed, from the Notion event type, for example created, content_updated, properties_updated, moved, or deleted. A poll gives edited."
+    },
+    "database_id": {
+      "type": "string",
+      "description": "The database that holds the page. It is empty for a page outside a database."
+    },
+    "last_edited_time": {
+      "type": "string",
+      "description": "The time of the last edit of the page."
+    }
+  }
+}

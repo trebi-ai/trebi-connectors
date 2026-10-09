@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a push event.",
+  "required": [
+    "repository",
+    "branch"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "ref": {
+      "type": "string",
+      "description": "The full ref, for example refs/heads/main."
+    },
+    "branch": {
+      "type": "string",
+      "description": "The branch or the tag name."
+    },
+    "head": {
+      "type": "string",
+      "description": "The commit at the top of the branch after the push."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page that compares the commits."
+    },
+    "commits": {
+      "type": "array",
+      "description": "The pushed commits: id and message.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

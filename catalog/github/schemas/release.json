@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a release event.",
+  "required": [
+    "repository",
+    "action"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example opened or closed."
+    },
+    "tag": {
+      "type": "string",
+      "description": "The tag of the release."
+    },
+    "name": {
+      "type": "string",
+      "description": "The name of the release."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the release."
+    },
+    "prerelease": {
+      "type": "boolean",
+      "description": "True for a pre-release."
+    }
+  }
+}

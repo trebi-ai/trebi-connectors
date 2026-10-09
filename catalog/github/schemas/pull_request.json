@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a pull request event.",
+  "required": [
+    "repository",
+    "action",
+    "number"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example opened or closed."
+    },
+    "number": {
+      "type": "integer",
+      "description": "The number of the issue or the pull request."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the issue or the pull request."
+    },
+    "state": {
+      "type": "string",
+      "description": "open or closed."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the pull request."
+    },
+    "merged": {
+      "type": "boolean",
+      "description": "True when the pull request is merged."
+    },
+    "draft": {
+      "type": "boolean",
+      "description": "True for a draft."
+    },
+    "author": {
+      "type": "string",
+      "description": "The login of the author."
+    },
+    "base": {
+      "type": "string",
+      "description": "The branch to merge into."
+    },
+    "head": {
+      "type": "string",
+      "description": "The branch with the changes."
+    }
+  }
+}
