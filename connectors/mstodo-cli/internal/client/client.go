@@ -22,12 +22,18 @@ import (
 
 // Default endpoints.
 const (
-	GraphURL = "https://graph.microsoft.com/v1.0"
-	LoginURL = "https://login.microsoftonline.com/common/oauth2/v2.0"
+	GraphURL  = "https://graph.microsoft.com/v1.0"
+	LoginBase = "https://login.microsoftonline.com"
 )
 
-// Scopes is what the login asks for.
-const Scopes = "Tasks.ReadWrite offline_access"
+// Scopes is what the login asks for. openid and profile give the id_token
+// with the account name, so the login needs no Graph scope other than
+// Tasks.ReadWrite.
+const Scopes = "openid profile offline_access Tasks.ReadWrite"
+
+// refreshScopes leave out openid and profile, so a login of v0.1.0, which
+// did not ask for them, still refreshes.
+const refreshScopes = "offline_access Tasks.ReadWrite"
 
 // ErrAuth is a login that Microsoft does not accept and cannot refresh.
 var ErrAuth = errors.New("the Microsoft login is not valid; log in again")
@@ -49,11 +55,14 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("microsoft %d %s", e.Status, e.Code)
 }
 
-// Session is the content of auth.json: the tokens and the account.
+// Session is the content of auth.json: the tokens, the app that issued
+// them, and the account. A refresh token works only with its app.
 type Session struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	ClientID     string    `json:"client_id,omitempty"`
+	Tenant       string    `json:"tenant,omitempty"`
 	AccountID    string    `json:"account_id,omitempty"`
 	AccountName  string    `json:"account_name,omitempty"`
 }
@@ -106,8 +115,9 @@ func WriteFile(path string, data []byte) error {
 // Client calls Graph as one user.
 type Client struct {
 	GraphURL   string
-	LoginURL   string
+	LoginBase  string
 	ClientID   string
+	Tenant     string
 	HTTPClient *http.Client
 	// OnRefresh saves a refreshed session. Nil keeps it in memory.
 	OnRefresh func(Session) error
@@ -116,11 +126,11 @@ type Client struct {
 	sess Session
 }
 
-// New builds a client for the session.
-func New(clientID string, s Session) *Client {
+// New builds a client for the app and the session.
+func New(clientID, tenant string, s Session) *Client {
 	return &Client{
-		GraphURL: GraphURL, LoginURL: LoginURL, ClientID: clientID,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		GraphURL: GraphURL, LoginBase: LoginBase, ClientID: clientID, Tenant: tenant,
+		HTTPClient: &http.Client{Timeout: 60 * time.Second},
 		sess:       s,
 	}
 }
@@ -139,57 +149,97 @@ func (c *Client) SetSession(s Session) {
 	c.mu.Unlock()
 }
 
-// Do sends one Graph request. path is relative to GraphURL, or a full
-// Graph URL such as a deltaLink. A 401 refreshes the token once.
-func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
-	u := path
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		u = c.GraphURL + path
-	} else if !strings.HasPrefix(path, c.GraphURL+"/") {
-		return fmt.Errorf("refuse to send the token to %s", path)
+// loginURL is the OAuth base of the app of the session, or of the client.
+func (c *Client) loginURL(tenant string) string {
+	if tenant == "" {
+		tenant = c.Tenant
 	}
-	var data []byte
+	if tenant == "" {
+		tenant = "common"
+	}
+	return c.LoginBase + "/" + url.PathEscape(tenant) + "/oauth2/v2.0"
+}
+
+// Request is one raw Graph request.
+type Request struct {
+	Method      string
+	Path        string // relative to GraphURL, or a full Graph URL
+	Body        []byte
+	ContentType string
+	Headers     map[string]string
+}
+
+// Response is one raw Graph answer.
+type Response struct {
+	Status int
+	Header http.Header
+	Body   []byte
+}
+
+// Do sends one Graph request with a JSON body and decodes a JSON answer.
+func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
+	r := Request{Method: method, Path: path}
 	if body != nil {
-		var err error
-		if data, err = json.Marshal(body); err != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
 			return err
 		}
+		r.Body, r.ContentType = data, "application/json"
+	}
+	resp, err := c.Send(ctx, r)
+	if err != nil {
+		return err
+	}
+	if out == nil || len(resp.Body) == 0 {
+		return nil
+	}
+	return json.Unmarshal(resp.Body, out)
+}
+
+// Send sends one raw Graph request. A 401 refreshes the token once. An
+// answer of 300 or more is an *APIError.
+func (c *Client) Send(ctx context.Context, r Request) (Response, error) {
+	u := r.Path
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+		u = c.GraphURL + u
+	} else if !strings.HasPrefix(u, c.GraphURL+"/") {
+		return Response{}, fmt.Errorf("refuse to send the token to %s", u)
 	}
 	for attempt := 0; ; attempt++ {
 		tok, err := c.token(ctx, attempt > 0)
 		if err != nil {
-			return err
+			return Response{}, err
 		}
-		req, err := http.NewRequestWithContext(ctx, method, u, bytes.NewReader(data))
+		req, err := http.NewRequestWithContext(ctx, r.Method, u, bytes.NewReader(r.Body))
 		if err != nil {
-			return err
+			return Response{}, err
 		}
 		req.Header.Set("Authorization", "Bearer "+tok)
-		if body != nil {
-			req.Header.Set("Content-Type", "application/json")
+		if r.ContentType != "" {
+			req.Header.Set("Content-Type", r.ContentType)
+		}
+		for k, v := range r.Headers {
+			req.Header.Set(k, v)
 		}
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
-			return err
+			return Response{}, err
 		}
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 		resp.Body.Close() //nolint:errcheck // the body is read
 		if err != nil {
-			return err
+			return Response{}, err
 		}
 		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
 			continue
 		}
 		if resp.StatusCode == http.StatusUnauthorized {
-			return ErrAuth
+			return Response{}, ErrAuth
 		}
 		if resp.StatusCode >= 300 {
-			return graphError(resp.StatusCode, raw)
+			return Response{}, graphError(resp.StatusCode, raw)
 		}
-		if out == nil || len(raw) == 0 {
-			return nil
-		}
-		return json.Unmarshal(raw, out)
+		return Response{Status: resp.StatusCode, Header: resp.Header, Body: raw}, nil
 	}
 }
 
@@ -207,11 +257,15 @@ func (c *Client) token(ctx context.Context, force bool) (string, error) {
 	if c.sess.RefreshToken == "" {
 		return "", ErrAuth
 	}
-	t, err := c.tokenRequest(ctx, url.Values{
+	clientID := c.sess.ClientID
+	if clientID == "" {
+		clientID = c.ClientID
+	}
+	t, err := c.tokenRequest(ctx, c.sess.Tenant, url.Values{
 		"grant_type":    {"refresh_token"},
-		"client_id":     {c.ClientID},
+		"client_id":     {clientID},
 		"refresh_token": {c.sess.RefreshToken},
-		"scope":         {Scopes},
+		"scope":         {refreshScopes},
 	})
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.Status < 500 {
@@ -245,6 +299,7 @@ type DeviceCode struct {
 type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
 	ExpiresIn    int    `json:"expires_in"`
 }
 
@@ -252,15 +307,49 @@ func (t tokenResponse) expiry() time.Time {
 	return time.Now().Add(time.Duration(t.ExpiresIn) * time.Second)
 }
 
+// account reads the account from the id_token. The token comes straight
+// from the login endpoint over TLS, so the signature is not checked.
+func (t tokenResponse) account() (id, name string) {
+	parts := strings.Split(t.IDToken, ".")
+	if len(parts) != 3 {
+		return "", ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", ""
+	}
+	var c struct {
+		OID               string `json:"oid"`
+		Sub               string `json:"sub"`
+		Name              string `json:"name"`
+		PreferredUsername string `json:"preferred_username"`
+	}
+	if json.Unmarshal(raw, &c) != nil {
+		return "", ""
+	}
+	id, name = c.OID, c.PreferredUsername
+	if id == "" {
+		id = c.Sub
+	}
+	if name == "" {
+		name = c.Name
+	}
+	return id, name
+}
+
 // BeginDeviceCode starts a device code login.
 func (c *Client) BeginDeviceCode(ctx context.Context) (DeviceCode, error) {
+	if c.ClientID == "" {
+		return DeviceCode{}, errors.New("no Microsoft app id: set MSTODO_CLIENT_ID")
+	}
 	var dc DeviceCode
-	err := c.form(ctx, "/devicecode", url.Values{"client_id": {c.ClientID}, "scope": {Scopes}}, &dc)
+	err := c.form(ctx, c.loginURL("")+"/devicecode", url.Values{"client_id": {c.ClientID}, "scope": {Scopes}}, &dc)
 	return dc, err
 }
 
 // WaitDeviceCode polls /token until the person finishes the login, the
-// code expires, or ctx ends. It returns the new session with no account.
+// code expires, or ctx ends. It returns the new session with the app and
+// the account.
 func (c *Client) WaitDeviceCode(ctx context.Context, dc DeviceCode) (Session, error) {
 	every := time.Duration(dc.Interval) * time.Second
 	if every <= 0 {
@@ -272,7 +361,7 @@ func (c *Client) WaitDeviceCode(ctx context.Context, dc DeviceCode) (Session, er
 			return Session{}, ctx.Err()
 		case <-time.After(every):
 		}
-		t, err := c.tokenRequest(ctx, url.Values{
+		t, err := c.tokenRequest(ctx, "", url.Values{
 			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
 			"client_id":   {c.ClientID},
 			"device_code": {dc.DeviceCode},
@@ -280,7 +369,12 @@ func (c *Client) WaitDeviceCode(ctx context.Context, dc DeviceCode) (Session, er
 		var apiErr *APIError
 		switch {
 		case err == nil:
-			return Session{AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, ExpiresAt: t.expiry()}, nil
+			s := Session{
+				AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, ExpiresAt: t.expiry(),
+				ClientID: c.ClientID, Tenant: c.Tenant,
+			}
+			s.AccountID, s.AccountName = t.account()
+			return s, nil
 		case errors.As(err, &apiErr) && apiErr.Code == "authorization_pending":
 		case errors.As(err, &apiErr) && apiErr.Code == "slow_down":
 			every += 5 * time.Second
@@ -294,18 +388,18 @@ func (c *Client) WaitDeviceCode(ctx context.Context, dc DeviceCode) (Session, er
 	}
 }
 
-func (c *Client) tokenRequest(ctx context.Context, v url.Values) (tokenResponse, error) {
+func (c *Client) tokenRequest(ctx context.Context, tenant string, v url.Values) (tokenResponse, error) {
 	var t tokenResponse
-	err := c.form(ctx, "/token", v, &t)
+	err := c.form(ctx, c.loginURL(tenant)+"/token", v, &t)
 	if err == nil && t.AccessToken == "" {
 		err = errors.New("the token answer has no access token")
 	}
 	return t, err
 }
 
-// form posts a form to the login endpoint.
-func (c *Client) form(ctx context.Context, path string, v url.Values, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.LoginURL+path, strings.NewReader(v.Encode()))
+// form posts a form to a login endpoint.
+func (c *Client) form(ctx context.Context, u string, v url.Values, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(v.Encode()))
 	if err != nil {
 		return err
 	}

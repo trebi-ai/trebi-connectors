@@ -179,7 +179,7 @@ func (a *Adapter) setEntry(id string, e entry) {
 	a.mu.Unlock()
 }
 
-func resource(list string) string { return "/me/todo/lists/" + list + "/tasks" }
+func resource(list string) string { return client.TaskResource(list) }
 
 // sameResource compares two Graph resources; Graph can drop the slash and
 // change the case.
@@ -399,7 +399,7 @@ func (a *Adapter) changeEvent(ctx context.Context, n notification, e entry, rece
 	if t, err := time.Parse(time.RFC3339Nano, receivedAt); err == nil {
 		ts = t
 	}
-	taskID := n.ResourceData.ID
+	taskID := n.ResourceData.ID // the resource of Graph names only the list
 	if taskID == "" {
 		taskID = n.Resource[strings.LastIndex(n.Resource, "/")+1:]
 	}
@@ -408,7 +408,7 @@ func (a *Adapter) changeEvent(ctx context.Context, n notification, e entry, rece
 		if last == "" {
 			last = receivedAt
 		}
-		return deletedEvent(fmt.Sprintf("%s:%s:%s:%s", n.SubscriptionID, n.Resource, n.ChangeType, last), taskID, e, ts), true, nil
+		return deletedEvent(fmt.Sprintf("%s:%s:%s:%s", n.SubscriptionID, taskID, n.ChangeType, last), taskID, e, ts), true, nil
 	}
 	t, err := a.cl.Task(ctx, e.ListID, taskID)
 	if client.IsNotFound(err) {
@@ -417,37 +417,49 @@ func (a *Adapter) changeEvent(ctx context.Context, n notification, e entry, rece
 	if err != nil {
 		return sdk.Event{}, false, err
 	}
-	return taskEvent(fmt.Sprintf("%s:%s:%s:%s", n.SubscriptionID, n.Resource, n.ChangeType, t.LastModifiedDateTime), n.ChangeType, t, e, ts), true, nil
+	return taskEvent(fmt.Sprintf("%s:%s:%s:%s", n.SubscriptionID, taskID, n.ChangeType, t.LastModifiedDateTime), n.ChangeType, t, e, ts), true, nil
 }
 
 // taskData is the data of a task event. catalog/mstodo/schemas/task.json
 // describes it.
 type taskData struct {
-	Change      string `json:"change"`
-	TaskID      string `json:"task_id"`
-	ListID      string `json:"list_id"`
-	Title       string `json:"title,omitempty"`
-	Status      string `json:"status,omitempty"`
-	Importance  string `json:"importance,omitempty"`
-	Note        string `json:"note,omitempty"`
-	Due         string `json:"due,omitempty"`
-	CompletedAt string `json:"completed_at,omitempty"`
-	ModifiedAt  string `json:"modified_at,omitempty"`
+	Change         string   `json:"change"`
+	TaskID         string   `json:"task_id"`
+	ListID         string   `json:"list_id"`
+	Title          string   `json:"title,omitempty"`
+	Status         string   `json:"status,omitempty"`
+	Importance     string   `json:"importance,omitempty"`
+	Note           string   `json:"note,omitempty"`
+	Due            string   `json:"due,omitempty"`
+	Start          string   `json:"start,omitempty"`
+	Reminder       string   `json:"reminder,omitempty"`
+	Categories     []string `json:"categories,omitempty"`
+	HasAttachments bool     `json:"has_attachments,omitempty"`
+	CompletedAt    string   `json:"completed_at,omitempty"`
+	CreatedAt      string   `json:"created_at,omitempty"`
+	ModifiedAt     string   `json:"modified_at,omitempty"`
+}
+
+// dateOf returns the date and time of a Graph date, or "".
+func dateOf(d *client.DateTimeZone) string {
+	if d == nil {
+		return ""
+	}
+	return d.DateTime
 }
 
 func taskEvent(id, change string, t client.Task, e entry, fallback time.Time) sdk.Event {
 	d := taskData{
 		Change: change, TaskID: t.ID, ListID: e.ListID, Title: t.Title, Status: t.Status,
-		Importance: t.Importance, ModifiedAt: t.LastModifiedDateTime,
+		Importance: t.Importance, Due: dateOf(t.DueDateTime), Start: dateOf(t.StartDateTime),
+		CompletedAt: dateOf(t.CompletedDateTime), Categories: t.Categories, HasAttachments: t.HasAttachments,
+		CreatedAt: t.CreatedDateTime, ModifiedAt: t.LastModifiedDateTime,
 	}
 	if t.Body != nil {
 		d.Note = t.Body.Content
 	}
-	if t.DueDateTime != nil {
-		d.Due = t.DueDateTime.DateTime
-	}
-	if t.CompletedDateTime != nil {
-		d.CompletedAt = t.CompletedDateTime.DateTime
+	if t.IsReminderOn {
+		d.Reminder = dateOf(t.ReminderDateTime)
 	}
 	ts := fallback
 	if m, err := time.Parse(time.RFC3339Nano, t.LastModifiedDateTime); err == nil {
@@ -523,7 +535,7 @@ func (a *Adapter) pollList(ctx context.Context, e entry, emit sdk.Emitter) error
 			switch {
 			case len(t.Removed) > 0:
 				ev = deletedEvent("poll:"+t.ID+":deleted", t.ID, e, now)
-			case t.CreatedDateTime != "" && t.CreatedDateTime == t.LastModifiedDateTime:
+			case t.IsNew():
 				ev = taskEvent("poll:"+t.ID+":"+t.LastModifiedDateTime, "created", t, e, now)
 			default:
 				ev = taskEvent("poll:"+t.ID+":"+t.LastModifiedDateTime, "updated", t, e, now)

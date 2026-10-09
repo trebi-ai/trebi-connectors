@@ -160,9 +160,7 @@ func (a *Adapter) Initialize(_ context.Context, in sdk.InitializeParams) (sdk.In
 		Events:  []sdk.EventDecl{{Type: TypeTask}},
 		Login:   []string{sdk.StepDeviceCode},
 	}
-	if s := a.cl.Session(); s.AccountID != "" {
-		res.Account = &sdk.Account{ID: s.AccountID, Name: s.AccountName}
-	}
+	res.Account = account(a.cl.Session())
 	return res, nil
 }
 
@@ -210,7 +208,8 @@ func (a *Adapter) report(e sdk.Emitter, err error) {
 	a.log.Warn("mstodo.background", "err", err)
 }
 
-// AuthStatus asks Graph who the token is.
+// AuthStatus checks the token with one cheap To Do read. The account comes
+// from the login, because a To Do token cannot read /me.
 func (a *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 	a.mu.Lock()
 	stateErr := a.stateErr
@@ -222,8 +221,8 @@ func (a *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 	if s.AccessToken == "" {
 		return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonNone}, nil
 	}
-	acct := &sdk.Account{ID: s.AccountID, Name: s.AccountName}
-	me, err := a.cl.Me(ctx)
+	acct := account(s)
+	err := a.cl.Ping(ctx)
 	switch {
 	case errors.Is(err, client.ErrAuth):
 		return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonExpired}, nil
@@ -233,13 +232,21 @@ func (a *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 	a.mu.Lock()
 	a.expired = false
 	a.mu.Unlock()
-	return sdk.AuthState{State: sdk.StateConnected, Account: &sdk.Account{ID: me.ID, Name: me.Name()}}, nil
+	return sdk.AuthState{State: sdk.StateConnected, Account: acct}, nil
+}
+
+// account is the account of the login, or nil when it has none.
+func account(s client.Session) *sdk.Account {
+	if s.AccountID == "" && s.AccountName == "" {
+		return nil
+	}
+	return &sdk.Account{ID: s.AccountID, Name: s.AccountName}
 }
 
 // BeginAuth runs the device code login and saves auth.json.
 func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
 	if a.cl.ClientID == "" {
-		return sdk.Permanent("this build has no Microsoft app id")
+		return sdk.Permanent("no Microsoft app id: set the Microsoft app id of the connection")
 	}
 	dc, err := a.cl.BeginDeviceCode(ctx)
 	if err != nil {
@@ -257,13 +264,12 @@ func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) e
 		return err
 	}
 	a.cl.SetSession(sess)
-	me, err := a.cl.Me(ctx)
-	if err != nil {
+	if err := a.cl.Ping(ctx); err != nil {
 		return wireErr(err)
 	}
-	sess = a.cl.Session()
-	sess.AccountID, sess.AccountName = me.ID, me.Name()
-	a.cl.SetSession(sess)
+	a.mu.Lock()
+	a.expired = false
+	a.mu.Unlock()
 	return sess.Save(a.authPath())
 }
 

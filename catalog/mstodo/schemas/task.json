@@ -10,7 +10,11 @@
   "properties": {
     "change": {
       "type": "string",
-      "enum": ["created", "updated", "deleted"],
+      "enum": [
+        "created",
+        "updated",
+        "deleted"
+      ],
       "description": "What happened to the task."
     },
     "task_id": {
@@ -33,17 +37,40 @@
       "type": "string",
       "description": "The importance of the task: low, normal, or high."
     },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The categories of the task."
+    },
     "note": {
       "type": "string",
       "description": "The note of the task."
+    },
+    "has_attachments": {
+      "type": "boolean",
+      "description": "True when the task has one or more files."
     },
     "due": {
       "type": "string",
       "description": "The due date and time of the task, in the time zone of the task."
     },
+    "start": {
+      "type": "string",
+      "description": "The start date and time of the task, in the time zone of the task."
+    },
+    "reminder": {
+      "type": "string",
+      "description": "The reminder date and time of the task. A task with no reminder on has no reminder."
+    },
     "completed_at": {
       "type": "string",
       "description": "When the task was completed."
+    },
+    "created_at": {
+      "type": "string",
+      "description": "When the task was created."
     },
     "modified_at": {
       "type": "string",

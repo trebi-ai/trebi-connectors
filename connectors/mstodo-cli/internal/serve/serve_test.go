@@ -86,8 +86,8 @@ func start(t *testing.T, hook bool, opts ...Option) *rig {
 	t.Helper()
 	r := &rig{fake: fakegraph.Start(), dir: t.TempDir()}
 	t.Cleanup(r.fake.Close)
-	cl := client.New(fakegraph.ClientID, client.Session{})
-	cl.GraphURL, cl.LoginURL = r.fake.GraphURL(), r.fake.LoginURL()
+	cl := client.New(fakegraph.ClientID, fakegraph.Tenant, client.Session{})
+	cl.GraphURL, cl.LoginBase = r.fake.GraphURL(), r.fake.LoginBase()
 	a, err := New(cl, "test", r.dir, opts...)
 	if err != nil {
 		t.Fatal(err)
@@ -173,21 +173,21 @@ func TestLogin(t *testing.T) {
 	t.Parallel()
 	r := start(t, false)
 	sess, err := client.LoadSession(filepath.Join(r.dir, "auth.json"))
-	if err != nil || sess.AccessToken == "" || sess.RefreshToken == "" || sess.AccountID != "user-sandbox" {
+	if err != nil || sess.AccessToken == "" || sess.RefreshToken == "" || sess.AccountID != fakegraph.AccountID || sess.Tenant != fakegraph.Tenant || sess.ClientID != fakegraph.ClientID {
 		t.Fatalf("auth.json %+v %v", sess, err)
 	}
 	var st sdk.AuthStatusResult
 	if err := r.conn.Call(sdk.MethodAuthStatus, sdk.Empty{}, &st); err != nil {
 		t.Fatal(err)
 	}
-	if st.State != sdk.StateConnected || st.Account == nil || st.Account.Name != "Sandbox User" {
+	if st.State != sdk.StateConnected || st.Account == nil || st.Account.Name != fakegraph.AccountName {
 		t.Fatalf("status %+v", st)
 	}
 }
 
 func TestLoginNeedsAppID(t *testing.T) {
 	t.Parallel()
-	a, err := New(client.New("", client.Session{}), "test", t.TempDir())
+	a, err := New(client.New("", "", client.Session{}), "test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestReceiveWebhook(t *testing.T) {
 	if ev.Type != TypeTask || ev.Room == nil || ev.Room.ID != "list-groceries" || ev.Text != "A new sandbox task" {
 		t.Fatalf("event %+v", ev)
 	}
-	if !strings.HasPrefix(ev.ID, sub+":me/todo/lists/list-groceries/tasks/"+d.TaskID+":created:") || d.Change != "created" || d.ModifiedAt == "" {
+	if !strings.HasPrefix(ev.ID, sub+":"+d.TaskID+":created:") || d.Change != "created" || d.ModifiedAt == "" {
 		t.Fatalf("event id %s data %+v", ev.ID, d)
 	}
 
@@ -337,12 +337,12 @@ func TestReceiveDeletedHasNoFetch(t *testing.T) {
 	r := start(t, true)
 	r.sync(t, groceries)
 	e := r.entry("s1")
-	body := `{"value":[{"subscriptionId":"` + e.GraphID + `","subscriptionExpirationDateTime":"2026-10-11T00:00:00Z","changeType":"deleted","resource":"me/todo/lists/list-groceries/tasks/task-gone","resourceData":{"id":"task-gone"},"clientState":"` + e.ClientState + `"}]}`
+	body := `{"value":[{"subscriptionId":"` + e.GraphID + `","subscriptionExpirationDateTime":"2026-10-11T00:00:00Z","changeType":"deleted","resource":"todob2/graph/v1/users('a@b.c')/todoApp/lists('list-groceries')/tasks","resourceData":{"id":"task-gone"},"clientState":"` + e.ClientState + `"}]}`
 	if err := r.conn.Call(sdk.MethodWebhookReceive, sdk.WebhookRequest{ID: "d", Method: "POST", Path: "/in/test", Headers: map[string]string{}, Body: body, ReceivedAt: "2026-10-08T10:00:00Z"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	ev, d := r.event(t)
-	if ev.ID != e.GraphID+":me/todo/lists/list-groceries/tasks/task-gone:deleted:2026-10-11T00:00:00Z" || d.Change != "deleted" || d.TaskID != "task-gone" {
+	if ev.ID != e.GraphID+":task-gone:deleted:2026-10-11T00:00:00Z" || d.Change != "deleted" || d.TaskID != "task-gone" {
 		t.Fatalf("event %+v %+v", ev, d)
 	}
 }
@@ -367,7 +367,7 @@ func TestNewerStateIsAnError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(`{"version":99}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(client.New("", client.Session{}), "test", dir)
+	a, err := New(client.New("", "", client.Session{}), "test", dir)
 	if err != nil {
 		t.Fatal(err)
 	}

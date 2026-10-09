@@ -33,10 +33,14 @@ func newApp() *cli.App {
 		Version: version,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Aliases: []string{"j"}, Usage: "output as JSON"},
+			&cli.StringFlag{Name: "client-id", Usage: "Microsoft app id (default: $" + config.EnvClientID + ", then the build)"},
+			&cli.StringFlag{Name: "tenant", Usage: "Microsoft tenant: common, consumers, organizations, or a tenant id (default: $" + config.EnvTenant + ", then common)"},
 		},
 		Before: func(c *cli.Context) error {
-			s := config.Resolve()
-			s.ClientID = clientID
+			s, err := config.Resolve(config.Flags{ClientID: c.String("client-id"), Tenant: c.String("tenant")}, clientID)
+			if err != nil {
+				return err
+			}
 			c.App.Metadata["settings"] = s
 			return nil
 		},
@@ -44,6 +48,12 @@ func newApp() *cli.App {
 			cmd.AuthCommand(),
 			cmd.ListsCommand(),
 			cmd.TasksCommand(),
+			cmd.ChecklistCommand(),
+			cmd.LinksCommand(),
+			cmd.AttachmentsCommand(),
+			cmd.ExtensionsCommand(),
+			cmd.SubscriptionsCommand(),
+			cmd.WatchCommand(),
 			cmd.ServeCommand(version),
 		},
 		Metadata: map[string]any{},
