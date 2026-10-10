@@ -113,6 +113,11 @@
             "url": {"type": "string"},
             "headers": {"$ref": "#/$defs/stringMap"}
           }
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/operation"}
         }
       }
     },
@@ -233,6 +238,60 @@
     "stringMap": {
       "type": "object",
       "additionalProperties": {"type": "string"}
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "label", "command"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$"},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "readonly": {"type": "boolean"},
+        "default": {"enum": ["on", "ask", "off"]},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "stdin": {"enum": ["json", "none"]},
+        "output": {"enum": ["json", "csv", "text"]},
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {"const": "object"},
+            "properties": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,31}$"},
+              "additionalProperties": {"$ref": "#/$defs/inputField"}
+            },
+            "required": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "expand": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "each"],
+          "properties": {
+            "field": {"type": "string", "minLength": 1},
+            "each": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+          }
+        },
+        "env": {"$ref": "#/$defs/stringMap"},
+        "timeout": {"type": "string"}
+      }
+    },
+    "inputField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["string", "integer", "number", "boolean", "array", "object"]},
+        "description": {"type": "string"},
+        "enum": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "maxLength": {"type": "integer", "minimum": 1},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "items": {"$ref": "#/$defs/inputField"}
+      }
     }
   }
 }
