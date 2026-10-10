@@ -1,6 +1,6 @@
 # connectors
 
-The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
+The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
 
 | CLI | Module | Catalog entry |
 |---|---|---|
@@ -10,6 +10,7 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 | `linear-cli` | `github.com/trebi-ai/trebi-connectors/connectors/linear-cli` | `catalog/linear` |
 | `notion-cli` | `github.com/trebi-ai/trebi-connectors/connectors/notion-cli` | `catalog/notion` |
 | `microsoft-todo-cli` | `github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli` | `catalog/microsoft-todo` |
+| `mailbox` | `github.com/trebi-ai/trebi-connectors/connectors/mailbox` | `catalog/gmail` |
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
@@ -74,12 +75,21 @@ These four CLIs have the `subscriptions` feature, and the `webhooks` feature for
 
 The README of each CLI has the details: the GraphQL webhook of Linear, the manual setup of a Notion integration webhook, and the Graph subscriptions of Microsoft To Do, which expire and renew.
 
+## mailbox
+
+- Login: the address and an app password, as the inputs `MAILBOX_ADDRESS` and `MAILBOX_PASSWORD`. There is no interactive login. A refused password gives status `auth_required` with reason `revoked`. A network fault gives status `error`.
+- `--provider gmail` (also `icloud`, `fastmail`, `outlook`) sets the hosts and the folders. The manifest has no fixed env, so the catalog entry puts the flag in `events.command` and in the command of each operation.
+- Operations: `search`, `read`, `draft`, and `send`, as `mailbox op <name>` with a JSON input on stdin and a JSON output on stdout.
+- `serve` has no channel, no events, and no features. It checks the login every 5 minutes and sends a `status` when the result changes.
+- `serve --sandbox` runs the adapter over `internal/fakemail`: an IMAP server (`imapmemserver`) and an SMTP server in the same process, both with TLS.
+
 ## Build and test
 
 ```bash
 cd connectors/discord-cli && go test ./...
 cd connectors/whatsapp-cli && CGO_ENABLED=1 go test -tags sqlite_fts5 ./...
 cd connectors/github-cli && go test -race ./...
+cd connectors/mailbox && go test -race ./...
 ```
 
 ## Release

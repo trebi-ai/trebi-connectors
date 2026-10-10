@@ -1,0 +1,101 @@
+schema: trebi-connector/1
+name: gmail
+title: Gmail
+description: "Search and read your Gmail, and save replies as drafts. Sending is off until you turn it on."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: mailbox
+  version_command: mailbox --version
+setup:
+  inputs:
+    - name: MAILBOX_ADDRESS
+      label: Gmail address
+      required: true
+    - name: MAILBOX_PASSWORD
+      label: App password
+      help: Turn on 2-Step Verification for your Google account. Then make an app password and paste it here.
+      url: https://myaccount.google.com/apppasswords
+      secret: true
+      required: true
+events:
+  protocol: trebi-connector/1
+  command: mailbox --provider gmail serve
+  restart: on-failure
+actions:
+  operations:
+    - name: search
+      label: Search mail
+      description: Find messages by text, sender, or date. The newest message comes first.
+      readonly: true
+      default: on
+      command: [mailbox, --provider, gmail, op, search]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          query: {type: string, maxLength: 500, description: Text to find in the headers and the body. Empty finds all messages.}
+          from: {type: string, maxLength: 200, description: A sender address or name.}
+          since: {type: string, maxLength: 10, description: "The first date, as YYYY-MM-DD."}
+          unread: {type: boolean, description: Find only unread messages.}
+          folder: {type: string, maxLength: 200, description: "The folder. The default is INBOX. All mail is [Gmail]/All Mail."}
+          limit: {type: integer, minimum: 1, maximum: 100, description: The maximum number of messages. The default is 20.}
+    - name: read
+      label: Read a message
+      description: Read one message as text. Attachments show only their name, type, and size.
+      readonly: true
+      default: on
+      command: [mailbox, --provider, gmail, op, read]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: "The id from search, for example INBOX:42."}
+          html: {type: boolean, description: Also return the HTML part.}
+        required: [id]
+    - name: draft
+      label: Save a draft
+      description: Save a message in Gmail Drafts. It does not send the message.
+      readonly: false
+      default: on
+      command: [mailbox, --provider, gmail, op, draft]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          to: {type: array, items: {type: string}, description: The addresses of the recipients.}
+          cc: {type: array, items: {type: string}}
+          bcc: {type: array, items: {type: string}}
+          subject: {type: string, maxLength: 998}
+          text: {type: string, description: The plain text body.}
+          in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this draft replies to.}
+          mime_base64: {type: string, description: A full MIME message in base64. Give this or the other fields.}
+    - name: send
+      label: Send mail
+      description: Send a message from this account.
+      readonly: false
+      default: off
+      command: [mailbox, --provider, gmail, op, send]
+      stdin: json
+      output: json
+      timeout: 60s
+      input:
+        type: object
+        properties:
+          to: {type: array, items: {type: string}, description: The addresses of the recipients.}
+          cc: {type: array, items: {type: string}}
+          bcc: {type: array, items: {type: string}}
+          subject: {type: string, maxLength: 998}
+          text: {type: string, description: The plain text body.}
+          in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this message replies to.}
+          mime_base64: {type: string, description: A full MIME message in base64. Give this or the other fields.}

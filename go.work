@@ -8,6 +8,7 @@ use (
 	./connectors/linear-cli
 	./connectors/notion-cli
 	./connectors/microsoft-todo-cli
+	./connectors/mailbox
 )
 
 // The CLIs build against the SDK in this commit, also before its tag
