@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# A fake psql for the conformance check of catalog/postgres. It needs no
+# database. It prints its argv and the PG env as CSV: one row per value.
+set -euo pipefail
+if [ "${1:-}" = --version ]; then
+  echo "psql (PostgreSQL) 0.0 fake"
+  exit 0
+fi
+q() { local v="${1//\"/\"\"}"; printf '"%s"' "$v"; }
+echo "kind,name,value"
+i=0
+for a in "$@"; do
+  echo "arg,$i,$(q "$a")"
+  i=$((i + 1))
+done
+for k in PGHOST PGPORT PGDATABASE PGUSER PGOPTIONS; do
+  echo "env,$k,$(q "${!k:-}")"
+done

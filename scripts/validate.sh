@@ -6,7 +6,9 @@
 # --conformance runs "trebi connector conformance --manifest catalog/<name>"
 # for each entry. When connectors/<bin> has the program of the entry, it
 # builds the program first and puts it on PATH. It needs a trebi on PATH
-# that has the conformance command.
+# that has the conformance command. The fakes in scripts/fakes (for example
+# psql) go on PATH first, so an entry that wraps a system program needs no
+# server.
 #
 # --no-external-cli skips the actions.cli suite for an entry whose CLI the
 # catalog does not build. CI uses it, because the runner does not have those
@@ -44,6 +46,7 @@ fi
 
 bin="$(mktemp -d)"
 trap 'rm -rf "$bin"' EXIT
+cp "$root"/scripts/fakes/* "$bin"/
 export PATH="$bin:$PATH"
 failed=()
 entries="$(cd "$root/tools/catalogctl" && GOWORK=off go run . entries --root "$root")"

@@ -1,0 +1,47 @@
+schema: trebi-connector/1
+name: postgres
+title: PostgreSQL
+description: "Run read-only queries on a PostgreSQL database for reports and live data."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+install:
+  bin: psql
+setup:
+  inputs:
+    - name: PGHOST
+      label: Server
+      help: The host name or the IP address of the database server. Install the PostgreSQL client (psql) on this computer.
+      required: true
+    - name: PGPORT
+      label: Port
+      default: "5432"
+    - name: PGDATABASE
+      label: Database
+      required: true
+    - name: PGUSER
+      label: User
+      help: Use a user that can only read.
+      required: true
+    - name: PGPASSWORD
+      label: Password
+      secret: true
+actions:
+  operations:
+    - name: query
+      label: Run a query
+      description: Run one SQL query in a read-only session and return the rows as CSV.
+      readonly: true
+      default: on
+      command: [psql, --csv, --no-psqlrc, -X, -v, ON_ERROR_STOP=1, -c, "{input.sql}"]
+      stdin: none
+      output: csv
+      timeout: 40s
+      input:
+        type: object
+        properties:
+          sql: {type: string, maxLength: 20000, description: One SQL query.}
+        required: [sql]
+      env:
+        PGOPTIONS: "-c default_transaction_read_only=on -c statement_timeout=30000"
