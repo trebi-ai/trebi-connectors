@@ -81,7 +81,7 @@ Trebi installs the program of an entry with the first method of `install` that w
 
 | Method | Use it when | Notes |
 |---|---|---|
-| `github_release` | The program has releases on GitHub. | `tag` and `asset` take `{version}`, `{os}`, and `{arch}`. Give `checksums`: Trebi checks the asset against it. `scripts/validate.sh --check-assets` checks that the assets exist. |
+| `github_release` | The program has releases on GitHub. | `tag` and `asset` take `{version}`, `{os}`, and `{arch}`. Give `checksums`: Trebi checks the asset against it. A private repository works when this computer has a GitHub CLI login. Trebi puts every file of the archive folder that holds `bin` into the program folder. `scripts/validate.sh --check-assets` checks that the assets exist. |
 | `brew` | The program has a Homebrew formula. | The value is the formula name. |
 | `go` | The program installs with `go install`. | The value is the package path with a version. The user must have Go. |
 | `catalog` | Trebi builds the program from `connectors/<bin>`. | Only for a program in this repository. A maintainer adds it. |
