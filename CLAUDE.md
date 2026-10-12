@@ -33,6 +33,10 @@ The daemon owns the protocol, the manifest schema, and the conformance checks. T
 - Run `scripts/validate.sh` before a PR. For an entry with a program, also run `scripts/validate.sh --conformance <name>`.
 - Write all prose in ASD-STE100 Simplified Technical English. Write one paragraph per line, with no hard wraps.
 
+## Connectors outside the catalog
+
+An author who does not publish to the catalog can share a connector as a GitHub link. Trebi does not review it. Put `trebi-connector.yaml` in the folder of the tool, and set `install.build: {go: <package>}`. The package path is relative to the folder, and the folder (or a parent in the download) needs a `go.mod`. The daemon builds the program with `go build` on the computer of the user. The user adds the connector with `trebi connector add <link>` or with "From a link" in the UI. Run `trebi connector check-link <link>` until every row passes. `install.build` is for a link only: a catalog entry uses `install.catalog`. The guide `trebi guide connectors-and-rules`, section "Make a folder a connector", has the full manifest example.
+
 ## Adapter folder contract
 
 These rules are for every connector program. They are copied word for word from the Trebi plan for connector connections. `.claude/skills/connector-authoring/SKILL.md` has the full steps and the checklist before a PR.

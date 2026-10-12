@@ -20,6 +20,17 @@ Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the 
 3. Bump `version` for each change. A published version is immutable.
 4. Run `scripts/validate.sh`. Add `--conformance` to run `trebi connector conformance --manifest catalog/<name>` on each entry. It needs a `trebi` with that command on `PATH`.
 
+## Add from a link
+
+A connector does not have to be in the catalog. Any GitHub folder with a `trebi-connector.yaml` can install from a link. Trebi does not review it, and the user agrees to run it before the install.
+
+1. Put `trebi-connector.yaml` in the folder of the tool. For a Go program, set `install.build: {go: .}` and `install.bin: <program>`. The folder (or a parent in the download) needs a `go.mod`, and the user needs Go on the computer.
+2. Commit and push the folder.
+3. Run `trebi connector check-link https://github.com/<owner>/<repo>/tree/<ref>/<path>`. Fix each row that fails, push, and check again.
+4. Install with `trebi connector add <link>`, or with "From a link" on the New connector page.
+
+A link with a branch follows the branch: Trebi checks for a new commit once a day. A link with a 40-character commit never changes. A private repository works when the GitHub login of the user can read it. `trebi guide connectors-and-rules` has the full manifest example and the list of checks.
+
 ## Publish flow
 
 - A PR that changes `catalog/` or `schema/` runs `.github/workflows/catalog.yml`. It validates every entry. It downloads the newest `trebi` release, checks it against `SHA256SUMS`, and runs the conformance check on each entry that the PR changes. A change in an entry or in its program checks that entry. A change in `schema/`, `tools/catalogctl/`, the scripts, or the workflow checks each entry.

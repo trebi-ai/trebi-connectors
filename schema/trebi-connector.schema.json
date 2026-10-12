@@ -43,6 +43,14 @@
             "checksums": {"type": "string"}
           }
         },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["go"],
+          "properties": {
+            "go": {"type": "string", "minLength": 1}
+          }
+        },
         "brew": {"type": "string"},
         "go": {"type": "string"},
         "bin": {"type": "string"},
