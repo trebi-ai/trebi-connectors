@@ -16,7 +16,7 @@ In Trebi, the connection has these inputs:
 - "Server address" (`SSH_HOST`): the host name or IP address. Add `:port` for a port other than 22.
 - "User name" (`SSH_USER`): the user that Trebi logs in as.
 - "Private key" (`SSH_KEY`, secret): the full text of a private key with no passphrase. A key with a passphrase does not work: use the key agent.
-- "Key agent" (`SSH_AUTH_SOCK`): the path of an SSH agent socket on this computer. Trebi uses it when there is no private key, and also as a second try.
+- "Key agent" (`SSH_AUTH_SOCK`): the path of an SSH agent socket. Leave it empty to use the key agent of this computer. The program uses the agent when there is no private key, and also as a second try.
 - "Server key" (`SSH_HOST_KEY`): the public key of the server, as in `known_hosts` or `ssh-keyscan`. When it is empty, Trebi trusts the first key that it sees and keeps it in the state folder (`known_hosts`). A different key later stops the connection with an error.
 - "Check every" (`HOST_EVERY`): the interval. The default is `60s`. The minimum is `10s`.
 - "CPU alert above", "Memory alert above", "Disk alert above" (`HOST_CPU_ABOVE`, `HOST_MEMORY_ABOVE`, `HOST_DISK_ABOVE`): the limits in percent. The default is `90`.

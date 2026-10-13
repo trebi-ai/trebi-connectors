@@ -28,7 +28,7 @@ Outside Trebi, the key comes from `--key`, `SSH_KEY`, `SSH_KEY_FILE`, the agent,
 
 ## Use with Trebi
 
-Trebi runs `host-cli serve` with `TREBI_STATE_DIR` set. The values come only from the inputs of the connection. Trebi does not give its own `SSH_AUTH_SOCK` to a connector, so the agent socket is an input.
+Trebi runs `host-cli serve` with `TREBI_STATE_DIR` set. The values come only from the inputs of the connection. Perception gives its own `SSH_AUTH_SOCK` to the program, and an input wins. Trebi does not give its own `SSH_AUTH_SOCK` yet; until it does, set the input in Trebi.
 
 - With no server, user, or key, `serve` sends `status` `auth_required` with reason `missing_input`.
 - `--host`, `--user`, and `--key` fail with "Trebi sets this value".

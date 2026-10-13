@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: host
 title: Linux server
 description: "Watch a Linux server over SSH: CPU, memory, disk, load, the busiest processes, and failed services."
-version: 0.1.0
+version: 0.1.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -27,7 +27,7 @@ setup:
       secret: true
     - name: SSH_AUTH_SOCK
       label: Key agent
-      help: "The path of the SSH agent socket on this computer, when the key is in an agent. Run echo $SSH_AUTH_SOCK to find it."
+      help: "Leave it empty to use the key agent of this computer. Set it only to use another agent socket."
     - name: SSH_HOST_KEY
       label: Server key
       help: "The public key of the server, for example the line of the server in known_hosts. Leave it empty to trust the key that Trebi sees first."
