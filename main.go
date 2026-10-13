@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	cli "github.com/urfave/cli/v3"
@@ -16,7 +17,12 @@ import (
 var version = "dev"
 
 func main() {
-	if err := run(context.Background(), os.Args); err != nil {
+	args := os.Args
+	if filepath.Base(args[0]) == "slack-op" {
+		// The operations of the Trebi manifest run as slack-op <name>.
+		args = append([]string{"slack-cli", "op"}, args[1:]...)
+	}
+	if err := run(context.Background(), args); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

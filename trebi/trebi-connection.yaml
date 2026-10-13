@@ -23,14 +23,14 @@ manifest:
   actions:
     cli: {commands: [slack-cli]}
     operations:
-      # The operation binary is a link to slack-cli: Trebi does not let an
-      # operation binary also be a run command.
+      # slack-op is a link to slack-cli: Trebi does not let an operation
+      # binary also be a run command.
       - name: search
         label: Search messages
         description: "Find messages with the Slack search words, such as in:#channel, from:@name, or after:2026-01-31. The newest message comes first."
         readonly: true
         default: on
-        command: [/Users/fritz/Projects/cli-tools/slack-cli/build/slack-cli-op, op, search]
+        command: [slack-op, search]
         stdin: json
         output: json
         timeout: 30s
@@ -46,7 +46,7 @@ manifest:
         description: "Read the messages of a channel, a direct message, or a thread. The oldest message comes first."
         readonly: true
         default: on
-        command: [/Users/fritz/Projects/cli-tools/slack-cli/build/slack-cli-op, op, history]
+        command: [slack-op, history]
         stdin: json
         output: json
         timeout: 30s

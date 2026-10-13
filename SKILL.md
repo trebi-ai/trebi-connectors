@@ -132,8 +132,9 @@ or an app token (Socket Mode). A missing workspace gives a status message.
 object on stdin, one on stdout, `{messages, next?, total?}` with the event
 shape. `search`: `{query, workspace?, limit?}`. `history`: `{room, thread?,
 before?, after?, limit?, workspace?}`; `room` is a room id, a channel id, or
-`#name`. `scripts/build.sh` also makes `build/slack-cli-op` (a link), because
-Trebi does not let an operation binary also be a run command.
+`#name`. `scripts/build.sh` also makes `build/slack-op` (a link): `slack-op search` is
+`slack-cli op search`. Trebi does not let an operation binary also be a run
+command.
 
 The connection file is `trebi/trebi-connection.yaml` (`from: inline`, for this
 computer). Check it: copy its `manifest:` block to `<dir>/trebi-connector.yaml`,

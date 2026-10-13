@@ -207,9 +207,9 @@ echo '{"room":"#general","limit":20}' | slack-cli op history
 echo '{"room":"T0123/C0456","thread":"1767225600.000100"}' | slack-cli op history
 ```
 
-`scripts/build.sh` also makes `build/slack-cli-op`, a link to `slack-cli`. The
-operations use it, because Trebi does not let an operation binary also be a run
-command.
+`scripts/build.sh` also makes `build/slack-op`, a link to `slack-cli`:
+`slack-op search` is `slack-cli op search`. The operations use it, because Trebi
+does not let an operation binary also be a run command.
 
 `trebi/trebi-connection.yaml` is the connection for this computer
 (`from: inline`). Add it with

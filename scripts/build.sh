@@ -13,6 +13,6 @@ mkdir -p "${BUILD_DIR}"
 cd "${ROOT_DIR}"
 echo "Building slack-cli ${VERSION} → ${OUTPUT}"
 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "${OUTPUT}" .
-# Trebi operations need a binary name that is not the run command.
-ln -sf slack-cli "${BUILD_DIR}/slack-cli-op"
+# The Trebi operations run as slack-op <name>.
+ln -sf slack-cli "${BUILD_DIR}/slack-op"
 echo "Done."
