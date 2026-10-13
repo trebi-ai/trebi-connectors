@@ -84,6 +84,9 @@ func hostOf(u string) string {
 	return p.Host
 }
 
+// SetBaseURL replaces the API root, for example with a fake Slack.
+func (c *Client) SetBaseURL(u string) { c.baseURL = strings.TrimRight(u, "/") + "/" }
+
 // Session reports whether the client uses an xoxc- session token.
 func (c *Client) Session() bool { return config.TokenKind(c.token) == "session" }
 

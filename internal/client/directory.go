@@ -265,6 +265,41 @@ func (d *Directory) UserName(ctx context.Context, id string) string {
 	return id
 }
 
+// User returns a user by id from the cache, or else from users.info.
+func (d *Directory) User(ctx context.Context, id string) (User, bool) {
+	if u, ok := d.Users[id]; ok {
+		return u, true
+	}
+	var resp struct {
+		User rawUser `json:"user"`
+	}
+	if d.cl.CallJSON(ctx, "users.info", url.Values{"user": {id}}, &resp) != nil || resp.User.ID == "" {
+		return User{}, false
+	}
+	u := resp.User.user()
+	d.Users[u.ID] = u
+	return u, true
+}
+
+// Channel returns a conversation by id from the cache, or else from
+// conversations.info.
+func (d *Directory) Channel(ctx context.Context, id string) (Channel, bool) {
+	if c, ok := d.Channels[id]; ok {
+		return c, true
+	}
+	var resp struct {
+		Channel json.RawMessage `json:"channel"`
+	}
+	if d.cl.CallJSON(ctx, "conversations.info", url.Values{"channel": {id}}, &resp) != nil {
+		return Channel{}, false
+	}
+	c, ok := parseChannel(resp.Channel)
+	if ok {
+		d.Channels[c.ID] = c
+	}
+	return c, ok
+}
+
 // ChannelName returns the name of a channel id from the cache.
 func (d *Directory) ChannelName(id string) string {
 	if c, ok := d.Channels[id]; ok && c.Name != "" {

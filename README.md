@@ -6,7 +6,7 @@ Command-line client for the Slack Web API.
 official method reference, so every method is a subcommand with typed flags.
 It reuses the Slack desktop app session, so you do not create an app to start.
 Add more workspaces and switch between them. `slack-cli listen` streams live
-events as JSON lines.
+events as JSON lines. `slack-cli serve` connects the workspaces to Trebi.
 
 ## Install
 
@@ -181,6 +181,40 @@ slack-cli listen --raw                       # emit the raw event object
 Each normalized line has `workspace`, `team_id`, `type`, `subtype`, `channel`,
 `user`, `ts`, `thread_ts`, `text`, `time`, and `raw`.
 
+## Trebi connector
+
+`slack-cli serve` is a [Trebi](https://trebi.ai) connector. It speaks the
+trebi-connector/1 protocol on stdin and stdout, and writes logs to stderr. It
+sends these events: `message`, `mention`, `message.edited`, `message.deleted`,
+`reaction`, and `channel.join`. It does not send messages.
+
+`SLACK_WORKSPACES` (or `--workspaces`) selects the workspaces: a
+comma-separated list of names, team ids, or domains. `all` selects every
+workspace. An empty value selects the default workspace. Each workspace needs a
+session token (`auth import`) or an app token.
+
+```bash
+SLACK_WORKSPACES=big-time-data,nanit slack-cli serve
+slack-cli serve --sandbox    # a fake Slack in the process, for conformance checks
+```
+
+Two read-only operations read one JSON object on stdin and write one JSON
+object. The messages have the same shape as the events:
+
+```bash
+echo '{"query":"deploy in:#ops","limit":10}' | slack-cli op search
+echo '{"room":"#general","limit":20}' | slack-cli op history
+echo '{"room":"T0123/C0456","thread":"1767225600.000100"}' | slack-cli op history
+```
+
+`scripts/build.sh` also makes `build/slack-cli-op`, a link to `slack-cli`. The
+operations use it, because Trebi does not let an operation binary also be a run
+command.
+
+`trebi/trebi-connection.yaml` is the connection for this computer
+(`from: inline`). Add it with
+`trebi connector apply --file trebi/trebi-connection.yaml`.
+
 ## Output
 
 Default output is a table. Use `--json`/`-j` for JSON, `--raw` for the full
@@ -193,3 +227,10 @@ go test ./...
 ```
 
 Tests use an `httptest` server and local crypto; they make no live Slack calls.
+The Trebi conformance check runs `slack-cli serve --sandbox`:
+
+```bash
+dir=$(mktemp -d) && mkdir "$dir/skill" && cp SKILL.md "$dir/skill/"
+sed -n '/^manifest:/,$p' trebi/trebi-connection.yaml | tail -n +2 | sed 's/^  //' > "$dir/trebi-connector.yaml"
+trebi connector conformance --manifest "$dir"
+```

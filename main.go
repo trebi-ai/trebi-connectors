@@ -42,7 +42,7 @@ func newApp(cfg *config.Config, s *spec.Spec) *cli.Command {
 	// Hand-written top-level commands. Where a name matches a spec noun
 	// (auth, api), merge the spec methods in as subcommands; the hand-written
 	// subcommands win on a name collision.
-	tops := []*cli.Command{cmd.AuthCommand(), cmd.APICommand(), cmd.ListenCommand()}
+	tops := []*cli.Command{cmd.AuthCommand(), cmd.APICommand(), cmd.ListenCommand(), cmd.ServeCommand(version), cmd.OpCommand()}
 	commands := mergeTopLevel(tops, resources)
 
 	app := &cli.Command{

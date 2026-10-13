@@ -8,7 +8,8 @@ description: >
   Reuses the Slack desktop app session (local auth, no app needed), or a pasted
   xoxp-/xoxb-/xoxc- token. Keeps several workspaces and switches with
   --workspace. `slack-cli listen` streams live events as JSON lines over the
-  desktop client WebSocket, Socket Mode, or polling. Authenticates with a
+  desktop client WebSocket, Socket Mode, or polling. `slack-cli serve` is the
+  Trebi connector (trebi-connector/1). Authenticates with a
   session token (xoxc- + d cookie) or an OAuth token. Triggers: "slack",
   "slack-cli", "post to slack", "slack message", "read slack channel", "slack
   listen", "listen for slack messages", "slack dm", "slack upload file", "slack
@@ -106,6 +107,39 @@ session socket subscribes to channels lazily (like the app); `--eager` drops
 backoff. Each normalized line: `workspace`, `team_id`, `type`, `subtype`,
 `channel`, `user`, `ts`, `thread_ts`, `text`, `time`, `raw`.
 
+## serve (Trebi connector)
+
+`slack-cli serve` speaks the trebi-connector/1 protocol on stdin and stdout
+(SDK `github.com/trebi-ai/trebi-connectors/sdk`). Logs go to stderr. It streams
+the workspaces in `--workspaces` (env `SLACK_WORKSPACES`): a comma-separated
+list of names, team ids, or domains; `all` for every workspace; empty for the
+default workspace. A workspace needs a session token (desktop socket, eager)
+or an app token (Socket Mode). A missing workspace gives a status message.
+
+- Event types: `message`, `mention` (a message that names you; also sent as
+  `message`), `message.edited` (text change only, not unfurls),
+  `message.deleted`, `reaction`, `channel.join`.
+- Ids: message `<team>/<channel>/<ts>`; room `<team>/<channel>` with name
+  `#name`, the user name (dm), or `a, b` (group); thread id = thread ts;
+  `reply_to` = root message id; `sender.bot`, `sender.self`.
+- `data`: `workspace`, `team_id`, `team_name`, `channel_id`, `ts`, the raw
+  Slack `event`, plus `previous_text` (edit, delete) or `emoji` (reaction).
+- No channel features (send, replay): the connector only reads.
+- `serve --sandbox` runs against a fake Slack in the process
+  (`internal/fakeslack`) for `trebi connector conformance`.
+
+`slack-cli op search|history` are the read-only Trebi operations: one JSON
+object on stdin, one on stdout, `{messages, next?, total?}` with the event
+shape. `search`: `{query, workspace?, limit?}`. `history`: `{room, thread?,
+before?, after?, limit?, workspace?}`; `room` is a room id, a channel id, or
+`#name`. `scripts/build.sh` also makes `build/slack-cli-op` (a link), because
+Trebi does not let an operation binary also be a run command.
+
+The connection file is `trebi/trebi-connection.yaml` (`from: inline`, for this
+computer). Check it: copy its `manifest:` block to `<dir>/trebi-connector.yaml`,
+copy `SKILL.md` to `<dir>/skill/`, then run
+`trebi connector conformance --manifest <dir>`.
+
 ## Examples
 
 ```bash
@@ -119,13 +153,15 @@ slack-cli files upload ./report.pdf --channel '#reports' --title 'Q3'
 slack-cli api users.list --all
 slack-cli listen --channel '#general' --mentions
 slack-cli -w T0123ABCD listen --all-workspaces --count 5
+SLACK_WORKSPACES=big-time-data,nanit slack-cli serve
+echo '{"room":"#general","limit":20}' | slack-cli op history
 ```
 
 ## Layout
 
-- `main.go` — root command; merges hand-written `auth`/`api`/`listen` with the
+- `main.go` — root command; merges hand-written `auth`/`api`/`listen`/`serve`/`op` with the
   spec-generated noun groups.
-- `cmd/` — `auth.go`, `api.go`, `listen.go`, `method.go` (generic leaf),
+- `cmd/` — `auth.go`, `api.go`, `listen.go`, `serve.go`, `op.go`, `method.go` (generic leaf),
   `resources.go` (tree), `helpers.go`, `render.go`, `common.go`.
 - `internal/spec/` — `spec.json` (embedded) and loader; `scripts/gen-spec.py`
   regenerates it from `docs.slack.dev`.
@@ -134,6 +170,9 @@ slack-cli -w T0123ABCD listen --all-workspaces --count 5
 - `internal/localauth/` — desktop session and cookie read, keyring decrypt,
   token mint, slk import.
 - `internal/listen/` — event sources (`ws`, `socket`, `poll`), filter.
+- `internal/serve/` — Trebi adapter: event mapping, `search` and `history`.
+- `internal/fakeslack/` — fake Web API and socket for `serve --sandbox` and tests.
+- `trebi/trebi-connection.yaml` — the Trebi connection of this computer.
 - `internal/output/` — table and JSON rendering.
 
 Do not edit `spec.json` by hand; change `scripts/gen-spec.py` and run it again.
