@@ -155,6 +155,13 @@
         "id": {"type": "string"},
         "ts": {"type": "string"},
         "identity": {"type": "string"},
+        "room": {"type": "string"},
+        "room_name": {"type": "string"},
+        "thread": {"type": "string"},
+        "sender": {"type": "string"},
+        "sender_name": {"type": "string"},
+        "type": {"type": "string"},
+        "text": {"type": "string"},
         "catchup": {
           "type": "object",
           "additionalProperties": false,
