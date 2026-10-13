@@ -75,6 +75,26 @@ A connector with `events.subscriptions` in its manifest lets a user watch things
 - `reply_to` is the id of the message that this message quotes or answers. The daemon follows it to the root of the conversation.
 - `sender.bot` is true when a bot or a webhook wrote the message. The trigger key `from` reads it. When an adapter does not set it, the daemon treats each sender as a person.
 
+## Watch a state
+
+Many sources are a state, not a stream: a web page, a server, a CI status. `sdk.StateWatcher` keeps the last value of each key per room and emits an event only on a change.
+
+```go
+w, err := sdk.NewStateWatcher(t.StateDir, e) // in Run; "" keeps the values in memory
+err = w.Observe(room, "title", title)
+err = w.Observe(room, "cpu", cpu, sdk.Above(90), sdk.WithText(func(typ string, c sdk.StateChange) string {
+	return "CPU " + string(c.New) + "%"
+}))
+```
+
+- `Observe(room, key, value, opts...)` encodes `value` as JSON and compares it with the last value of the key in the room. The same value emits nothing.
+- Without a threshold, a new value emits `state.changed`. The first value of a key emits nothing.
+- `sdk.Above(n)` and `sdk.Below(n)` need a number. Only a crossing emits: `state.changed` when the value goes past the limit, once, and `state.recovered` when it comes back. A first value that is already past the limit emits `state.changed`. A key can have more than one threshold, and each crossing emits one event.
+- `data` is `{"key", "old", "new", "threshold"?}`. `old` is `null` for a first value. `threshold` is `{"op": "above"|"below", "value": n}`.
+- `sdk.WithText(f)` sets `text`. Without it, `text` is empty.
+- The values stay in `$TREBI_STATE_DIR/trebi-sdk-state.json`, so a restart does not emit each key again. When an emit fails, `Observe` returns the error and keeps the old value, so the next `Observe` tries again. The event id comes from the room, the key, and a count per key, so an emit again after a crash has the same id and the daemon drops the copy.
+- Declare `sdk.EventStateChanged` and `sdk.EventStateRecovered` in `InitializeResult.Events`.
+
 ## Read a conversation
 
 The CLI of a channel connector has a history command. The command reads the messages of a room or a thread with `--before`, `--after`, and `--limit`. A run uses it to read the earlier messages of a conversation. The skill of the connector has a section "Read a conversation" that shows the command.
@@ -129,6 +149,8 @@ Use it in SDK tests and as an example. A connector program does not use it for `
 - `sdktest.Start(adapter)` returns a `Conn` with `Initialize`, `Call`, `Notify`, and `WaitNote` for single requests.
 
 ## Versions
+
+`sdk/v0.6.0` adds `StateWatcher`, `NewStateWatcher`, `Above`, `Below`, `WithText`, the types `StateChange`, `Threshold`, and `EventEmitter`, and the event types `state.changed` and `state.recovered`. See "Watch a state".
 
 `sdk/v0.5.0` adds `Status.Links` and the type `Link`. An adapter that serves its own pages sends them with `e.Status(sdk.Status{State: sdk.StateConnected, Links: []sdk.Link{{Label: "Open", URL: "http://127.0.0.1:7480/"}}})`. The connector panel in Trebi shows each link as a button. Trebi keeps only links to `127.0.0.1`, `localhost`, a Tailscale address, or a `*.ts.net` name. A status with no links keeps the last links, and an empty list clears them.
 
