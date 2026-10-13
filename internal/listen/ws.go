@@ -47,9 +47,24 @@ func (s *WSSource) url() string {
 	)
 }
 
+// dialURL asks rtm.connect for a socket URL. The client URL of url() gives
+// no frames to a session token, so it is only the fallback.
+func (s *WSSource) dialURL(ctx context.Context) string {
+	if s.BaseURL != "" {
+		return s.url()
+	}
+	var r struct {
+		URL string `json:"url"`
+	}
+	if err := s.Client.CallJSON(ctx, "rtm.connect", nil, &r); err != nil || r.URL == "" {
+		return s.url()
+	}
+	return r.URL
+}
+
 // Run dials the socket and sends events until ctx is done or the socket drops.
 func (s *WSSource) Run(ctx context.Context, out chan<- Event) error {
-	wsURL := s.url()
+	wsURL := s.dialURL(ctx)
 	jar := s.Client.HTTP().Jar
 	dialer := &websocket.Dialer{
 		Jar:             jar,
@@ -60,6 +75,7 @@ func (s *WSSource) Run(ctx context.Context, out chan<- Event) error {
 		return fmt.Errorf("websocket connect: %w", err)
 	}
 	defer conn.Close()
+	go keepAlive(ctx, conn)
 	return readLoop(ctx, conn, func(raw json.RawMessage) {
 		if e, ok := parseEvent(s.Workspace, s.TeamID, raw); ok {
 			select {
@@ -72,6 +88,23 @@ func (s *WSSource) Run(ctx context.Context, out chan<- Event) error {
 
 // Name returns the workspace label.
 func (s *WSSource) Name() string { return s.Workspace }
+
+// keepAlive sends the JSON ping of the desktop client. Slack sends no
+// frames to an idle socket, so without it the read deadline expires.
+func keepAlive(ctx context.Context, conn *websocket.Conn) {
+	t := time.NewTicker(20 * time.Second)
+	defer t.Stop()
+	for id := 1; ; id++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if conn.WriteJSON(map[string]any{"type": "ping", "id": id}) != nil {
+				return
+			}
+		}
+	}
+}
 
 // readLoop reads frames until the context ends or the socket errors. It keeps
 // the connection alive with a read deadline reset on each frame and a pong

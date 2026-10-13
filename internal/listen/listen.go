@@ -79,7 +79,7 @@ func parseEvent(workspace, teamID string, raw json.RawMessage) (Event, bool) {
 		ThreadTS string          `json:"thread_ts"`
 		Text     string          `json:"text"`
 	}
-	if json.Unmarshal(raw, &e) != nil || e.Type == "" {
+	if json.Unmarshal(raw, &e) != nil || e.Type == "" || e.Type == "hello" || e.Type == "pong" {
 		return Event{}, false
 	}
 	ev := Event{
