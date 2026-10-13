@@ -1,0 +1,2 @@
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"state.changed","ts":"<any>","room":{"id":"{{addr}}","name":"web-1","kind":"host"},"thread":null,"sender":null,"text":"Trebi cannot reach {{addr}}: the command exited with code 1","data":{"key":"reachable","old":1,"new":0,"threshold":{"op":"below","value":1}}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"error","message":"the command exited with code 1"}}}

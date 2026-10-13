@@ -1,0 +1,32 @@
+schema: trebi-connector/1
+name: web
+title: Web pages and feeds
+description: "Start work when a blog or a news feed has a new entry, or when a part of a web page changes."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: web-cli
+  version_command: web-cli --version
+setup:
+  inputs:
+    - name: WEB_URLS
+      label: Web addresses
+      help: "One address on each line: a feed (RSS or Atom) or a web page. To watch only a part of a page, put a CSS selector after the address, for example https://shop.example/lamp #price."
+      required: true
+    - name: WEB_EVERY
+      label: Check every
+      help: "How often Trebi reads each address, for example 30m or 2h. The minimum is 10m."
+      default: 30m
+actions:
+  cli: {commands: [web-cli]}
+events:
+  protocol: trebi-connector/1
+  command: web-cli serve
+  restart: always
+  types:
+    - {type: entry, description: A new entry in a feed, schema: schemas/entry.json}
+    - {type: state.changed, description: The text of a page changed, schema: schemas/state.changed.json}

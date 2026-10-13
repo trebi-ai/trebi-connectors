@@ -11,11 +11,13 @@ description: >
 # axiom-cli — Axiom REST API CLI
 
 Go CLI wrapping every read endpoint of the Axiom REST API. JSON output, pretty-printed.
-Binary: `axiom-cli`. Build: `scripts/build.sh` → `build/axiom-cli`.
+Binary: `axiom-cli`. Source: `connectors/axiom-cli` in `trebi-connectors`. Build: `scripts/build.sh` → `build/axiom-cli`.
 
 ## Auth
 
-Token resolution order: `--token` flag → `AXIOM_TOKEN` env → `~/.cli-tools/axiom-cli/config.json`.
+In Trebi, the connection inputs give the token ("API token", `AXIOM_TOKEN`) and the org id ("Organization ID", `AXIOM_ORG_ID`). Trebi mode ignores the config file. `--token`, `--org-id`, and `--api-url` fail with "Trebi sets this value". `auth set` and `auth clear` fail with "Set this value in Trebi".
+
+Outside Trebi, token resolution order: `--token` flag → `AXIOM_TOKEN` env → `~/.cli-tools/axiom-cli/config.json`.
 Org id (required for personal tokens `xapt-...`): `--org-id` → `AXIOM_ORG_ID` → config file.
 
 ```bash
@@ -163,3 +165,16 @@ axiom-cli datasets list | jq -c '.[]' >> datasets.ndjson
 ## Pagination
 
 The CLI does not auto-paginate. Pass `--cursor` (and `--limit` where supported); re-run with the next cursor extracted from the response.
+
+## Events (Trebi)
+
+`axiom-cli serve` polls the history of each monitor at the interval "Check every" (`AXIOM_EVERY`, default and minimum `1m`). The room is the monitor: its id, with the monitor name as the room name.
+
+- `state.changed`: a monitor triggered (history state `open`). A MatchEvent monitor gives one for each match.
+- `state.recovered`: a monitor resolved (history state `closed`).
+
+`data` has `key` (`state`), `old` (the state of the previous event, or null), `new` (`open` or `closed`), `monitor_id`, `monitor`, `type`, `datasets`, `query`, `check_id`, and `at` (the time of the check). The event id comes from the monitor, the time, and the state, so one history entry gives one event.
+
+The first poll of a monitor sends no event: it records the time. Then each poll sends the new history entries, oldest first. After a stop, the next poll sends the entries of the stop, at most 7 days back. The state folder holds `axiom-monitors.json` (the cursor of each monitor, format 1).
+
+To read more about a trigger, run the monitor query for the time of `at`: `axiom-cli query apl '<query>' --start <at - range> --end <at>`.

@@ -1,6 +1,6 @@
 # connectors
 
-The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
+The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
 
 | CLI | Module | Catalog entry |
 |---|---|---|
@@ -11,6 +11,9 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 | `notion-cli` | `github.com/trebi-ai/trebi-connectors/connectors/notion-cli` | `catalog/notion` |
 | `microsoft-todo-cli` | `github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli` | `catalog/microsoft-todo` |
 | `mailbox` | `github.com/trebi-ai/trebi-connectors/connectors/mailbox` | `catalog/gmail` |
+| `web-cli` | `github.com/trebi-ai/trebi-connectors/connectors/web-cli` | `catalog/web` |
+| `host-cli` | `github.com/trebi-ai/trebi-connectors/connectors/host-cli` | `catalog/host` |
+| `axiom-cli` | `github.com/trebi-ai/trebi-connectors/connectors/axiom-cli` | `catalog/axiom` |
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
@@ -82,6 +85,16 @@ The README of each CLI has the details: the GraphQL webhook of Linear, the manua
 - Operations: `search`, `read`, `draft`, and `send`, as `mailbox op <name>` with a JSON input on stdin and a JSON output on stdout.
 - `serve` has no channel, no events, and no features. It checks the login every 5 minutes and sends a `status` when the result changes.
 - `serve --sandbox` runs the adapter over `internal/fakemail`: an IMAP server (`imapmemserver`) and an SMTP server in the same process, both with TLS.
+
+## web-cli, host-cli, and axiom-cli
+
+These three programs poll and send events. They have no channel and no login step: the inputs hold the values. Each sends `state.changed` and `state.recovered`, with `data.key`, `data.old`, and `data.new`.
+
+- `web-cli`: `entry` for each new entry of an RSS or Atom feed, and `state.changed` when the text of a page or of a CSS selector changes (`sdk.StateWatcher`). The minimum interval is 10 minutes.
+- `host-cli`: `sample` at each check, with the numbers in `data.metrics`, and `state.changed` and `state.recovered` from `sdk.StateWatcher` for `reachable`, the CPU, memory, and disk limits, and each failed systemd service. It logs in over SSH with a key or an agent socket.
+- `axiom-cli`: `state.changed` when a monitor triggers and `state.recovered` when it resolves, from the monitor history.
+
+The README of each CLI has the details.
 
 ## Build and test
 

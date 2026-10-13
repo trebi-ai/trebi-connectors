@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a state.recovered event: the server is up again, a use is back at or under its limit, or a service runs again.",
+  "required": [
+    "key",
+    "old",
+    "new",
+    "threshold"
+  ],
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "reachable, cpu.used_pct, mem.used_pct, disk[<mount>].used_pct, or unit[<service>].failed."
+    },
+    "old": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "The value before. reachable and unit[...].failed are 1 or 0."
+    },
+    "new": {
+      "type": "number",
+      "description": "The value now."
+    },
+    "threshold": {
+      "type": "object",
+      "required": [
+        "op",
+        "value"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "above",
+            "below"
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "description": "The limit that the value went past (state.changed) or came back from (state.recovered)."
+    }
+  }
+}

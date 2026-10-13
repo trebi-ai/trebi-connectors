@@ -1,0 +1,2 @@
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":9,"method":"ping","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":9,"result":{}}}

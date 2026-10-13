@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of an entry event: one new entry of a feed.",
+  "required": [
+    "feed",
+    "entry_id"
+  ],
+  "properties": {
+    "feed": {
+      "type": "string",
+      "description": "The address of the feed. It is also the room id."
+    },
+    "feed_title": {
+      "type": "string",
+      "description": "The title of the feed."
+    },
+    "entry_id": {
+      "type": "string",
+      "description": "The id of the entry in the feed: the guid or id, else the link."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the entry."
+    },
+    "link": {
+      "type": "string",
+      "description": "The page of the entry."
+    },
+    "author": {
+      "type": "string",
+      "description": "The author of the entry."
+    },
+    "published": {
+      "type": "string",
+      "description": "The publish or update time of the entry, as RFC 3339."
+    },
+    "summary": {
+      "type": "string",
+      "description": "The summary or the content of the entry as plain text, at most 2000 bytes."
+    }
+  }
+}

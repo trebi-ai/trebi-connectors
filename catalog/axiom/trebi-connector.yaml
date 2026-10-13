@@ -1,19 +1,37 @@
 schema: trebi-connector/1
 name: axiom
 title: "Axiom"
-description: "Query logs and traces, and manage datasets, monitors, and dashboards in Axiom."
-version: 0.1.0
+description: "Query logs and traces, and manage datasets, monitors, and dashboards in Axiom. Start work when a monitor triggers or resolves."
+version: 0.2.0
 publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: axiom-cli
+  version_command: axiom-cli --version
 setup:
   inputs:
     - name: AXIOM_TOKEN
       label: "API token"
-      help: "Create an API token in Axiom under Settings, API tokens."
+      help: "Create an API token in Axiom under Settings, API tokens. To watch monitors, give it read access to monitors."
       url: "https://app.axiom.co/settings/api-tokens"
       secret: true
       required: true
     - name: AXIOM_ORG_ID
       label: "Organization ID"
       help: "Needed only for a personal access token."
+    - name: AXIOM_EVERY
+      label: "Check every"
+      help: "How often Trebi reads the monitor history, for example 1m or 5m. The minimum is 1m."
+      default: 1m
 actions:
   cli: {commands: [axiom-cli]}
+events:
+  protocol: trebi-connector/1
+  command: axiom-cli serve
+  restart: always
+  types:
+    - {type: state.changed, description: "A monitor triggered", schema: schemas/state.changed.json}
+    - {type: state.recovered, description: "A monitor resolved", schema: schemas/state.recovered.json}

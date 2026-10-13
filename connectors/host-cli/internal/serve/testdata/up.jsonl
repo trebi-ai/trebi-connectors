@@ -1,0 +1,3 @@
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"state.recovered","ts":"<any>","room":{"id":"{{addr}}","name":"web-1","kind":"host"},"thread":null,"sender":null,"text":"Trebi can reach {{addr}} again.","data":{"key":"reachable","old":0,"new":1,"threshold":{"op":"below","value":1}}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"sample","ts":"<any>","room":{"id":"{{addr}}","name":"web-1","kind":"host"},"thread":null,"sender":null,"text":"<any>","data":"<any>"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"connected"}}}

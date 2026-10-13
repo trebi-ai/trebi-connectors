@@ -1,0 +1,5 @@
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"sample","ts":"<any>","room":{"id":"{{addr}}","name":"web-1","kind":"host"},"thread":null,"sender":null,"text":"web-1: CPU 20%, memory 75%, disk / 50%, disk /srv/data dir 25%, load 0.52","data":"<any>"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"state.recovered","ts":"<any>","room":{"id":"{{addr}}","name":"web-1","kind":"host"},"thread":null,"sender":null,"text":"Disk use of / on web-1 is back to 50%, at or under 90%.","data":{"key":"disk[/].used_pct","old":95,"new":50,"threshold":{"op":"above","value":90}}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"state.recovered","ts":"<any>","room":{"id":"{{addr}}","name":"web-1","kind":"host"},"thread":null,"sender":null,"text":"The service nginx.service on web-1 runs again (active).","data":{"key":"unit[nginx.service].failed","old":1,"new":0,"threshold":{"op":"above","value":0}}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"ping","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":2,"result":{}}}

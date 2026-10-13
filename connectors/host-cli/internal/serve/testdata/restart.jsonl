@@ -1,0 +1,7 @@
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.3.0"},"instance":{"key":"host@ws1","name":"host","workspace":"ws1"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":"<any>"}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","method":"initialized","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":"<any>"}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"sample","ts":"<any>","room":"<any>","thread":null,"sender":null,"text":"<any>","data":"<any>"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"ping","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":2,"result":{}}}

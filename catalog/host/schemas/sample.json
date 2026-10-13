@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a sample event: one reading of the server.",
+  "required": [
+    "host",
+    "metrics",
+    "disks",
+    "processes",
+    "failed_units"
+  ],
+  "properties": {
+    "host": {
+      "type": "string",
+      "description": "The server address, with no port when the port is 22."
+    },
+    "hostname": {
+      "type": "string",
+      "description": "The name that the server gives itself."
+    },
+    "metrics": {
+      "type": "object",
+      "description": "The numbers of the reading by key: cpu.used_pct, cpu.count, mem.used_pct, mem.total_bytes, mem.available_bytes, swap.used_pct, load.1, load.5, load.15, disk[<mount>].used_pct, disk[<mount>].free_bytes, units.total, and units.failed. A server with no systemd has no units keys.",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "disks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "mount",
+          "used_pct"
+        ],
+        "properties": {
+          "mount": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          },
+          "total_bytes": {
+            "type": "number"
+          },
+          "free_bytes": {
+            "type": "number"
+          },
+          "used_pct": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "processes": {
+      "type": "array",
+      "description": "The processes with the most CPU use, at most 10.",
+      "items": {
+        "type": "object",
+        "required": [
+          "pid",
+          "command"
+        ],
+        "properties": {
+          "pid": {
+            "type": "integer"
+          },
+          "user": {
+            "type": "string"
+          },
+          "cpu_pct": {
+            "type": "number"
+          },
+          "mem_pct": {
+            "type": "number"
+          },
+          "command": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "failed_units": {
+      "type": "array",
+      "description": "The names of the systemd services in the failed state.",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

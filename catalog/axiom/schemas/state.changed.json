@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a state.changed event: an Axiom monitor triggered.",
+  "required": [
+    "key",
+    "old",
+    "new",
+    "monitor_id",
+    "monitor",
+    "at"
+  ],
+  "properties": {
+    "key": {
+      "const": "state"
+    },
+    "old": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "open",
+        "closed",
+        null
+      ],
+      "description": "The state of the previous event of the monitor, or null."
+    },
+    "new": {
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "description": "open when the monitor triggered, closed when it resolved."
+    },
+    "monitor_id": {
+      "type": "string"
+    },
+    "monitor": {
+      "type": "string",
+      "description": "The name of the monitor."
+    },
+    "type": {
+      "type": "string",
+      "description": "The monitor type, for example Threshold or MatchEvent."
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "string",
+      "description": "The APL query of the monitor."
+    },
+    "check_id": {
+      "type": "string"
+    },
+    "at": {
+      "type": "string",
+      "description": "The time of the check, as Axiom gives it."
+    }
+  }
+}

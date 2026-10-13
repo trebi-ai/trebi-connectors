@@ -1,0 +1,4 @@
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"entry","ts":"2026-10-02T09:00:00Z","room":{"id":"{{rss}}","name":"Fake blog","kind":"feed"},"thread":null,"sender":null,"text":"Second post\nhttps://example.com/2","data":{"feed":"{{rss}}","feed_title":"Fake blog","entry_id":"e2","title":"Second post","link":"https://example.com/2","published":"2026-10-02T09:00:00Z","summary":"About Second post"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"event","params":{"id":"<any>","type":"state.changed","ts":"<any>","room":{"id":"{{page}}","name":"Fake shop","kind":"page"},"thread":null,"sender":null,"text":"The page Fake shop changed.\n{{page}}","data":{"key":"text #price","old":"Price: 10 EUR","new":"Price: 12 EUR"}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"ping","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":2,"result":{}}}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a state.changed event: the text of a page changed.",
+  "required": [
+    "key",
+    "old",
+    "new"
+  ],
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "text for the whole page, or text followed by the CSS selector."
+    },
+    "old": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The text before the change."
+    },
+    "new": {
+      "type": "string",
+      "description": "The text after the change. A text of more than 8000 bytes keeps its start and a digest of the full text."
+    }
+  }
+}

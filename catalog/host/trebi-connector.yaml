@@ -1,0 +1,61 @@
+schema: trebi-connector/1
+name: host
+title: Linux server
+description: "Watch a Linux server over SSH: CPU, memory, disk, load, the busiest processes, and failed services."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: host-cli
+  version_command: host-cli --version
+setup:
+  inputs:
+    - name: SSH_HOST
+      label: Server address
+      help: "The name or the IP address of the server, for example web-1.example.com. Add :port for a port other than 22."
+      required: true
+    - name: SSH_USER
+      label: User name
+      help: "The user that Trebi logs in as. The user does not need admin rights."
+      required: true
+    - name: SSH_KEY
+      label: Private key
+      help: "The full text of a private key with no passphrase that the server accepts. Leave it empty to use the key agent."
+      secret: true
+    - name: SSH_AUTH_SOCK
+      label: Key agent
+      help: "The path of the SSH agent socket on this computer, when the key is in an agent. Run echo $SSH_AUTH_SOCK to find it."
+    - name: SSH_HOST_KEY
+      label: Server key
+      help: "The public key of the server, for example the line of the server in known_hosts. Leave it empty to trust the key that Trebi sees first."
+    - name: HOST_EVERY
+      label: Check every
+      help: "How often Trebi reads the server, for example 60s or 5m. The minimum is 10s."
+      default: 60s
+    - name: HOST_CPU_ABOVE
+      label: CPU alert above (%)
+      default: "90"
+    - name: HOST_MEMORY_ABOVE
+      label: Memory alert above (%)
+      default: "90"
+    - name: HOST_DISK_ABOVE
+      label: Disk alert above (%)
+      default: "90"
+    - name: HOST_SAMPLES
+      label: Send each reading
+      help: "yes sends a sample event at each check. no sends only the alerts."
+      choices: ["yes", "no"]
+      default: "yes"
+actions:
+  cli: {commands: [host-cli]}
+events:
+  protocol: trebi-connector/1
+  command: host-cli serve
+  restart: always
+  types:
+    - {type: sample, description: "One reading of the server with its numbers", schema: schemas/sample.json}
+    - {type: state.changed, description: "The server is down, a use is above its limit, or a service failed", schema: schemas/state.changed.json}
+    - {type: state.recovered, description: "The server is up again, a use is back under its limit, or a service runs again", schema: schemas/state.recovered.json}
