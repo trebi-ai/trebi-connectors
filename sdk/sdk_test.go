@@ -209,6 +209,7 @@ func fixtureTypes() map[string]func() any {
 		"event.reaction":                func() any { return &Event{} },
 		"status.connected":              func() any { return &Status{} },
 		"status.auth_required":          func() any { return &Status{} },
+		"status.links":                  func() any { return &Status{} },
 		"auth.status.request":           func() any { return &Empty{} },
 		"auth.status.result":            func() any { return &AuthStatusResult{} },
 		"auth.begin.request":            func() any { return &AuthBeginParams{} },

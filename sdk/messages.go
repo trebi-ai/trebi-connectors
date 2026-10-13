@@ -271,6 +271,16 @@ type Status struct {
 	Reason  string   `json:"reason,omitempty"`
 	Message string   `json:"message,omitempty"`
 	Account *Account `json:"account,omitempty"`
+	// Links are pages of the adapter that the connector panel shows. A
+	// status with no links keeps the last links; an empty list clears them.
+	Links []Link `json:"links,omitempty"`
+}
+
+// Link is one page that the adapter serves, for example its own UI. Trebi
+// keeps only links to 127.0.0.1, localhost, or the tailnet.
+type Link struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 // AuthState is the session state an Authenticator reports. Reason goes

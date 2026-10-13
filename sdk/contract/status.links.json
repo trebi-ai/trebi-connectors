@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"status","params":{"state":"connected","links":[{"label":"Open Perception","url":"http://127.0.0.1:7480/"},{"label":"Feeds","url":"https://perception.tail1234.ts.net/feeds"}]}}

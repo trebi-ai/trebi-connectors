@@ -130,6 +130,8 @@ Use it in SDK tests and as an example. A connector program does not use it for `
 
 ## Versions
 
+`sdk/v0.5.0` adds `Status.Links` and the type `Link`. An adapter that serves its own pages sends them with `e.Status(sdk.Status{State: sdk.StateConnected, Links: []sdk.Link{{Label: "Open", URL: "http://127.0.0.1:7480/"}}})`. The connector panel in Trebi shows each link as a button. Trebi keeps only links to `127.0.0.1`, `localhost`, a Tailscale address, or a `*.ts.net` name. A status with no links keeps the last links, and an empty list clears them.
+
 `sdk/v0.4.0` adds the subscriptions: `InitializeParams.Webhook`, the interfaces `Subscriber`, `SubscriptionSubmitter`, and `WebhookReceiver`, `EmitterFrom`, `WebhookRequest.VerifyHMAC`, and the sandbox option `Subscriptions`. `MaxLine` is now 4 MiB, the same as the daemon. The `Emitter` interface gets `SubscriptionsChanged`, so a test fake that implements `Emitter` must add it. After a tag, do step 3 of "The SDK" in `../README.md`.
 
 ## Contract fixtures
