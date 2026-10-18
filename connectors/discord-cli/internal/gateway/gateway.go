@@ -22,6 +22,12 @@ const maxIdentifyAttempts = 5
 // errInvalidSession is returned when Discord rejects IDENTIFY with op=9.
 var errInvalidSession = errors.New("invalid session")
 
+// errZombie is returned when Discord does not ACK a heartbeat before the next one.
+var errZombie = errors.New("no heartbeat ACK from Discord")
+
+// writeWait bounds one write to the socket.
+const writeWait = 10 * time.Second
+
 // Payload is the top-level gateway WebSocket message.
 type Payload struct {
 	Op int              `json:"op"`
@@ -72,8 +78,12 @@ type Gateway struct {
 	seq                   *int
 	sessionID             string
 	stopCh                chan struct{}
+	stopOnce              sync.Once
 	hbStop                chan struct{} // cancels heartbeat for the current connection
+	acked                 bool          // the last heartbeat of the loop has its ACK
+	zombie                bool          // the heartbeat loop closed the connection
 	mu                    sync.Mutex
+	wmu                   sync.Mutex // gorilla/websocket allows one writer at a time
 }
 
 // New creates a new gateway client.
@@ -136,6 +146,7 @@ func (g *Gateway) connectOnce() (*Ready, error) {
 	g.conn = conn
 	g.seq = nil
 	g.sessionID = ""
+	g.acked, g.zombie = true, false
 	// Fresh heartbeat cancel for this attempt (stop any prior loop).
 	g.stopHeartbeatLocked()
 	g.hbStop = make(chan struct{})
@@ -184,7 +195,7 @@ func (g *Gateway) connectOnce() (*Ready, error) {
 			},
 		}),
 	}
-	if err := conn.WriteJSON(identify); err != nil {
+	if err := g.write(conn, identify); err != nil {
 		return fail(fmt.Errorf("send IDENTIFY: %w", err))
 	}
 
@@ -242,8 +253,14 @@ func (g *Gateway) Listen(handler func(eventType string, data json.RawMessage)) e
 			case <-g.stopCh:
 				return nil
 			default:
-				return fmt.Errorf("read: %w", err)
 			}
+			g.mu.Lock()
+			zombie := g.zombie
+			g.mu.Unlock()
+			if zombie {
+				return errZombie
+			}
+			return fmt.Errorf("read: %w", err)
 		}
 
 		if payload.S != nil {
@@ -258,27 +275,26 @@ func (g *Gateway) Listen(handler func(eventType string, data json.RawMessage)) e
 				handler(payload.T, json.RawMessage(*payload.D))
 			}
 		case 1: // HEARTBEAT request
-			g.sendHeartbeat()
+			g.sendHeartbeat(false)
 		case 9: // INVALID_SESSION mid-stream — surface as error so supervisor can restart
 			return fmt.Errorf("%w (op=9 mid-session)", errInvalidSession)
 		case 11: // HEARTBEAT_ACK
-			// no-op
+			g.mu.Lock()
+			g.acked = true
+			g.mu.Unlock()
 		}
 	}
 }
 
-// Close cleanly shuts down the gateway connection.
+// Close cleanly shuts down the gateway connection. A second call does nothing.
 func (g *Gateway) Close() {
-	select {
-	case <-g.stopCh:
-	default:
-		close(g.stopCh)
-	}
+	g.stopOnce.Do(func() { close(g.stopCh) })
 	g.mu.Lock()
 	g.stopHeartbeatLocked()
 	if g.conn != nil {
-		_ = g.conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		// WriteControl is safe next to the other writer.
+		_ = g.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(writeWait))
 		_ = g.conn.Close()
 		g.conn = nil
 	}
@@ -307,14 +323,16 @@ func (g *Gateway) heartbeatLoop(interval time.Duration, hbStop chan struct{}) {
 	case <-g.stopCh:
 		return
 	}
-	g.sendHeartbeat()
+	g.sendHeartbeat(true)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			g.sendHeartbeat()
+			if !g.sendHeartbeat(true) {
+				return
+			}
 		case <-hbStop:
 			return
 		case <-g.stopCh:
@@ -323,17 +341,36 @@ func (g *Gateway) heartbeatLoop(interval time.Duration, hbStop chan struct{}) {
 	}
 }
 
-func (g *Gateway) sendHeartbeat() {
+// sendHeartbeat sends op=1. With check, a beat of the loop first needs the
+// ACK of the last beat. Without it, the connection is a zombie: it closes,
+// Listen returns errZombie, and sendHeartbeat returns false.
+func (g *Gateway) sendHeartbeat(check bool) bool {
 	g.mu.Lock()
-	seq := g.seq
-	conn := g.conn
-	g.mu.Unlock()
+	seq, conn := g.seq, g.conn
 	if conn == nil {
-		return
+		g.mu.Unlock()
+		return true
 	}
+	if check {
+		if !g.acked {
+			g.zombie = true
+			g.mu.Unlock()
+			_ = conn.Close()
+			return false
+		}
+		g.acked = false
+	}
+	g.mu.Unlock()
+	_ = g.write(conn, map[string]any{"op": 1, "d": seq})
+	return true
+}
 
-	payload := map[string]any{"op": 1, "d": seq}
-	_ = conn.WriteJSON(payload)
+// write sends one JSON message on conn.
+func (g *Gateway) write(conn *websocket.Conn, v any) error {
+	g.wmu.Lock()
+	defer g.wmu.Unlock()
+	_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+	return conn.WriteJSON(v)
 }
 
 func rawJSON(v any) *json.RawMessage {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // MonitorsFile keeps the history cursor of each monitor in the state folder.
@@ -97,7 +99,7 @@ func (s *store) keep(ids []string) error {
 	return s.save()
 }
 
-// save writes the file with a rename, so a stop never leaves half a file.
+// save writes the file.
 func (s *store) save() error {
 	if s.path == "" {
 		return nil
@@ -106,9 +108,5 @@ func (s *store) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	return sdk.WriteFileAtomic(s.path, b, 0o600)
 }

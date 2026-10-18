@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -64,7 +65,7 @@ func waitEvent(t *testing.T, c *sdktest.Conn) sdk.Event {
 	return ev
 }
 
-func live(id string, chat, sender types.JID, ts time.Time, msg *waProto.Message) *events.Message {
+func live(id string, chat, sender types.JID, ts time.Time, msg *waE2E.Message) *events.Message {
 	return &events.Message{
 		Info: types.MessageInfo{
 			MessageSource: types.MessageSource{Chat: chat, Sender: sender, IsGroup: chat.Server == types.GroupServer},
@@ -83,20 +84,20 @@ func TestAdapterEvents(t *testing.T) {
 	waitStatus(t, c, sdk.StateConnected)
 
 	ts := time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
-	f.Emit(live("M1", peer, peer, ts, &waProto.Message{Conversation: proto.String("Any news?")}))
-	f.Emit(live("M2", peer, peer, ts.Add(time.Second), &waProto.Message{ReactionMessage: &waProto.ReactionMessage{
-		Key: &waProto.MessageKey{ID: proto.String("M1")}, Text: proto.String("👍"),
+	f.Emit(live("M1", peer, peer, ts, &waE2E.Message{Conversation: proto.String("Any news?")}))
+	f.Emit(live("M2", peer, peer, ts.Add(time.Second), &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+		Key: &waCommon.MessageKey{ID: proto.String("M1")}, Text: proto.String("👍"),
 	}}))
-	f.Emit(live("M3", group, peer, ts.Add(2*time.Second), &waProto.Message{ImageMessage: &waProto.ImageMessage{
+	f.Emit(live("M3", group, peer, ts.Add(2*time.Second), &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
 		Caption: proto.String("look"), Mimetype: proto.String("image/png"), DirectPath: proto.String("/d"),
 		MediaKey: []byte("k"), FileLength: proto.Uint64(4),
 	}}))
-	f.Emit(live("M4", types.JID{User: "status", Server: types.BroadcastServer}, peer, ts, &waProto.Message{Conversation: proto.String("story")}))
-	f.Emit(live("M5", peer, peer, ts.Add(3*time.Second), &waProto.Message{ExtendedTextMessage: &waProto.ExtendedTextMessage{
-		Text: proto.String("Still waiting"), ContextInfo: &waProto.ContextInfo{StanzaID: proto.String("M1")},
+	f.Emit(live("M4", types.JID{User: "status", Server: types.BroadcastServer}, peer, ts, &waE2E.Message{Conversation: proto.String("story")}))
+	f.Emit(live("M5", peer, peer, ts.Add(3*time.Second), &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text: proto.String("Still waiting"), ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("M1")},
 	}}))
-	f.Emit(live("M6", peer, peer, ts.Add(4*time.Second), &waProto.Message{ButtonsResponseMessage: &waProto.ButtonsResponseMessage{
-		SelectedButtonID: proto.String("b1"), Response: &waProto.ButtonsResponseMessage_SelectedDisplayText{SelectedDisplayText: "Yes"},
+	f.Emit(live("M6", peer, peer, ts.Add(4*time.Second), &waE2E.Message{ButtonsResponseMessage: &waE2E.ButtonsResponseMessage{
+		SelectedButtonID: proto.String("b1"), Response: &waE2E.ButtonsResponseMessage_SelectedDisplayText{SelectedDisplayText: "Yes"},
 	}}))
 
 	msg := waitEvent(t, c)
@@ -138,7 +139,7 @@ func TestAdapterRequests(t *testing.T) {
 	waitStatus(t, c, sdk.StateConnected)
 	ts := time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
 	for i, id := range []string{"H1", "H2", "H3"} {
-		f.Emit(live(id, peer, peer, ts.Add(time.Duration(i)*time.Second), &waProto.Message{Conversation: proto.String("m" + id)}))
+		f.Emit(live(id, peer, peer, ts.Add(time.Duration(i)*time.Second), &waE2E.Message{Conversation: proto.String("m" + id)}))
 		waitEvent(t, c)
 	}
 

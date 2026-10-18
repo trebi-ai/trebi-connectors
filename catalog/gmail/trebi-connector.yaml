@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: gmail
 title: Gmail
 description: "Search and read your Gmail, and save replies as drafts. Sending is off until you turn it on."
-version: 0.1.0
+version: 0.1.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

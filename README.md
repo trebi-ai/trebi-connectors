@@ -80,4 +80,4 @@ scripts/validate.sh --conformance
 
 ## License
 
-The repository has no root license yet. `connectors/whatsapp-cli` keeps its upstream MIT `LICENSE`.
+The repository is under the MIT license in `LICENSE`. This includes the SDK and each catalog entry. `connectors/whatsapp-cli` also keeps its upstream MIT `LICENSE`.

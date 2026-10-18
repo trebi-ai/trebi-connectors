@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
@@ -38,7 +38,7 @@ func historyConv(chat types.JID, name, id string) *waHistorySync.Conversation {
 		Messages: []*waHistorySync.HistorySyncMsg{{Message: &waWeb.WebMessageInfo{
 			Key:              &waCommon.MessageKey{RemoteJID: proto.String(chat.String()), FromMe: proto.Bool(false), ID: proto.String(id), Participant: proto.String(peer.String())},
 			MessageTimestamp: proto.Uint64(uint64(time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC).Unix())),
-			Message:          &waProto.Message{Conversation: proto.String("hi")},
+			Message:          &waE2E.Message{Conversation: proto.String("hi")},
 		}}},
 	}
 }
@@ -69,7 +69,7 @@ func TestHistoryStoresConversationName(t *testing.T) {
 func TestLiveGroupEventNeverTakesSenderName(t *testing.T) {
 	d, _ := newNamesAdapter(t)
 	ctx := context.Background()
-	ev, ok := d.liveEvent(ctx, live("L1", group, peer, time.Now(), &waProto.Message{Conversation: proto.String("hi")}))
+	ev, ok := d.liveEvent(ctx, live("L1", group, peer, time.Now(), &waE2E.Message{Conversation: proto.String("hi")}))
 	if !ok || ev.Room.Name != "" || ev.Room.ID != group.String() {
 		t.Fatalf("unknown group: %+v", ev.Room)
 	}

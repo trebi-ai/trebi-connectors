@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/web-cli/internal/watch"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // FeedsFile keeps the seen entry ids of each feed in the state folder.
@@ -112,9 +113,5 @@ func (fs *feedStore) save() error {
 	if err := os.MkdirAll(filepath.Dir(fs.path), 0o700); err != nil {
 		return err
 	}
-	tmp := fs.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, fs.path)
+	return sdk.WriteFileAtomic(fs.path, b, 0o600)
 }

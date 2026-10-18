@@ -1,8 +1,6 @@
 package store
 
 import (
-	"database/sql"
-	"errors"
 	"strings"
 	"time"
 )
@@ -114,7 +112,3 @@ func nullIfEmpty(s string) interface{} {
 }
 
 func (d *DB) HasFTS() bool { return d.ftsEnabled }
-
-func IsNotFound(err error) bool {
-	return errors.Is(err, sql.ErrNoRows)
-}

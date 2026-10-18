@@ -79,7 +79,7 @@ return sdk.Serve(ctx, a)
 
 - Put durable data (login session, message store, known rooms, downloads that the user refers to) in `TREBI_STATE_DIR`. Put temp files and data that you can build again in `TREBI_CACHE_DIR`.
 - Store paths relative to the state folder. Join them with the folder when you put them in an event. An event path is absolute.
-- Write a state file with a temp file and a rename, so a stop never leaves half a file.
+- Write a state file with `sdk.WriteFileAtomic`. It writes a temp file, syncs it, and renames it, so a stop or a crash never leaves half a file.
 - Give the state a version. Upgrade an older version at start. A newer version gives `status` `error` with a clear message, and the program changes nothing.
 - On `shutdown`, flush and close each file. For SQLite, run `PRAGMA wal_checkpoint(TRUNCATE)` and close the database.
 - At start, delete the temp files that a crash left.

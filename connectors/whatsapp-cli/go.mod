@@ -7,7 +7,7 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/spf13/cobra v1.10.2
 	go.mau.fi/whatsmeow v0.0.0-20260821141805-33cfac511629
-	golang.org/x/term v0.45.0
+	golang.org/x/term v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -36,5 +36,5 @@ require (
 
 require (
 	github.com/rs/zerolog v1.35.1
-	github.com/trebi-ai/trebi-connectors/sdk v0.4.0
+	github.com/trebi-ai/trebi-connectors/sdk v0.7.0
 )

@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // SessionFile is the sandbox login in the state folder.
@@ -56,7 +57,7 @@ type Client struct {
 
 	onDemandHistory func(lastKnown types.MessageInfo, count int) *events.HistorySync
 
-	sent       []*waProto.Message
+	sent       []*waE2E.Message
 	groupCalls int
 	reactions  []string
 	reads      []string
@@ -129,7 +130,7 @@ func sandboxHistory() *events.HistorySync {
 		}
 		return &waHistorySync.HistorySyncMsg{Message: &waWeb.WebMessageInfo{
 			Key: key, MessageTimestamp: proto.Uint64(at),
-			Message: &waProto.Message{Conversation: proto.String(text)},
+			Message: &waE2E.Message{Conversation: proto.String(text)},
 		}}
 	}
 	return &events.HistorySync{Data: &waHistorySync.HistorySync{
@@ -150,11 +151,7 @@ func (f *Client) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := f.session + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, f.session)
+	return sdk.WriteFileAtomic(f.session, data, 0o600)
 }
 
 // SetAuthed sets the login state.
@@ -196,10 +193,10 @@ func (f *Client) SetOnDemandHistory(fn func(lastKnown types.MessageInfo, count i
 }
 
 // Sent returns the sent messages.
-func (f *Client) Sent() []*waProto.Message {
+func (f *Client) Sent() []*waE2E.Message {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]*waProto.Message(nil), f.sent...)
+	return append([]*waE2E.Message(nil), f.sent...)
 }
 
 // Reactions returns the sent reactions as "chat|sender|id|emoji".
@@ -430,7 +427,7 @@ func (f *Client) JoinGroupWithLink(ctx context.Context, code string) (types.JID,
 func (f *Client) LeaveGroup(ctx context.Context, group types.JID) error { return nil }
 
 func (f *Client) SendText(ctx context.Context, to types.JID, text string) (types.MessageID, error) {
-	return f.SendProtoMessage(ctx, to, &waProto.Message{Conversation: proto.String(text)})
+	return f.SendProtoMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)})
 }
 
 func (f *Client) SendChatPresence(ctx context.Context, to types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error {
@@ -456,7 +453,7 @@ func (f *Client) SendPresence(ctx context.Context, state types.Presence) error {
 // SendProtoMessage records msg and returns "S<n>". The sandbox also emits
 // the message as an own live message, as a second device of the account
 // does.
-func (f *Client) SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error) {
+func (f *Client) SendProtoMessage(ctx context.Context, to types.JID, msg *waE2E.Message) (types.MessageID, error) {
 	f.mu.Lock()
 	if !f.connected && f.echo {
 		f.mu.Unlock()
@@ -494,7 +491,7 @@ func (f *Client) Upload(ctx context.Context, data []byte, mediaType whatsmeow.Me
 	return whatsmeow.UploadResponse{DirectPath: path, MediaKey: key, FileLength: uint64(len(data))}, nil
 }
 
-func (f *Client) DecryptReaction(ctx context.Context, reaction *events.Message) (*waProto.ReactionMessage, error) {
+func (f *Client) DecryptReaction(ctx context.Context, reaction *events.Message) (*waE2E.ReactionMessage, error) {
 	return nil, fmt.Errorf("not supported")
 }
 

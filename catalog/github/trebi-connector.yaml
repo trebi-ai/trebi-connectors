@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: github
 title: GitHub
 description: "Start work when something happens in a GitHub repository, and read repositories, events, and webhooks."
-version: 0.1.0
+version: 0.1.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

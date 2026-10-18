@@ -3,7 +3,7 @@ module github.com/trebi-ai/trebi-connectors/connectors/linear-cli
 go 1.25.5
 
 require (
-	github.com/trebi-ai/trebi-connectors/sdk v0.4.0
+	github.com/trebi-ai/trebi-connectors/sdk v0.7.0
 	github.com/urfave/cli/v2 v2.27.7
 )
 

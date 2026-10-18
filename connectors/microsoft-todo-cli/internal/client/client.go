@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // Default endpoints.
@@ -92,24 +94,12 @@ func (s Session) Save(path string) error {
 	return WriteFile(path, data)
 }
 
-// WriteFile writes data with a temp file and a rename, mode 0600.
+// WriteFile writes data with sdk.WriteFileAtomic, mode 0600.
 func WriteFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) //nolint:errcheck // gone after the rename
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close() //nolint:errcheck // the write error wins
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return sdk.WriteFileAtomic(path, data, 0o600)
 }
 
 // Client calls Graph as one user.

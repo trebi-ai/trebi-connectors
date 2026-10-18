@@ -11,7 +11,7 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/store"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 )
@@ -24,7 +24,7 @@ type OutFile struct {
 	Name    string
 	Caption string
 	Mime    string
-	Reply   *waProto.ContextInfo
+	Reply   *waE2E.ContextInfo
 }
 
 // SendFile uploads and sends a file message and records it in the store.
@@ -78,11 +78,11 @@ func (a *App) SendFile(ctx context.Context, to types.JID, f OutFile) (string, ma
 	}
 
 	now := time.Now().UTC()
-	msg := &waProto.Message{}
+	msg := &waE2E.Message{}
 
 	switch mediaType {
 	case "image":
-		msg.ImageMessage = &waProto.ImageMessage{
+		msg.ImageMessage = &waE2E.ImageMessage{
 			URL:           proto.String(up.URL),
 			DirectPath:    proto.String(up.DirectPath),
 			MediaKey:      up.MediaKey,
@@ -93,7 +93,7 @@ func (a *App) SendFile(ctx context.Context, to types.JID, f OutFile) (string, ma
 			Caption:       proto.String(caption),
 		}
 	case "video":
-		msg.VideoMessage = &waProto.VideoMessage{
+		msg.VideoMessage = &waE2E.VideoMessage{
 			URL:           proto.String(up.URL),
 			DirectPath:    proto.String(up.DirectPath),
 			MediaKey:      up.MediaKey,
@@ -104,7 +104,7 @@ func (a *App) SendFile(ctx context.Context, to types.JID, f OutFile) (string, ma
 			Caption:       proto.String(caption),
 		}
 	case "audio":
-		msg.AudioMessage = &waProto.AudioMessage{
+		msg.AudioMessage = &waE2E.AudioMessage{
 			URL:           proto.String(up.URL),
 			DirectPath:    proto.String(up.DirectPath),
 			MediaKey:      up.MediaKey,
@@ -115,7 +115,7 @@ func (a *App) SendFile(ctx context.Context, to types.JID, f OutFile) (string, ma
 			PTT:           proto.Bool(false),
 		}
 	default:
-		msg.DocumentMessage = &waProto.DocumentMessage{
+		msg.DocumentMessage = &waE2E.DocumentMessage{
 			URL:           proto.String(up.URL),
 			DirectPath:    proto.String(up.DirectPath),
 			MediaKey:      up.MediaKey,

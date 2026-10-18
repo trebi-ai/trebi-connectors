@@ -187,29 +187,53 @@ func (c *Client) Teams(ctx context.Context) ([]Team, error) {
 	return r.Teams.Nodes, err
 }
 
-// Issues lists the issues changed after a time, oldest first. An empty
-// after lists the newest issues.
-func (c *Client) Issues(ctx context.Context, after string, limit int) ([]Issue, error) {
-	var r struct {
-		Issues struct {
-			Nodes []Issue `json:"nodes"`
-		} `json:"issues"`
-	}
-	vars := map[string]any{"first": limit, "filter": updatedFilter(after)}
-	err := c.do(ctx, `query Issues($first: Int, $filter: IssueFilter) { issues(first: $first, filter: $filter, orderBy: updatedAt) { nodes { id identifier title url createdAt updatedAt team { id key name } creator { id name } state { name } } } }`, vars, &r)
-	return r.Issues.Nodes, err
+// pageInfo is the position after one page of a list.
+type pageInfo struct {
+	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   string `json:"endCursor"`
 }
 
-// Comments lists the comments changed after a time.
-func (c *Client) Comments(ctx context.Context, after string, limit int) ([]Comment, error) {
+func (p pageInfo) next() string {
+	if !p.HasNextPage {
+		return ""
+	}
+	return p.EndCursor
+}
+
+// Issues lists one page of the issues changed after since, newest first.
+// An empty since lists the newest issues. page is the next value of the
+// last page, or empty for the first page. next is empty on the last page.
+func (c *Client) Issues(ctx context.Context, since string, limit int, page string) (issues []Issue, next string, err error) {
+	var r struct {
+		Issues struct {
+			Nodes    []Issue  `json:"nodes"`
+			PageInfo pageInfo `json:"pageInfo"`
+		} `json:"issues"`
+	}
+	vars := map[string]any{"first": limit, "after": pageVar(page), "filter": updatedFilter(since)}
+	err = c.do(ctx, `query Issues($first: Int, $after: String, $filter: IssueFilter) { issues(first: $first, after: $after, filter: $filter, orderBy: updatedAt) { nodes { id identifier title url createdAt updatedAt team { id key name } creator { id name } state { name } } pageInfo { hasNextPage endCursor } } }`, vars, &r)
+	return r.Issues.Nodes, r.Issues.PageInfo.next(), err
+}
+
+// Comments lists one page of the comments changed after since, newest
+// first. page and next work as in Issues.
+func (c *Client) Comments(ctx context.Context, since string, limit int, page string) (comments []Comment, next string, err error) {
 	var r struct {
 		Comments struct {
-			Nodes []Comment `json:"nodes"`
+			Nodes    []Comment `json:"nodes"`
+			PageInfo pageInfo  `json:"pageInfo"`
 		} `json:"comments"`
 	}
-	vars := map[string]any{"first": limit, "filter": updatedFilter(after)}
-	err := c.do(ctx, `query Comments($first: Int, $filter: CommentFilter) { comments(first: $first, filter: $filter, orderBy: updatedAt) { nodes { id body url createdAt updatedAt user { id name } issue { id identifier title team { id key name } } } } }`, vars, &r)
-	return r.Comments.Nodes, err
+	vars := map[string]any{"first": limit, "after": pageVar(page), "filter": updatedFilter(since)}
+	err = c.do(ctx, `query Comments($first: Int, $after: String, $filter: CommentFilter) { comments(first: $first, after: $after, filter: $filter, orderBy: updatedAt) { nodes { id body url createdAt updatedAt user { id name } issue { id identifier title team { id key name } } } pageInfo { hasNextPage endCursor } } }`, vars, &r)
+	return r.Comments.Nodes, r.Comments.PageInfo.next(), err
+}
+
+func pageVar(page string) any {
+	if page == "" {
+		return nil
+	}
+	return page
 }
 
 func updatedFilter(after string) map[string]any {

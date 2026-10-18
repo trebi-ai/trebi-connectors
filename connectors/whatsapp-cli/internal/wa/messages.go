@@ -4,7 +4,8 @@ import (
 	"strings"
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -61,7 +62,7 @@ func ParseLiveMessage(evt *events.Message) ParsedMessage {
 	return msg
 }
 
-func ParseHistoryMessage(chatJID string, hist *waProto.WebMessageInfo) ParsedMessage {
+func ParseHistoryMessage(chatJID string, hist *waWeb.WebMessageInfo) ParsedMessage {
 	var chat types.JID
 	if parsed, err := types.ParseJID(chatJID); err == nil {
 		chat = parsed
@@ -86,7 +87,7 @@ func ParseHistoryMessage(chatJID string, hist *waProto.WebMessageInfo) ParsedMes
 	return pm
 }
 
-func extractWAProto(m *waProto.Message, pm *ParsedMessage) {
+func extractWAProto(m *waE2E.Message, pm *ParsedMessage) {
 	if m == nil || pm == nil {
 		return
 	}
@@ -215,7 +216,7 @@ func clone(b []byte) []byte {
 	return out
 }
 
-func contextInfoForMessage(m *waProto.Message) *waProto.ContextInfo {
+func contextInfoForMessage(m *waE2E.Message) *waE2E.ContextInfo {
 	if m == nil {
 		return nil
 	}
@@ -249,7 +250,7 @@ func contextInfoForMessage(m *waProto.Message) *waProto.ContextInfo {
 	return nil
 }
 
-func displayTextForProto(m *waProto.Message) string {
+func displayTextForProto(m *waE2E.Message) string {
 	if m == nil {
 		return ""
 	}

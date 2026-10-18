@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: notion
 title: Notion
 description: "Start jobs when pages and databases change in your Notion workspace, and search pages."
-version: 0.1.0
+version: 0.1.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

@@ -84,9 +84,6 @@ var (
 // Option changes the adapter.
 type Option func(*Adapter)
 
-// WithTick sets how often the renewal check runs.
-func WithTick(d time.Duration) Option { return func(a *Adapter) { a.tick = d } }
-
 // WithPollEvery sets how often the delta query runs without a webhook.
 func WithPollEvery(d time.Duration) Option { return func(a *Adapter) { a.pollEvery = d } }
 

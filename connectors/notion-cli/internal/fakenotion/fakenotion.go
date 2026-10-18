@@ -42,7 +42,6 @@ type Fake struct {
 	mu    sync.Mutex
 	pages []client.Page
 	dbs   map[string]client.Database
-	token string // the verification token of the last subscribe
 	seq   int
 }
 
@@ -90,13 +89,6 @@ func (f *Fake) AddPage(title string) client.Page {
 		time.Now().UTC().Add(time.Duration(f.seq)*time.Millisecond).Format("2006-01-02T15:04:05.000Z"))
 	f.pages = append(f.pages, p)
 	return p
-}
-
-// Token is the verification token of the last subscribe.
-func (f *Fake) Token() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.token
 }
 
 // Sign returns the signature header value of body with token.
@@ -180,9 +172,6 @@ func (f *Fake) subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := "secret_sandbox_" + randHex(16)
-	f.mu.Lock()
-	f.token = token
-	f.mu.Unlock()
 	verify, _ := json.Marshal(map[string]string{"verification_token": token}) //nolint:errchkjson // a map of strings
 	if err := f.deliver(r, in.URL, verify, ""); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)

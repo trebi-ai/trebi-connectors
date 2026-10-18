@@ -148,11 +148,7 @@ func (a *Adapter) save() error {
 		return err
 	}
 	path := filepath.Join(a.stateDir, stateFile)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return sdk.WriteFileAtomic(path, data, 0o600)
 }
 
 // Initialize checks the secret and keeps the hosted hook. A new hook URL

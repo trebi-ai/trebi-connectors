@@ -10,7 +10,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/store"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
 	"go.mau.fi/whatsmeow"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -43,11 +43,11 @@ type WAClient interface {
 	SendChatPresence(ctx context.Context, to types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error
 	MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptType ...types.ReceiptType) error
 	SendPresence(ctx context.Context, state types.Presence) error
-	SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error)
+	SendProtoMessage(ctx context.Context, to types.JID, msg *waE2E.Message) (types.MessageID, error)
 	Upload(ctx context.Context, data []byte, mediaType whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
 	DownloadMediaToFile(ctx context.Context, directPath string, encFileHash, fileHash, mediaKey []byte, fileLength uint64, mediaType, mmsType string, targetPath string) (int64, error)
 
-	DecryptReaction(ctx context.Context, reaction *events.Message) (*waProto.ReactionMessage, error)
+	DecryptReaction(ctx context.Context, reaction *events.Message) (*waE2E.ReactionMessage, error)
 	RequestHistorySyncOnDemand(ctx context.Context, lastKnown types.MessageInfo, count int) (types.MessageID, error)
 	Logout(ctx context.Context) error
 

@@ -5,6 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/linear-cli/internal/client"
@@ -142,22 +145,35 @@ func (a *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
 	}
 }
 
-// poll sends the changes after the cursor. The first poll only sets the
-// cursor, so a new subscription does not send old changes.
-func (a *Adapter) poll(ctx context.Context, e sdk.Emitter) error {
+// poll sends the changes after the cursor of each list, oldest first. The
+// first poll only sets the cursors, so a new subscription does not send old
+// changes.
+func (a *Adapter) poll(ctx context.Context, e sdk.Emitter) (err error) {
 	a.mu.Lock()
 	watches := make([]watch, 0, len(a.st.Polls))
 	for _, w := range a.st.Polls {
 		watches = append(watches, w)
 	}
-	cursor := a.st.Cursor
-	if len(watches) == 0 || cursor == "" {
-		a.st.Cursor = time.Now().UTC().Format(timeLayout)
+	cur := a.st.Cursors
+	if len(watches) == 0 || cur.Issues == "" || cur.Comments == "" {
+		now := time.Now().UTC().Format(timeLayout)
+		if len(watches) == 0 {
+			cur = cursors{}
+		}
+		a.st.Cursors = cursors{Issues: cmp.Or(cur.Issues, now), Comments: cmp.Or(cur.Comments, now)}
 		err := a.save()
 		a.mu.Unlock()
 		return err
 	}
 	a.mu.Unlock()
+	// sent moves past each event that the daemon has; a failed emit keeps
+	// the rest for the next poll.
+	sent := cur
+	defer func() {
+		if serr := a.setCursors(sent); err == nil {
+			err = serr
+		}
+	}()
 	wants := func(team *client.Team, resource string) bool {
 		key := ""
 		if team != nil {
@@ -170,55 +186,89 @@ func (a *Adapter) poll(ctx context.Context, e sdk.Emitter) error {
 		}
 		return false
 	}
-	next := cursor
-	issues, err := a.api.Issues(ctx, cursor, pollLimit)
+	issues, err := allPages(a.log, "issues", func(page string) ([]client.Issue, string, error) {
+		return a.api.Issues(ctx, cur.Issues, pollLimit, page)
+	})
 	if err != nil {
 		return err
 	}
+	slices.SortStableFunc(issues, func(x, y client.Issue) int { return strings.Compare(x.UpdatedAt, y.UpdatedAt) })
 	for _, is := range issues {
-		next = max(next, is.UpdatedAt)
-		if !wants(is.Team, "Issue") {
-			continue
+		if wants(is.Team, "Issue") {
+			var sender *sdk.Author
+			if is.Creator != nil {
+				sender = &sdk.Author{ID: is.Creator.ID, Name: is.Creator.Name}
+			}
+			action := "update"
+			if is.CreatedAt == is.UpdatedAt {
+				action = "create"
+			}
+			if err := e.Event(a.issueEvent("poll:issue:"+is.ID+":"+is.UpdatedAt, action, is, sender, is.UpdatedAt)); err != nil {
+				return err
+			}
 		}
-		var sender *sdk.Author
-		if is.Creator != nil {
-			sender = &sdk.Author{ID: is.Creator.ID, Name: is.Creator.Name}
-		}
-		action := "update"
-		if is.CreatedAt == is.UpdatedAt {
-			action = "create"
-		}
-		if err := e.Event(a.issueEvent("poll:issue:"+is.ID+":"+is.UpdatedAt, action, is, sender, is.UpdatedAt)); err != nil {
-			return err
-		}
+		sent.Issues = max(sent.Issues, is.UpdatedAt)
 	}
-	comments, err := a.api.Comments(ctx, cursor, pollLimit)
+	comments, err := allPages(a.log, "comments", func(page string) ([]client.Comment, string, error) {
+		return a.api.Comments(ctx, cur.Comments, pollLimit, page)
+	})
 	if err != nil {
 		return err
 	}
+	slices.SortStableFunc(comments, func(x, y client.Comment) int { return strings.Compare(x.UpdatedAt, y.UpdatedAt) })
 	for _, c := range comments {
-		next = max(next, c.UpdatedAt)
 		var team *client.Team
 		if c.Issue != nil {
 			team = c.Issue.Team
 		}
-		if !wants(team, "Comment") {
-			continue
+		if wants(team, "Comment") {
+			var sender *sdk.Author
+			if c.User != nil {
+				sender = &sdk.Author{ID: c.User.ID, Name: c.User.Name}
+			}
+			action := "update"
+			if c.CreatedAt == c.UpdatedAt {
+				action = "create"
+			}
+			if err := e.Event(a.commentEvent("poll:comment:"+c.ID+":"+c.UpdatedAt, action, c, sender, c.UpdatedAt)); err != nil {
+				return err
+			}
 		}
-		var sender *sdk.Author
-		if c.User != nil {
-			sender = &sdk.Author{ID: c.User.ID, Name: c.User.Name}
-		}
-		action := "update"
-		if c.CreatedAt == c.UpdatedAt {
-			action = "create"
-		}
-		if err := e.Event(a.commentEvent("poll:comment:"+c.ID+":"+c.UpdatedAt, action, c, sender, c.UpdatedAt)); err != nil {
-			return err
-		}
+		sent.Comments = max(sent.Comments, c.UpdatedAt)
 	}
+	return nil
+}
+
+// setCursors saves c when it differs from the state.
+func (a *Adapter) setCursors(c cursors) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.st.Cursor = next
+	if a.st.Cursors == c {
+		return nil
+	}
+	a.st.Cursors = c
 	return a.save()
+}
+
+// maxPages bounds one poll of one list.
+const maxPages = 20
+
+// allPages reads each page of a list. After maxPages, it logs and keeps the
+// pages that it has.
+func allPages[T any](log *slog.Logger, list string, fetch func(page string) ([]T, string, error)) ([]T, error) {
+	var all []T
+	page := ""
+	for range maxPages {
+		items, next, err := fetch(page)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, items...)
+		if next == "" {
+			return all, nil
+		}
+		page = next
+	}
+	log.Warn("poll: too many changes, skip the oldest", "list", list, "pages", maxPages)
+	return all, nil
 }

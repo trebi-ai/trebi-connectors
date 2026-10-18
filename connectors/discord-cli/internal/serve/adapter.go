@@ -608,11 +608,10 @@ func (a *Adapter) keepDM(r sdk.Room) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(a.stateDir, dmFile+".tmp")
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := sdk.WriteFileAtomic(filepath.Join(a.stateDir, dmFile), data, 0o600); err != nil {
 		return fmt.Errorf("write dm rooms: %w", err)
 	}
-	return os.Rename(tmp, filepath.Join(a.stateDir, dmFile))
+	return nil
 }
 
 // maxRemembered bounds the message → channel map.

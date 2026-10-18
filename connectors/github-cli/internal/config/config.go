@@ -43,7 +43,7 @@ func Resolve(flagToken string) (Settings, error) {
 		if flagToken != "" {
 			return Settings{Trebi: true}, errors.New("--token: " + ErrTrebiSets.Error())
 		}
-		s := Settings{Trebi: true, Login: &LoginStore{dir: t.StateDir}}
+		s := Settings{Trebi: true, Login: NewLoginStore(t.StateDir)}
 		if v := os.Getenv(EnvToken); v != "" {
 			s.Token, s.Source, s.Input = v, "Trebi ("+EnvToken+")", true
 			return s, nil
@@ -118,11 +118,10 @@ func (l *LoginStore) Save(token string) error {
 	if err != nil {
 		return err
 	}
-	tmp := l.path() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := sdk.WriteFileAtomic(l.path(), data, 0o600); err != nil {
 		return fmt.Errorf("write login: %w", err)
 	}
-	return os.Rename(tmp, l.path())
+	return nil
 }
 
 // Clear removes the saved token.

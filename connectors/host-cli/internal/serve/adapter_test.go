@@ -220,3 +220,32 @@ func TestMissingInput(t *testing.T) {
 		t.Fatalf("%s %v", m.Params, err)
 	}
 }
+
+func TestGoneServiceRecovers(t *testing.T) {
+	r := newRig(t, t.TempDir())
+	r.play(t, "start.jsonl")
+	next := func(typ string) sdk.Event {
+		t.Helper()
+		for {
+			m, err := r.conn.WaitNote(sdk.MethodEvent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ev sdk.Event
+			if err := json.Unmarshal(m.Params, &ev); err != nil {
+				t.Fatal(err)
+			}
+			if ev.Type == typ {
+				return ev
+			}
+		}
+	}
+	r.vals.set(fakessh.Values{CPU: 20, DiskPct: 50, FailedUnit: true})
+	r.round(t)
+	next(sdk.EventStateChanged)
+	r.vals.set(fakessh.Values{CPU: 20, DiskPct: 50, NoSystemd: true})
+	r.round(t)
+	if ev := next(sdk.EventStateRecovered); ev.Text != "Trebi no longer finds the service nginx.service on web-1." || ev.Room == nil || ev.Room.Name != "web-1" {
+		t.Fatalf("event %+v", ev)
+	}
+}

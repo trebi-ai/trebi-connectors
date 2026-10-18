@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -330,5 +333,58 @@ func TestMissingKey(t *testing.T) {
 	}
 	if st.State != sdk.StateAuthRequired || st.Reason != sdk.ReasonMissingInput || !strings.Contains(st.Message, "LINEAR_API_KEY") || !strings.Contains(st.Message, "API key") {
 		t.Fatalf("status %+v", st)
+	}
+}
+
+type recEmitter struct{ events []sdk.Event }
+
+func (r *recEmitter) Event(e sdk.Event) error     { r.events = append(r.events, e); return nil }
+func (r *recEmitter) Status(sdk.Status) error     { return nil }
+func (r *recEmitter) SubscriptionsChanged() error { return nil }
+
+func TestPollReadsEachPageOldestFirst(t *testing.T) {
+	t.Parallel()
+	fake := fakelinear.Start()
+	defer fake.Close()
+	cl := client.New("test-key")
+	cl.URL = fake.URL()
+	a := New(cl, "test")
+	past := time.Now().Add(-time.Hour).UTC().Format(timeLayout)
+	a.st.Polls["s1"] = watch{Team: "ENG", Resources: []string{"Issue"}}
+	a.st.Cursors = cursors{Issues: past, Comments: past}
+	n := 2*pollLimit + 7
+	for i := range n {
+		fake.AddIssue("ENG", "Issue "+strconv.Itoa(i))
+	}
+	rec := &recEmitter{}
+	if err := a.poll(t.Context(), rec); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.events) != n {
+		t.Fatalf("events %d, want %d", len(rec.events), n)
+	}
+	for i := 1; i < n; i++ {
+		if rec.events[i].TS < rec.events[i-1].TS {
+			t.Fatalf("event %d is older than event %d", i, i-1)
+		}
+	}
+	if a.st.Cursors.Issues == past || a.st.Cursors.Comments != past {
+		t.Fatalf("cursors %+v", a.st.Cursors)
+	}
+}
+
+func TestStateVersionOneMovesTheCursor(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(`{"version":1,"cursor":"2026-10-01T00:00:00.000Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := New(client.New("test-key"), "test")
+	if err := a.UseFolders(sdk.Trebi{StateDir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	want := cursors{Issues: "2026-10-01T00:00:00.000Z", Comments: "2026-10-01T00:00:00.000Z"}
+	if a.st.Version != stateVersion || a.st.Cursors != want || a.st.Cursor != "" {
+		t.Fatalf("state %+v", a.st)
 	}
 }

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -422,9 +422,9 @@ func (d *Adapter) Send(ctx context.Context, m sdk.SendParams) (sdk.SendResult, e
 		}
 		return sdk.SendResult{MessageID: first}, nil
 	}
-	msg := &waProto.Message{Conversation: proto.String(m.Text)}
+	msg := &waE2E.Message{Conversation: proto.String(m.Text)}
 	if reply != nil {
-		msg = &waProto.Message{ExtendedTextMessage: &waProto.ExtendedTextMessage{Text: proto.String(m.Text), ContextInfo: reply}}
+		msg = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(m.Text), ContextInfo: reply}}
 	}
 	id, err := d.app.wa.SendProtoMessage(ctx, to, msg)
 	if err != nil {
@@ -445,7 +445,7 @@ func (d *Adapter) Send(ctx context.Context, m sdk.SendParams) (sdk.SendResult, e
 }
 
 // quote builds the reply context of message id in room.
-func (d *Adapter) quote(room, id string) (*waProto.ContextInfo, error) {
+func (d *Adapter) quote(room, id string) (*waE2E.ContextInfo, error) {
 	if id == "" {
 		return nil, nil
 	}
@@ -456,9 +456,9 @@ func (d *Adapter) quote(room, id string) (*waProto.ContextInfo, error) {
 		}
 		return nil, err
 	}
-	ci := &waProto.ContextInfo{
+	ci := &waE2E.ContextInfo{
 		StanzaID:      proto.String(id),
-		QuotedMessage: &waProto.Message{Conversation: proto.String(orig.Text)},
+		QuotedMessage: &waE2E.Message{Conversation: proto.String(orig.Text)},
 	}
 	if p := d.author(orig); !p.IsEmpty() {
 		ci.Participant = proto.String(p.String())

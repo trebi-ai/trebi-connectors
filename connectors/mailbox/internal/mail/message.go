@@ -229,10 +229,15 @@ func (c Compose) Build(from string, now time.Time) (Built, error) {
 		}
 	}
 	out := Built{MessageID: "<" + id + ">", Recipients: rcpts}
-	out.Raw = render(mh.Header.Header, body)
+	var err error
+	if out.Raw, err = render(mh.Header.Header, body); err != nil {
+		return Built{}, err
+	}
 	wire := mh.Header.Header.Copy()
 	wire.Del("Bcc")
-	out.Wire = render(wire, body)
+	if out.Wire, err = render(wire, body); err != nil {
+		return Built{}, err
+	}
 	return out, nil
 }
 
@@ -258,9 +263,11 @@ func (c Compose) plain() (textproto.Header, []byte, error) {
 	}
 	h.SetSubject(c.Subject)
 	if r := strings.TrimSpace(c.InReplyTo); r != "" {
-		if !strings.HasPrefix(r, "<") {
-			r = "<" + r + ">"
+		id := strings.TrimSuffix(strings.TrimPrefix(r, "<"), ">")
+		if id == "" || strings.ContainsAny(id, "<>\r\n\t ") {
+			return h.Header.Header, nil, fmt.Errorf("in_reply_to: %q is not a message id", c.InReplyTo)
 		}
+		r = "<" + id + ">"
 		h.Set("In-Reply-To", r)
 		h.Set("References", r)
 	}
@@ -279,11 +286,15 @@ func (c Compose) plain() (textproto.Header, []byte, error) {
 	return h.Header.Header, body.Bytes(), nil
 }
 
-func render(h textproto.Header, body []byte) []byte {
+// render writes the header and the body. A header value with CR or LF
+// is an error.
+func render(h textproto.Header, body []byte) ([]byte, error) {
 	var b bytes.Buffer
-	_ = textproto.WriteHeader(&b, h) // a bytes.Buffer write does not fail
+	if err := textproto.WriteHeader(&b, h); err != nil {
+		return nil, fmt.Errorf("header: %w", err)
+	}
 	b.Write(body)
-	return b.Bytes()
+	return b.Bytes(), nil
 }
 
 func newMessageID(from string) string {

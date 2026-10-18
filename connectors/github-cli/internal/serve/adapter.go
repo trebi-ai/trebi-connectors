@@ -460,10 +460,7 @@ func (a *Adapter) saveState(st hookState) error {
 		return err
 	}
 	path := filepath.Join(a.stateDir, hooksFile)
-	if err := os.WriteFile(path+".tmp", data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(path+".tmp", path)
+	return sdk.WriteFileAtomic(path, data, 0o600)
 }
 
 // SubmitSubscription has no use: no subscription asks a person.

@@ -4,21 +4,23 @@ import (
 	"testing"
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestParseHistoryMessageTextAndSender(t *testing.T) {
-	h := &waProto.WebMessageInfo{
-		Key: &waProto.MessageKey{
+	h := &waWeb.WebMessageInfo{
+		Key: &waCommon.MessageKey{
 			ID:          proto.String("msgid"),
 			FromMe:      proto.Bool(false),
 			Participant: proto.String("sender@s.whatsapp.net"),
 		},
 		MessageTimestamp: proto.Uint64(uint64(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Unix())),
-		Message:          &waProto.Message{Conversation: proto.String("hello")},
+		Message:          &waE2E.Message{Conversation: proto.String("hello")},
 	}
 	pm := ParseHistoryMessage("123@s.whatsapp.net", h)
 	if pm.ID != "msgid" || pm.Text != "hello" {
@@ -37,7 +39,7 @@ func TestParseLiveMessageImageClonesBytes(t *testing.T) {
 	sender, _ := types.ParseJID("sender@s.whatsapp.net")
 
 	key := []byte{1, 2, 3}
-	img := &waProto.ImageMessage{
+	img := &waE2E.ImageMessage{
 		Caption:       proto.String("cap"),
 		Mimetype:      proto.String("image/jpeg"),
 		DirectPath:    proto.String("/direct"),
@@ -57,7 +59,7 @@ func TestParseLiveMessageImageClonesBytes(t *testing.T) {
 			Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			PushName:  "Sender",
 		},
-		Message: &waProto.Message{ImageMessage: img},
+		Message: &waE2E.Message{ImageMessage: img},
 	}
 
 	pm := ParseLiveMessage(ev)
@@ -90,10 +92,10 @@ func TestParseLiveMessageReaction(t *testing.T) {
 			Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			PushName:  "Sender",
 		},
-		Message: &waProto.Message{
-			ReactionMessage: &waProto.ReactionMessage{
+		Message: &waE2E.Message{
+			ReactionMessage: &waE2E.ReactionMessage{
 				Text: proto.String("👍"),
-				Key:  &waProto.MessageKey{ID: proto.String("orig")},
+				Key:  &waCommon.MessageKey{ID: proto.String("orig")},
 			},
 		},
 	}
@@ -119,12 +121,12 @@ func TestParseLiveMessageReply(t *testing.T) {
 			Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			PushName:  "Sender",
 		},
-		Message: &waProto.Message{
-			ExtendedTextMessage: &waProto.ExtendedTextMessage{
+		Message: &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 				Text: proto.String("reply text"),
-				ContextInfo: &waProto.ContextInfo{
+				ContextInfo: &waE2E.ContextInfo{
 					StanzaID: proto.String("orig"),
-					QuotedMessage: &waProto.Message{
+					QuotedMessage: &waE2E.Message{
 						Conversation: proto.String("quoted"),
 					},
 				},

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
@@ -42,7 +42,7 @@ func TestSyncStoresLiveAndHistoryMessages(t *testing.T) {
 			Timestamp: base.Add(2 * time.Second),
 			PushName:  "Alice",
 		},
-		Message: &waProto.Message{Conversation: proto.String("hello")},
+		Message: &waE2E.Message{Conversation: proto.String("hello")},
 	}
 
 	histMsg := &waWeb.WebMessageInfo{
@@ -52,7 +52,7 @@ func TestSyncStoresLiveAndHistoryMessages(t *testing.T) {
 			ID:        proto.String("m-hist"),
 		},
 		MessageTimestamp: proto.Uint64(uint64(base.Add(1 * time.Second).Unix())),
-		Message:          &waProto.Message{Conversation: proto.String("older")},
+		Message:          &waE2E.Message{Conversation: proto.String("older")},
 	}
 	history := &events.HistorySync{
 		Data: &waHistorySync.HistorySync{
@@ -113,7 +113,7 @@ func TestSyncStoresDisplayText(t *testing.T) {
 			Timestamp: base.Add(1 * time.Second),
 			PushName:  "Alice",
 		},
-		Message: &waProto.Message{Conversation: proto.String("hello")},
+		Message: &waE2E.Message{Conversation: proto.String("hello")},
 	}
 
 	imageMsg := &events.Message{
@@ -128,8 +128,8 @@ func TestSyncStoresDisplayText(t *testing.T) {
 			Timestamp: base.Add(2 * time.Second),
 			PushName:  "Alice",
 		},
-		Message: &waProto.Message{
-			ImageMessage: &waProto.ImageMessage{
+		Message: &waE2E.Message{
+			ImageMessage: &waE2E.ImageMessage{
 				Mimetype:      proto.String("image/jpeg"),
 				DirectPath:    proto.String("/direct"),
 				MediaKey:      []byte{1},
@@ -152,12 +152,12 @@ func TestSyncStoresDisplayText(t *testing.T) {
 			Timestamp: base.Add(3 * time.Second),
 			PushName:  "Alice",
 		},
-		Message: &waProto.Message{
-			ExtendedTextMessage: &waProto.ExtendedTextMessage{
+		Message: &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 				Text: proto.String("reply text"),
-				ContextInfo: &waProto.ContextInfo{
+				ContextInfo: &waE2E.ContextInfo{
 					StanzaID: proto.String("m-text"),
-					QuotedMessage: &waProto.Message{
+					QuotedMessage: &waE2E.Message{
 						Conversation: proto.String("quoted text"),
 					},
 				},
@@ -177,10 +177,10 @@ func TestSyncStoresDisplayText(t *testing.T) {
 			Timestamp: base.Add(4 * time.Second),
 			PushName:  "Alice",
 		},
-		Message: &waProto.Message{
-			ReactionMessage: &waProto.ReactionMessage{
+		Message: &waE2E.Message{
+			ReactionMessage: &waE2E.ReactionMessage{
 				Text: proto.String("👍"),
-				Key:  &waProto.MessageKey{ID: proto.String("m-text")},
+				Key:  &waCommon.MessageKey{ID: proto.String("m-text")},
 			},
 		},
 	}

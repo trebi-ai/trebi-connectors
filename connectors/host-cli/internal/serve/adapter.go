@@ -184,9 +184,12 @@ func (a *Adapter) sample(ctx context.Context, e sdk.Emitter, w *sdk.StateWatcher
 	return sdk.Status{State: sdk.StateConnected}, nil
 }
 
-// observe sends the threshold crossings and the failed services.
+// observe sends the threshold crossings and the failed services. It drops
+// the keys of the disks and the services that the sample does not have.
 func (a *Adapter) observe(w *sdk.StateWatcher, room sdk.Room, smp probe.Sample) error {
+	keys := []string{"reachable"}
 	limit := func(what, key string, v, above float64) error {
+		keys = append(keys, key)
 		return w.Observe(room, key, v, sdk.Above(above), sdk.WithText(func(typ string, _ sdk.StateChange) string {
 			if typ == sdk.EventStateRecovered {
 				return fmt.Sprintf("%s on %s is back to %s%%, at or under %s%%.", what, room.Name, num(v), num(above))
@@ -210,6 +213,7 @@ func (a *Adapter) observe(w *sdk.StateWatcher, room sdk.Room, smp probe.Sample) 
 		if u.Failed() {
 			failed = 1
 		}
+		keys = append(keys, "unit["+u.Name+"].failed")
 		if err := w.Observe(room, "unit["+u.Name+"].failed", failed, sdk.Above(0), sdk.WithText(func(typ string, _ sdk.StateChange) string {
 			if typ == sdk.EventStateRecovered {
 				return fmt.Sprintf("The service %s on %s runs again (%s).", u.Name, room.Name, u.Active)
@@ -219,7 +223,20 @@ func (a *Adapter) observe(w *sdk.StateWatcher, room sdk.Room, smp probe.Sample) 
 			return err
 		}
 	}
-	return nil
+	return w.Retain(map[string][]string{room.ID: keys}, sdk.WithText(func(_ string, c sdk.StateChange) string {
+		return fmt.Sprintf("Trebi no longer finds %s on %s.", keyName(c.Key), room.Name)
+	}))
+}
+
+// keyName is the name of a state key that a person reads.
+func keyName(key string) string {
+	if name, ok := strings.CutPrefix(key, "disk["); ok {
+		return "the disk " + strings.TrimSuffix(name, "].used_pct")
+	}
+	if name, ok := strings.CutPrefix(key, "unit["); ok {
+		return "the service " + strings.TrimSuffix(name, "].failed")
+	}
+	return key
 }
 
 type sampleData struct {

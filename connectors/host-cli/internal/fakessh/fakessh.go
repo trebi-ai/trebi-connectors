@@ -73,9 +73,6 @@ func (s *Server) Addr() string { return s.ln.Addr().String() }
 // ClientKey is the PEM private key that the server accepts.
 func (s *Server) ClientKey() []byte { return s.keyPEM }
 
-// ClientSigner is the key that the server accepts, for an agent.
-func (s *Server) ClientSigner() ssh.Signer { return s.client }
-
 // HostKey is the server key in authorized_keys form.
 func (s *Server) HostKey() string {
 	return string(ssh.MarshalAuthorizedKey(s.hostKey.PublicKey()))
@@ -93,13 +90,6 @@ func (s *Server) Refuse(v bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refuse = v
-}
-
-// Commands returns the count of commands so far.
-func (s *Server) Commands() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.n
 }
 
 // Close stops the server and closes each connection.

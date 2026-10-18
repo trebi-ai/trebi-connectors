@@ -41,6 +41,7 @@ type Reader interface {
 type Adapter struct {
 	r        Reader
 	targets  []config.Target
+	missing  *sdk.MissingInput
 	every    time.Duration
 	version  string
 	stateDir string
@@ -58,7 +59,7 @@ func WithTick(ch <-chan time.Time) Option { return func(a *Adapter) { a.tick = c
 
 // New builds the adapter.
 func New(r Reader, s config.Settings, version string, opts ...Option) *Adapter {
-	a := &Adapter{r: r, targets: s.Targets, every: s.Every, version: version}
+	a := &Adapter{r: r, targets: s.Targets, missing: s.Missing(), every: s.Every, version: version}
 	for _, o := range opts {
 		o(a)
 	}
@@ -77,8 +78,8 @@ func (a *Adapter) Initialize(context.Context, sdk.InitializeParams) (sdk.Initial
 		Adapter: sdk.AdapterInfo{Name: Name, Version: a.version},
 		Events:  []sdk.EventDecl{{Type: EventEntry}, {Type: sdk.EventStateChanged}},
 	}
-	if len(a.targets) == 0 {
-		return res, sdk.MissingInput{Name: config.EnvURLs, Label: config.URLsLabel}
+	if a.missing != nil {
+		return res, *a.missing
 	}
 	return res, nil
 }
@@ -86,6 +87,9 @@ func (a *Adapter) Initialize(context.Context, sdk.InitializeParams) (sdk.Initial
 // Run reads each target now and then at each interval.
 func (a *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
 	w, err := sdk.NewStateWatcher(a.stateDir, e)
+	if err == nil {
+		err = w.Retain(a.pageKeys())
+	}
 	if err == nil {
 		var fs *feedStore
 		if fs, err = loadFeeds(a.stateDir); err == nil {
@@ -184,13 +188,27 @@ func (a *Adapter) page(w *sdk.StateWatcher, t config.Target, p watch.Page) error
 	if name == "" {
 		name = t.URL
 	}
-	key := "text"
-	if t.Selector != "" {
-		key = "text " + t.Selector
-	}
-	return w.Observe(sdk.Room{ID: t.URL, Name: name, Kind: "page"}, key, stateText(p.Text), sdk.WithText(func(string, sdk.StateChange) string {
+	return w.Observe(sdk.Room{ID: t.URL, Name: name, Kind: "page"}, pageKey(t), stateText(p.Text), sdk.WithText(func(string, sdk.StateChange) string {
 		return "The page " + name + " changed.\n" + t.URL
 	}))
+}
+
+// pageKey is the state key of a page target.
+func pageKey(t config.Target) string {
+	if t.Selector != "" {
+		return "text " + t.Selector
+	}
+	return "text"
+}
+
+// pageKeys lists the state keys of each target, so Retain drops the
+// state of a removed target.
+func (a *Adapter) pageKeys() map[string][]string {
+	keep := map[string][]string{}
+	for _, t := range a.targets {
+		keep[t.URL] = append(keep[t.URL], pageKey(t))
+	}
+	return keep
 }
 
 // stateText is the value that the state keeps for a page text.

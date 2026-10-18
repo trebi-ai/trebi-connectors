@@ -29,7 +29,7 @@ const Name = "linear-cli"
 const stateFile = "linear-state.json"
 
 // stateVersion is the format of stateFile.
-const stateVersion = 1
+const stateVersion = 2
 
 // timeLayout is how Linear writes a time. It sorts as a string.
 const timeLayout = "2006-01-02T15:04:05.000Z"
@@ -91,7 +91,16 @@ type state struct {
 	Teams   map[string]teamInfo `json:"teams"` // team key → id and name
 	Hooks   map[string]hook     `json:"hooks"` // subscription id → webhook
 	Polls   map[string]watch    `json:"polls"` // subscription id → watch
-	Cursor  string              `json:"cursor,omitempty"`
+	// Cursor is the cursor of version 1 for both lists. UseFolders moves it
+	// to Cursors.
+	Cursor  string  `json:"cursor,omitempty"`
+	Cursors cursors `json:"cursors"`
+}
+
+// cursors holds the last updatedAt of each list that a poll sent.
+type cursors struct {
+	Issues   string `json:"issues,omitempty"`
+	Comments string `json:"comments,omitempty"`
 }
 
 type teamInfo struct {
@@ -167,7 +176,10 @@ func (a *Adapter) UseFolders(t sdk.Trebi) error {
 		a.stErr = sdk.Permanent(fmt.Sprintf("The saved state has version %d. Update linear-cli to read it.", st.Version))
 		return nil
 	}
-	st.Version = stateVersion
+	if st.Version < 2 && st.Cursor != "" {
+		st.Cursors = cursors{Issues: st.Cursor, Comments: st.Cursor}
+	}
+	st.Version, st.Cursor = stateVersion, ""
 	if st.Teams == nil {
 		st.Teams = map[string]teamInfo{}
 	}
@@ -190,19 +202,10 @@ func (a *Adapter) save() error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(a.dir, stateFile+".*")
-	if err != nil {
+	if err := sdk.WriteFileAtomic(filepath.Join(a.dir, stateFile), data, 0o600); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
-	defer os.Remove(tmp.Name()) //nolint:errcheck // gone after the rename
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close() //nolint:errcheck,gosec // the write error wins
-		return fmt.Errorf("save state: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("save state: %w", err)
-	}
-	return os.Rename(tmp.Name(), filepath.Join(a.dir, stateFile))
+	return nil
 }
 
 // Initialize checks the key. A rejected key is not an error: the status

@@ -13,7 +13,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -251,7 +251,7 @@ func (c *Client) SendText(ctx context.Context, to types.JID, text string) (types
 	if cli == nil || !cli.IsConnected() {
 		return "", fmt.Errorf("not connected")
 	}
-	msg := &waProto.Message{Conversation: &text}
+	msg := &waE2E.Message{Conversation: &text}
 	resp, err := cli.SendMessage(ctx, to, msg)
 	if err != nil {
 		return "", err
@@ -296,7 +296,7 @@ func (c *Client) SendPresence(ctx context.Context, state types.Presence) error {
 	return cli.SendPresence(ctx, state)
 }
 
-func (c *Client) SendProtoMessage(ctx context.Context, to types.JID, msg *waProto.Message) (types.MessageID, error) {
+func (c *Client) SendProtoMessage(ctx context.Context, to types.JID, msg *waE2E.Message) (types.MessageID, error) {
 	c.mu.Lock()
 	cli := c.client
 	c.mu.Unlock()
@@ -320,7 +320,7 @@ func (c *Client) Upload(ctx context.Context, data []byte, mediaType whatsmeow.Me
 	return cli.Upload(ctx, data, mediaType)
 }
 
-func (c *Client) DecryptReaction(ctx context.Context, reaction *events.Message) (*waProto.ReactionMessage, error) {
+func (c *Client) DecryptReaction(ctx context.Context, reaction *events.Message) (*waE2E.ReactionMessage, error) {
 	c.mu.Lock()
 	cli := c.client
 	c.mu.Unlock()

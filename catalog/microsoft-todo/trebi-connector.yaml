@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: microsoft-todo
 title: Microsoft To Do
 description: "Start work when a task changes in a Microsoft To Do list. Read and change lists, tasks, steps, links, files, and extensions."
-version: 0.2.0
+version: 0.2.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

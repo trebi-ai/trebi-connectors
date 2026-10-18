@@ -257,3 +257,17 @@ func hasFlag(flags []imap.Flag, f imap.Flag) bool {
 	}
 	return false
 }
+
+func TestComposeRejectsBadInReplyTo(t *testing.T) {
+	now := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)
+	for _, v := range []string{"a@b\r\nBcc: x@example.com", "a@b\nX: 1", "<a@b> <c@d>", "<>"} {
+		c := mail.Compose{To: []string{"ann@example.com"}, Subject: "Hi", Text: "x", InReplyTo: v}
+		if _, err := c.Build(addr, now); err == nil || !strings.Contains(err.Error(), "in_reply_to") {
+			t.Fatalf("in_reply_to %q: err %v", v, err)
+		}
+	}
+	b, err := mail.Compose{To: []string{"ann@example.com"}, Subject: "Hi", Text: "x", InReplyTo: "a@b"}.Build(addr, now)
+	if err != nil || !strings.Contains(string(b.Wire), "In-Reply-To: <a@b>\r\n") || !strings.Contains(string(b.Wire), "To: <ann@example.com>\r\n") {
+		t.Fatalf("build: %v\n%s", err, b.Wire)
+	}
+}

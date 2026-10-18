@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: web
 title: Web pages and feeds
 description: "Start work when a blog or a news feed has a new entry, or when a part of a web page changes."
-version: 0.1.0
+version: 0.1.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

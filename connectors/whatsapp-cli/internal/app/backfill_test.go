@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/store"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
@@ -40,7 +40,7 @@ func TestBackfillHistoryAddsOlderMessages(t *testing.T) {
 				ID:        proto.String("m1"),
 			},
 			MessageTimestamp: proto.Uint64(uint64(base.Add(1 * time.Second).Unix())),
-			Message:          &waProto.Message{Conversation: proto.String("older")},
+			Message:          &waE2E.Message{Conversation: proto.String("older")},
 		}
 		return &events.HistorySync{
 			Data: &waHistorySync.HistorySync{

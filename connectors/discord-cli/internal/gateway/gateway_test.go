@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -140,5 +142,89 @@ func TestConnectNonRetryableError(t *testing.T) {
 	}
 	if got := identifies.Load(); got != 1 {
 		t.Fatalf("identifies = %d, want 1 (no retry)", got)
+	}
+}
+
+// beatGateway sends HELLO with interval ms and READY. With ack, it ACKs
+// each heartbeat. With requests, it also asks for a heartbeat in a loop.
+func beatGateway(t *testing.T, interval int, ack, requests bool) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		helloD, _ := json.Marshal(Hello{HeartbeatInterval: interval})
+		raw := json.RawMessage(helloD)
+		_ = conn.WriteJSON(Payload{Op: 10, D: &raw})
+		var identify Payload
+		if conn.ReadJSON(&identify) != nil {
+			return
+		}
+		var wmu sync.Mutex
+		send := func(p Payload) error { wmu.Lock(); defer wmu.Unlock(); return conn.WriteJSON(p) }
+		_ = send(readyPayload("bot", "s1"))
+		if requests {
+			go func() {
+				for send(Payload{Op: 1}) == nil {
+					time.Sleep(time.Millisecond)
+				}
+			}()
+		}
+		for {
+			var p Payload
+			if conn.ReadJSON(&p) != nil {
+				return
+			}
+			if p.Op == 1 && ack {
+				_ = send(Payload{Op: 11})
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http")
+}
+
+func TestListenFindsZombieConnection(t *testing.T) {
+	g := New("tok", 0)
+	g.DialURL = beatGateway(t, 20, false, false)
+	if _, err := g.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	done := make(chan error, 1)
+	go func() { done <- g.Listen(nil) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, errZombie) {
+			t.Fatalf("Listen: %v, want errZombie", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Listen did not find the zombie connection")
+	}
+}
+
+func TestWritesAndCloseFromManyGoroutines(t *testing.T) {
+	g := New("tok", 0)
+	g.DialURL = beatGateway(t, 30, true, true)
+	if _, err := g.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- g.Listen(nil) }()
+	time.Sleep(200 * time.Millisecond)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(g.Close)
+	}
+	wg.Wait()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Listen after Close: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Listen did not stop after Close")
 	}
 }

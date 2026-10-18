@@ -52,7 +52,7 @@ func IssuesCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				issues, err := cl.Issues(c.Context, c.String("since"), c.Int("limit"))
+				issues, _, err := cl.Issues(c.Context, c.String("since"), c.Int("limit"), "")
 				if err != nil {
 					return err
 				}

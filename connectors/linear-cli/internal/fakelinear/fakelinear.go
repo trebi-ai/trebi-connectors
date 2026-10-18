@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,7 +162,8 @@ func (s *Server) op(name string, vars map[string]json.RawMessage) (any, *gqlErro
 				out = append(out, is)
 			}
 		}
-		return map[string]any{"issues": nodes(out)}, nil
+		slices.SortStableFunc(out, func(a, b client.Issue) int { return strings.Compare(b.UpdatedAt, a.UpdatedAt) })
+		return map[string]any{"issues": page(out, vars)}, nil
 	case "Comments":
 		after := gtAfter(vars["filter"])
 		out := []client.Comment{}
@@ -170,7 +172,8 @@ func (s *Server) op(name string, vars map[string]json.RawMessage) (any, *gqlErro
 				out = append(out, c)
 			}
 		}
-		return map[string]any{"comments": nodes(out)}, nil
+		slices.SortStableFunc(out, func(a, b client.Comment) int { return strings.Compare(b.UpdatedAt, a.UpdatedAt) })
+		return map[string]any{"comments": page(out, vars)}, nil
 	case "Webhooks":
 		out := make([]client.Webhook, len(s.hooks))
 		for i, h := range s.hooks {
@@ -206,6 +209,23 @@ func (s *Server) op(name string, vars map[string]json.RawMessage) (any, *gqlErro
 		return map[string]any{"webhookDelete": map[string]any{"success": true}}, nil
 	}
 	return nil, &gqlError{Message: "unknown operation " + name}
+}
+
+// page cuts one page of nodes, newest first like Linear. The cursor is the
+// offset of the page.
+func page[T any](all []T, vars map[string]json.RawMessage) map[string]any {
+	var first int
+	var after string
+	json.Unmarshal(vars["first"], &first) //nolint:errcheck,gosec // no limit is the zero value
+	json.Unmarshal(vars["after"], &after) //nolint:errcheck,gosec // no cursor is the zero value
+	start, _ := strconv.Atoi(after)       //nolint:errcheck // no cursor is offset 0
+	start = min(start, len(all))
+	end := len(all)
+	if first > 0 {
+		end = min(start+first, len(all))
+	}
+	info := map[string]any{"hasNextPage": end < len(all), "endCursor": strconv.Itoa(end)}
+	return map[string]any{"nodes": all[start:end], "pageInfo": info}
 }
 
 func gtAfter(raw json.RawMessage) string {
