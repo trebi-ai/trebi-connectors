@@ -193,7 +193,7 @@ func Serve(ctx context.Context, a Adapter, opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	s := &session{a: a, out: cfg.out, log: cfg.log.With("logger", "trebi_sdk"), sent: sent, flows: map[string]*flow{}}
+	s := &session{a: a, out: cfg.out, log: cfg.log.With("logger", "trebi_sdk"), sent: sent, flows: map[string]*flow{}, sending: map[string]chan struct{}{}}
 	return s.run(ctx, cfg.in)
 }
 
@@ -204,13 +204,18 @@ type session struct {
 	log  *slog.Logger
 	sent *sentStore
 
-	wmu    sync.Mutex
-	sendMu sync.Mutex // one send at a time keeps the order in a room and the dedupe exact
+	wmu sync.Mutex
+
+	sendMu sync.Mutex
+	// sending has one slot per room: one send at a time keeps the order in
+	// a room and the dedupe exact.
+	sending map[string]chan struct{}
 
 	mu       sync.Mutex
 	init     *InitializeResult
 	features map[string]bool
 	ready    bool
+	starting bool
 	queue    [][]byte
 	flows    map[string]*flow
 	nflows   int
@@ -307,7 +312,11 @@ func (s *session) dispatch(line []byte) bool {
 	}
 	if len(m.ID) == 0 {
 		if m.Method == MethodInitialized {
-			s.initialized()
+			s.wg.Add(1)
+			go func() { // the status check of the adapter must not block the read loop
+				defer s.wg.Done()
+				s.initialized()
+			}()
 		}
 		return false
 	}
@@ -372,10 +381,11 @@ func (s *session) initialize(m inMsg) {
 // starts the Runner.
 func (s *session) initialized() {
 	s.mu.Lock()
-	if s.ready || s.init == nil {
+	if s.ready || s.starting || s.init == nil {
 		s.mu.Unlock()
 		return
 	}
+	s.starting = true
 	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodAuthStatus))
 	st := s.status(ctx)
@@ -602,8 +612,11 @@ func (s *session) send(ctx context.Context, p SendParams) (any, error) {
 	if !ok {
 		return nil, Unsupported("this adapter does not send messages")
 	}
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
+	unlock, err := s.lockRoom(ctx, p.Room)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	if p.Key != "" {
 		if r, ok := s.sent.get(p.Key); ok {
 			return r, nil
@@ -625,6 +638,23 @@ func (s *session) send(ctx context.Context, p SendParams) (any, error) {
 		}
 	}
 	return r, nil
+}
+
+// lockRoom waits for the send slot of room until ctx ends.
+func (s *session) lockRoom(ctx context.Context, room string) (func(), error) {
+	s.sendMu.Lock()
+	slot := s.sending[room]
+	if slot == nil {
+		slot = make(chan struct{}, 1)
+		s.sending[room] = slot
+	}
+	s.sendMu.Unlock()
+	select {
+	case slot <- struct{}{}:
+		return func() { <-slot }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // sync checks that the adapter returns one state for each subscription, in

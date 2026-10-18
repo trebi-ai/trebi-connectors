@@ -116,11 +116,7 @@ func (s *sentStore) compact() error {
 		}
 		buf.Write(append(b, '\n'))
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
+	if err := WriteFileAtomic(s.path, buf.Bytes(), 0o600); err != nil {
 		return err
 	}
 	s.lines = len(s.order)

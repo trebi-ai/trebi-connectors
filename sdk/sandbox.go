@@ -184,11 +184,7 @@ func (s *Sandbox) save() error {
 	if err := os.MkdirAll(s.folders.StateDir, 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return WriteFileAtomic(path, b, 0o600)
 }
 
 // Initialize answers with the configured result and keeps the webhook.

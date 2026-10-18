@@ -90,9 +90,11 @@ err = w.Observe(room, "cpu", cpu, sdk.Above(90), sdk.WithText(func(typ string, c
 - `Observe(room, key, value, opts...)` encodes `value` as JSON and compares it with the last value of the key in the room. The same value emits nothing.
 - Without a threshold, a new value emits `state.changed`. The first value of a key emits nothing.
 - `sdk.Above(n)` and `sdk.Below(n)` need a number. Only a crossing emits: `state.changed` when the value goes past the limit, once, and `state.recovered` when it comes back. A first value that is already past the limit emits `state.changed`. A key can have more than one threshold, and each crossing emits one event.
+- A threshold can change between calls, for example when the user sets a new limit. An open breach then moves to a new threshold with the same operator when the value is past it. Otherwise the breach emits `state.recovered` with the old threshold. A threshold that a call no longer gives also recovers.
+- `Retain(keep, opts...)` drops each key and each room that `keep` does not list. `keep` maps a room id to its keys. Call it after a full pass of `Observe` calls, so a removed disk or page does not stay in the state. A dropped key with an open breach emits `state.recovered` with `new` `null`. Only `WithText` of `opts` has an effect.
 - `data` is `{"key", "old", "new", "threshold"?}`. `old` is `null` for a first value. `threshold` is `{"op": "above"|"below", "value": n}`.
 - `sdk.WithText(f)` sets `text`. Without it, `text` is empty.
-- The values stay in `$TREBI_STATE_DIR/trebi-sdk-state.json`, so a restart does not emit each key again. When an emit fails, `Observe` returns the error and keeps the old value, so the next `Observe` tries again. The event id comes from the room, the key, and a count per key, so an emit again after a crash has the same id and the daemon drops the copy.
+- The values stay in `$TREBI_STATE_DIR/trebi-sdk-state.json`, so a restart does not emit each key again. When an emit fails, `Observe` returns the error and keeps the old value, so the next `Observe` tries again. The event id comes from a random epoch of the state file, the room, the key, and a count per key. An emit again after a crash has the same id, and the daemon drops the copy. A new state file gets a new epoch, so its ids never repeat the ids of a lost file.
 - Declare `sdk.EventStateChanged` and `sdk.EventStateRecovered` in `InitializeResult.Events`.
 
 ## Read a conversation
@@ -149,6 +151,8 @@ Use it in SDK tests and as an example. A connector program does not use it for `
 - `sdktest.Start(adapter)` returns a `Conn` with `Initialize`, `Call`, `Notify`, and `WaitNote` for single requests.
 
 ## Versions
+
+`sdk/v0.7.0` adds `StateWatcher.Retain` and `WriteFileAtomic`. A change of a threshold now moves or recovers an open breach. The event ids of `StateWatcher` include an epoch, so the ids of an existing state file change once. A slow send now blocks only the sends of its room, and a send that waits for its room stops when its context ends. The first `status` no longer blocks the read loop.
 
 `sdk/v0.6.0` adds `StateWatcher`, `NewStateWatcher`, `Above`, `Below`, `WithText`, the types `StateChange`, `Threshold`, and `EventEmitter`, and the event types `state.changed` and `state.recovered`. See "Watch a state".
 

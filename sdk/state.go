@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,6 +54,13 @@ func (t Threshold) id() string {
 	return t.Op + ":" + strconv.FormatFloat(t.Value, 'g', -1, 64)
 }
 
+// parseThreshold reads an id of Threshold.id.
+func parseThreshold(id string) (Threshold, bool) {
+	op, v, ok := strings.Cut(id, ":")
+	n, err := strconv.ParseFloat(v, 64)
+	return Threshold{Op: op, Value: n}, ok && err == nil
+}
+
 // StateChange is the data of a state.changed or state.recovered event. Old
 // is null for the first value of a key.
 type StateChange struct {
@@ -91,25 +100,33 @@ func WithText(f func(typ string, c StateChange) string) StateOption {
 // event only on a change. Without a threshold, each new value emits
 // state.changed, but the first value of a key emits nothing. With
 // thresholds, only a crossing emits: state.changed on the way out and
-// state.recovered on the way back. With a stateDir, the values stay in
-// StateFile, so a restart does not emit each key again.
+// state.recovered on the way back. When a threshold changes, an open breach
+// moves to a new threshold with the same operator, or recovers. With a
+// stateDir, the values stay in StateFile, so a restart does not emit each
+// key again.
 type StateWatcher struct {
-	path string
-	emit EventEmitter
-	mu   sync.Mutex
-	data stateDoc
+	path  string
+	emit  EventEmitter
+	mu    sync.Mutex
+	data  stateDoc
+	rooms map[string]Room // the last room of each id, for the events of Retain
 }
 
 // stateVersion is the format of StateFile.
 const stateVersion = 1
 
 type stateDoc struct {
-	Version int                               `json:"version"`
-	Rooms   map[string]map[string]*stateEntry `json:"rooms"`
+	Version int `json:"version"`
+	// Epoch is random for each new store, so the event ids of a new store
+	// never repeat the ids of a lost one.
+	Epoch string                            `json:"epoch"`
+	Rooms map[string]map[string]*stateEntry `json:"rooms"`
 }
 
 type stateEntry struct {
 	Value json.RawMessage `json:"value"`
+	// Limits holds the ids of the thresholds of the last Observe.
+	Limits []string `json:"limits,omitempty"`
 	// Breached holds the ids of the thresholds that the value is past.
 	Breached []string `json:"breached,omitempty"`
 	// Seq counts the emitted events, so each event id is new and stable.
@@ -119,8 +136,9 @@ type stateEntry struct {
 // NewStateWatcher loads the store in stateDir. An empty stateDir keeps the
 // values in memory.
 func NewStateWatcher(stateDir string, e EventEmitter) (*StateWatcher, error) {
-	w := &StateWatcher{emit: e, data: stateDoc{Version: stateVersion, Rooms: map[string]map[string]*stateEntry{}}}
+	w := &StateWatcher{emit: e, rooms: map[string]Room{}, data: stateDoc{Version: stateVersion, Rooms: map[string]map[string]*stateEntry{}}}
 	if stateDir == "" {
+		w.data.Epoch = newEpoch()
 		return w, nil
 	}
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
@@ -129,6 +147,7 @@ func NewStateWatcher(stateDir string, e EventEmitter) (*StateWatcher, error) {
 	w.path = filepath.Join(stateDir, StateFile)
 	b, err := os.ReadFile(w.path)
 	if errors.Is(err, os.ErrNotExist) {
+		w.data.Epoch = newEpoch()
 		return w, nil
 	}
 	if err != nil {
@@ -144,7 +163,16 @@ func NewStateWatcher(stateDir string, e EventEmitter) (*StateWatcher, error) {
 	if w.data.Rooms == nil {
 		w.data.Rooms = map[string]map[string]*stateEntry{}
 	}
+	if w.data.Epoch == "" {
+		w.data.Epoch = newEpoch()
+	}
 	return w, nil
+}
+
+func newEpoch() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b) //nolint:errcheck // crypto/rand never fails
+	return hex.EncodeToString(b)
 }
 
 // Observe records the value of key in room and emits the events of the
@@ -171,13 +199,18 @@ func (w *StateWatcher) Observe(room Room, key string, value any, opts ...StateOp
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.rooms[room.ID] = room
 	keys := w.data.Rooms[room.ID]
 	if keys == nil {
 		keys = map[string]*stateEntry{}
 		w.data.Rooms[room.ID] = keys
 	}
 	prev := keys[key]
-	if prev != nil && bytes.Equal(prev.Value, val) {
+	limits := make([]string, len(cfg.thresholds))
+	for i, t := range cfg.thresholds {
+		limits[i] = t.id()
+	}
+	if prev != nil && bytes.Equal(prev.Value, val) && slices.Equal(prev.Limits, limits) {
 		return nil
 	}
 	next := &stateEntry{Value: val}
@@ -186,6 +219,9 @@ func (w *StateWatcher) Observe(room Room, key string, value any, opts ...StateOp
 		old = prev.Value
 		next.Seq = prev.Seq
 	}
+	if len(limits) > 0 {
+		next.Limits = limits
+	}
 
 	var events []Event
 	add := func(typ string, t *Threshold) {
@@ -193,24 +229,39 @@ func (w *StateWatcher) Observe(room Room, key string, value any, opts ...StateOp
 		next.Seq++
 		events = append(events, w.event(room, typ, c, next.Seq, cfg.text))
 	}
-	if len(cfg.thresholds) == 0 {
-		if prev != nil {
-			add(EventStateChanged, nil)
-		}
-	} else {
-		for _, t := range cfg.thresholds {
-			was := prev != nil && slices.Contains(prev.Breached, t.id())
-			now := t.breached(num)
-			if now {
-				next.Breached = append(next.Breached, t.id())
-			}
-			switch {
-			case now && !was:
-				add(EventStateChanged, &t)
-			case !now && was:
-				add(EventStateRecovered, &t)
+	// stale holds the breaches of thresholds that this call does not give.
+	var stale []Threshold
+	if prev != nil {
+		for _, id := range prev.Breached {
+			if t, ok := parseThreshold(id); ok && !slices.Contains(limits, id) {
+				stale = append(stale, t)
 			}
 		}
+	}
+	if len(cfg.thresholds) == 0 && prev != nil && !bytes.Equal(prev.Value, val) {
+		add(EventStateChanged, nil)
+	}
+	for _, t := range cfg.thresholds {
+		was := prev != nil && slices.Contains(prev.Breached, t.id())
+		now := t.breached(num)
+		if now && !was {
+			if i := slices.IndexFunc(stale, func(s Threshold) bool { return s.Op == t.Op }); i >= 0 {
+				stale = slices.Delete(stale, i, i+1)
+				was = true
+			}
+		}
+		if now {
+			next.Breached = append(next.Breached, t.id())
+		}
+		switch {
+		case now && !was:
+			add(EventStateChanged, &t)
+		case !now && was:
+			add(EventStateRecovered, &t)
+		}
+	}
+	for _, t := range stale {
+		add(EventStateRecovered, &t)
 	}
 
 	for _, ev := range events {
@@ -222,10 +273,64 @@ func (w *StateWatcher) Observe(room Room, key string, value any, opts ...StateOp
 	return w.save()
 }
 
-// event builds one event. The id comes from the room, the key, and the
-// sequence, so an emit again after a crash has the same id.
+// Retain drops each key that keep does not list, and each room that keep
+// does not have. A dropped key with an open breach emits state.recovered
+// with a null new value, in the room of the last Observe. Call it after a full pass of Observe calls. Only
+// WithText of opts has an effect.
+func (w *StateWatcher) Retain(keep map[string][]string, opts ...StateOption) error {
+	var cfg observeConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	changed := false
+	for roomID, keys := range w.data.Rooms {
+		kept, has := keep[roomID]
+		room, ok := w.rooms[roomID]
+		if !ok {
+			room = Room{ID: roomID}
+		}
+		for key, e := range keys {
+			if has && slices.Contains(kept, key) {
+				continue
+			}
+			for _, id := range slices.Clone(e.Breached) {
+				t, ok := parseThreshold(id)
+				if !ok {
+					continue
+				}
+				e.Seq++
+				c := StateChange{Key: key, Old: e.Value, New: []byte("null"), Threshold: &t}
+				if err := w.emit.Event(w.event(room, EventStateRecovered, c, e.Seq, cfg.text)); err != nil {
+					e.Seq--
+					return errors.Join(err, w.saveIf(changed))
+				}
+				e.Breached = slices.DeleteFunc(e.Breached, func(s string) bool { return s == id })
+				changed = true
+			}
+			delete(keys, key)
+			changed = true
+		}
+		if len(keys) == 0 {
+			delete(w.data.Rooms, roomID)
+			delete(w.rooms, roomID)
+		}
+	}
+	return w.saveIf(changed)
+}
+
+func (w *StateWatcher) saveIf(changed bool) error {
+	if !changed {
+		return nil
+	}
+	return w.save()
+}
+
+// event builds one event. The id comes from the epoch, the room, the key,
+// and the sequence, so an emit again after a crash has the same id.
 func (w *StateWatcher) event(room Room, typ string, c StateChange, seq int, text func(string, StateChange) string) Event {
-	h := sha256.Sum256([]byte(room.ID + "\x00" + c.Key + "\x00" + strconv.Itoa(seq)))
+	h := sha256.Sum256([]byte(w.data.Epoch + "\x00" + room.ID + "\x00" + c.Key + "\x00" + strconv.Itoa(seq)))
 	data, _ := json.Marshal(c) //nolint:errcheck // fields are valid JSON
 	ev := Event{
 		ID:   "state-" + hex.EncodeToString(h[:12]),
@@ -240,7 +345,7 @@ func (w *StateWatcher) event(room Room, typ string, c StateChange, seq int, text
 	return ev
 }
 
-// save writes the store with a rename, so a crash never leaves half a file.
+// save writes the store.
 func (w *StateWatcher) save() error {
 	if w.path == "" {
 		return nil
@@ -249,9 +354,5 @@ func (w *StateWatcher) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := w.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, w.path)
+	return WriteFileAtomic(w.path, b, 0o600)
 }

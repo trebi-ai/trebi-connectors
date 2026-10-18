@@ -3,6 +3,7 @@ package sdk
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -62,6 +63,28 @@ func TestStateWatcherObserve(t *testing.T) {
 			{value: 50, opts: []StateOption{Above(80), Above(90)}},
 			{value: 95, opts: []StateOption{Above(80), Above(90)}, want: []string{EventStateChanged, EventStateChanged}},
 			{value: 85, opts: []StateOption{Above(80), Above(90)}, want: []string{EventStateRecovered}},
+		}},
+		{"new threshold under the value recovers the old breach", []observe{
+			{value: 95, opts: []StateOption{Above(90)}, want: []string{EventStateChanged}},
+			{value: 50, opts: []StateOption{Above(80)}, want: []string{EventStateRecovered}},
+			{value: 85, opts: []StateOption{Above(80)}, want: []string{EventStateChanged}},
+		}},
+		{"breach moves to a new threshold with the same value", []observe{
+			{value: 95, opts: []StateOption{Above(90)}, want: []string{EventStateChanged}},
+			{value: 95, opts: []StateOption{Above(80)}},
+			{value: 70, opts: []StateOption{Above(80)}, want: []string{EventStateRecovered}},
+		}},
+		{"new threshold over the same value recovers", []observe{
+			{value: 85, opts: []StateOption{Above(80)}, want: []string{EventStateChanged}},
+			{value: 85, opts: []StateOption{Above(90)}, want: []string{EventStateRecovered}},
+		}},
+		{"lower threshold breaches the same value", []observe{
+			{value: 85, opts: []StateOption{Above(90)}},
+			{value: 85, opts: []StateOption{Above(80)}, want: []string{EventStateChanged}},
+		}},
+		{"removed threshold recovers", []observe{
+			{value: 95, opts: []StateOption{Above(90)}, want: []string{EventStateChanged}},
+			{value: 95, want: []string{EventStateRecovered}},
 		}},
 	}
 	for _, tc := range cases {
@@ -186,6 +209,103 @@ func TestStateWatcherRestartKeepsValues(t *testing.T) {
 				t.Fatalf("id %s used again after restart", e.ID)
 			}
 		}
+	}
+}
+
+func TestStateWatcherRetain(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rec := &recordEmitter{}
+	w, err := NewStateWatcher(dir, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := Room{ID: "h1", Name: "web-1"}
+	for _, k := range []string{"disk[/]", "disk[/mnt]"} {
+		if err := w.Observe(room, k, 95, Above(80), Above(90)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Observe(Room{ID: "h2"}, "page", "a"); err != nil {
+		t.Fatal(err)
+	}
+	rec.events = nil
+	text := WithText(func(typ string, c StateChange) string { return c.Key + " is gone" })
+	if err := w.Retain(map[string][]string{"h1": {"disk[/]"}}, text); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.events) != 2 || rec.events[1].Type != EventStateRecovered || rec.events[0].Text != "disk[/mnt] is gone" || rec.events[0].Room.ID != "h1" || rec.events[0].Room.Name != "web-1" {
+		t.Fatalf("events %+v", rec.events)
+	}
+	var c StateChange
+	if err := json.Unmarshal(rec.events[0].Data, &c); err != nil {
+		t.Fatal(err)
+	}
+	if string(c.Old) != "95" || string(c.New) != "null" {
+		t.Fatalf("data %s", rec.events[0].Data)
+	}
+
+	rec = &recordEmitter{}
+	w, err = NewStateWatcher(dir, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(maps.Keys(w.data.Rooms)); !slices.Equal(got, []string{"h1"}) {
+		t.Fatalf("rooms %v", got)
+	}
+	if got := slices.Sorted(maps.Keys(w.data.Rooms["h1"])); !slices.Equal(got, []string{"disk[/]"}) {
+		t.Fatalf("keys %v", got)
+	}
+	if err := w.Observe(room, "disk[/mnt]", 95, Above(80), Above(90)); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.events) != 2 || rec.events[0].Type != EventStateChanged {
+		t.Fatalf("events %+v", rec.events)
+	}
+}
+
+func TestStateWatcherNewStoreNewIDs(t *testing.T) {
+	t.Parallel()
+	ids := map[string]bool{}
+	for range 2 {
+		rec := &recordEmitter{}
+		w, err := NewStateWatcher(t.TempDir(), rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Observe(Room{ID: "r1"}, "cpu", 95, Above(90)); err != nil {
+			t.Fatal(err)
+		}
+		if ids[rec.events[0].ID] {
+			t.Fatalf("id %s used again by a new store", rec.events[0].ID)
+		}
+		ids[rec.events[0].ID] = true
+	}
+}
+
+func TestStateWatcherReadsFormatOneWithoutEpoch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	old := `{"version":1,"rooms":{"r1":{"cpu":{"value":95,"breached":["above:90"],"seq":1}}}}`
+	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recordEmitter{}
+	w, err := NewStateWatcher(dir, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.data.Epoch == "" {
+		t.Fatal("no epoch")
+	}
+	if err := w.Observe(Room{ID: "r1"}, "cpu", 95, Above(90)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Observe(Room{ID: "r1"}, "cpu", 10, Above(90)); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.events) != 1 || rec.events[0].Type != EventStateRecovered {
+		t.Fatalf("events %+v", rec.events)
 	}
 }
 

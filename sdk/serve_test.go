@@ -637,3 +637,55 @@ func TestSandboxSubscriptionsPoll(t *testing.T) {
 		t.Fatalf("sync %+v: %v", sync, err)
 	}
 }
+
+// slowSender blocks a send to the room "slow" until release closes.
+type slowSender struct{ release chan struct{} }
+
+func (a *slowSender) Initialize(context.Context, sdk.InitializeParams) (sdk.InitializeResult, error) {
+	return sdk.InitializeResult{}, nil
+}
+
+func (a *slowSender) Send(ctx context.Context, m sdk.SendParams) (sdk.SendResult, error) {
+	if m.Room == "slow" {
+		select {
+		case <-a.release:
+		case <-ctx.Done():
+			return sdk.SendResult{}, ctx.Err()
+		}
+	}
+	return sdk.SendResult{MessageID: m.Room}, nil
+}
+
+func TestSlowSendBlocksOnlyItsRoom(t *testing.T) {
+	t.Parallel()
+	a := &slowSender{release: make(chan struct{})}
+	c := sdktest.Start(a)
+	defer c.Close() //nolint:errcheck // the test checks the result
+	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
+		t.Fatal(err)
+	}
+	for i, room := range []string{"slow", "fast"} {
+		line := `{"jsonrpc":"2.0","id":` + strconv.Itoa(i+1) + `,"method":"` + sdk.MethodMessagesSend + `","params":{"room":"` + room + `","text":"hi","format":"text","key":"` + room + `"}}`
+		if err := c.Write([]byte(line)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := func() sdktest.Message {
+		for {
+			m, _, err := c.Read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m.Method == "" {
+				return m
+			}
+		}
+	}
+	if m := next(); string(m.ID) != "2" {
+		t.Fatalf("first answer %s, want the fast room", m.ID)
+	}
+	close(a.release)
+	if m := next(); string(m.ID) != "1" || m.Error != nil {
+		t.Fatalf("answer %+v", m)
+	}
+}
