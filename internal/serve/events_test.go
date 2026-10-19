@@ -3,11 +3,15 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
 
 	"github.com/flarco/cli-tools/slack-cli/internal/client"
+	"github.com/flarco/cli-tools/slack-cli/internal/config"
 )
 
 type names struct {
@@ -175,6 +179,24 @@ func TestReactionAndJoin(t *testing.T) {
 	ev := mapOne(t, `{"type":"reaction_added","user":"U0ANA","reaction":"+1","item":{"type":"message","channel":"C0GEN","ts":"1767225600.000100"},"event_ts":"1767225600.000500"}`)[0]
 	if ev.Type != TypeReact || ev.ID != "T1/C0GEN/1767225600.000100.U0ANA.+1" || ev.Text != ":+1:" {
 		t.Errorf("reaction %+v", ev)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.URL.Path != "/conversations.replies" || r.Form.Get("ts") != "1767225600.000100" {
+			t.Errorf("call %s %v", r.URL.Path, r.Form)
+		}
+		_, _ = io.WriteString(w, `{"ok":true,"messages":[{"type":"message","user":"U0ME","text":"Ship it?","ts":"1767225600.000100"}]}`)
+	}))
+	defer srv.Close()
+	team := testTeam()
+	team.Client = client.New(config.Workspace{Token: "xoxb-1"})
+	team.Client.SetBaseURL(srv.URL)
+	ev = team.Events(context.Background(), json.RawMessage(`{"type":"reaction_added","user":"U0ANA","reaction":"+1","item":{"type":"message","channel":"C0GEN","ts":"1767225600.000100"},"event_ts":"1767225600.000500"}`))[0]
+	var d struct {
+		MessageText string `json:"message_text"`
+	}
+	if json.Unmarshal(ev.Data, &d) != nil || d.MessageText != "Ship it?" {
+		t.Errorf("reaction data %s", ev.Data)
 	}
 	ev = mapOne(t, `{"type":"member_joined_channel","user":"U0ANA","channel":"C0GEN","event_ts":"1767225600.000600"}`)[0]
 	if ev.Type != TypeJoin || ev.Sender.ID != "U0ANA" || ev.ID != "T1/C0GEN.join.U0ANA.1767225600.000600" {

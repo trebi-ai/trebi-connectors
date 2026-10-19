@@ -12,7 +12,7 @@ manifest:
   name: slack
   title: Slack
   description: "Messages, mentions, and reactions from your Slack workspaces. Search and read the history."
-  version: 0.1.0
+  version: 0.1.1
   source: github.com/flarco/cli-tools/slack-cli
   setup:
     inputs:

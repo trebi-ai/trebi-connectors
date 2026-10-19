@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"html"
+	"log/slog"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -185,12 +187,37 @@ func (t *Team) reaction(ctx context.Context, m message, raw json.RawMessage) []s
 	if ch == "" || m.Item.TS == "" {
 		return nil
 	}
+	extra := map[string]any{"emoji": m.Reaction, "message_id": t.msgID(ch, m.Item.TS), "item_user": m.ItemUser}
+	if text := t.reacted(ctx, ch, m.Item.TS); text != "" {
+		extra["message_text"] = text
+	}
 	ev := sdk.Event{
 		ID: t.msgID(ch, m.Item.TS) + "." + m.User + "." + m.Reaction, Type: TypeReact, TS: slackTime(m.EventTS),
 		Room: t.room(ctx, ch), Sender: t.sender(ctx, message{User: m.User}), Text: ":" + m.Reaction + ":",
-		Data: t.data(ch, m.Item.TS, raw, map[string]any{"emoji": m.Reaction, "message_id": t.msgID(ch, m.Item.TS), "item_user": m.ItemUser}),
+		Data: t.data(ch, m.Item.TS, raw, extra),
 	}
 	return []sdk.Event{ev}
+}
+
+// reacted returns the text of the message at ts, or "" when Slack does not return it.
+func (t *Team) reacted(ctx context.Context, ch, ts string) string {
+	if t.Client == nil {
+		return ""
+	}
+	p := url.Values{"channel": {ch}, "ts": {ts}, "latest": {ts}, "oldest": {ts}, "inclusive": {"true"}, "limit": {"1"}}
+	var resp struct {
+		Messages []message `json:"messages"`
+	}
+	if err := t.Client.CallJSON(ctx, "conversations.replies", p, &resp); err != nil {
+		slog.Debug("read reacted message", "channel", ch, "ts", ts, "err", err)
+		return ""
+	}
+	for _, m := range resp.Messages {
+		if m.TS == ts {
+			return t.text(ctx, m)
+		}
+	}
+	return ""
 }
 
 func (t *Team) join(ctx context.Context, ch, user, ts string, raw json.RawMessage) []sdk.Event {
