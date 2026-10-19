@@ -142,6 +142,9 @@ func TestEvents(t *testing.T) {
 			"emoji": map[string]any{"name": "👍"}, "member": map[string]any{"user": map[string]any{"id": "318", "username": "sam"}},
 		}},
 	}
+	f.routes["GET /channels/100/messages/555"] = func([]byte) (int, any) {
+		return 200, map[string]any{"id": "555", "channel_id": "100", "content": "Ship it?"}
+	}
 	c, res := start(t, f.adapter(t))
 	if res.Account == nil || res.Account.ID != "9" || len(res.Features) != 13 || res.Limits.MaxText != 2000 {
 		t.Fatalf("initialize: %+v", res)
@@ -165,7 +168,7 @@ func TestEvents(t *testing.T) {
 		msg.ReplyTo != "1290114500000000009" || msg.TS != "2026-09-28T08:15:02.000000Z" || len(msg.Attachments) != 1 {
 		t.Fatalf("message event: %+v", msg)
 	}
-	if react.ID != "555.318.👍" || react.Type != "reaction" || string(react.Data) != `{"emoji":"👍","message_id":"555"}` {
+	if react.ID != "555.318.👍" || react.Type != "reaction" || string(react.Data) != `{"emoji":"👍","message_id":"555","message_text":"Ship it?"}` {
 		t.Fatalf("reaction event: %+v %s", react, react.Data)
 	}
 }

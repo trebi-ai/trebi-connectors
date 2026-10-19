@@ -273,7 +273,16 @@ func (a *Adapter) reactionEvent(ctx context.Context, data json.RawMessage) (sdk.
 	if r.Member != nil {
 		sender.Name = displayName(r.Member.User)
 	}
-	body, _ := json.Marshal(map[string]string{"emoji": emoji, "message_id": r.MessageID}) //nolint:errcheck // strings always encode
+	d := map[string]string{"emoji": emoji, "message_id": r.MessageID}
+	if !sender.Self {
+		var m client.Message
+		if err := a.rest.DoJSON(ctx, "GET", "/channels/"+r.ChannelID+"/messages/"+r.MessageID, nil, &m); err != nil {
+			slog.Debug("read reacted message", "message", r.MessageID, "err", err)
+		} else if text := messageText(m); text != "" {
+			d["message_text"] = text
+		}
+	}
+	body, _ := json.Marshal(d) //nolint:errcheck // strings always encode
 	return sdk.Event{
 		ID: r.MessageID + "." + r.UserID + "." + emoji, Type: "reaction", TS: sdk.FormatTime(time.Now()),
 		Room: &room, Thread: thread, Sender: sender, Data: body, Raw: data,
