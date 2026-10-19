@@ -337,7 +337,11 @@ func (d *Adapter) liveEvent(ctx context.Context, v *events.Message) (sdk.Event, 
 			return sdk.Event{}, false
 		}
 		ev.Type = "reaction"
-		ev.Data, _ = json.Marshal(map[string]string{"emoji": pm.ReactionEmoji, "message_id": pm.ReactionToID}) //nolint:errcheck // strings always encode
+		data := map[string]string{"emoji": pm.ReactionEmoji, "message_id": pm.ReactionToID}
+		if text := d.app.lookupMessageDisplayText(pm.Chat.String(), pm.ReactionToID); text != "" {
+			data["message_text"] = text
+		}
+		ev.Data, _ = json.Marshal(data) //nolint:errcheck // strings always encode
 		return ev, true
 	}
 	ev.Type = "message"

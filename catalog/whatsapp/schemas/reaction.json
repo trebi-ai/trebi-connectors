@@ -14,6 +14,10 @@
     "message_id": {
       "type": "string",
       "description": "The message that got the reaction."
+    },
+    "message_text": {
+      "type": "string",
+      "description": "The text of the message that got the reaction, when the store has it."
     }
   }
 }

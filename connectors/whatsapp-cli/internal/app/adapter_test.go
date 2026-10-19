@@ -106,7 +106,8 @@ func TestAdapterEvents(t *testing.T) {
 		t.Fatalf("message: %+v", msg)
 	}
 	react := waitEvent(t, c)
-	if react.Type != "reaction" || !strings.Contains(string(react.Data), `"message_id":"M1"`) {
+	if react.Type != "reaction" || !strings.Contains(string(react.Data), `"message_id":"M1"`) ||
+		!strings.Contains(string(react.Data), `"message_text":"Any news?"`) {
 		t.Fatalf("reaction: %+v %s", react, react.Data)
 	}
 	img := waitEvent(t, c)
