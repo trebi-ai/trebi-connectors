@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/syndtr/goleveldb v1.0.0
-	github.com/trebi-ai/trebi-connectors/sdk v0.7.0
+	github.com/trebi-ai/trebi-connectors/sdk v0.8.0
 	github.com/urfave/cli/v3 v3.14.0
 	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.60.1
