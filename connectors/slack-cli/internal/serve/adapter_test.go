@@ -291,6 +291,41 @@ func TestDesktopLogin(t *testing.T) {
 	}
 }
 
+// A login that Slack rejects for one workspace names both lists and keeps
+// the good workspace.
+func TestDesktopLoginPartial(t *testing.T) {
+	fake := startFake(t)
+	fake.Reject(ocralToken)
+	store := newStore(t, nil)
+	ocral := localauth.Session{TeamID: ocralID, TeamName: "Ocral", Domain: "ocral", Token: ocralToken}
+	c := start(t, newAdapter(fake, store, map[string]Local{MethodDesktop: desktopFixture(t, fakeslack.Session(), ocral)}))
+	var begin sdk.AuthBeginResult
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: MethodDesktop}, &begin); err != nil {
+		t.Fatal(err)
+	}
+	pick := sdk.Value{ocralID, fakeslack.TeamID}
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]sdk.Value{"workspaces": pick}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	done, err := c.WaitNote(sdk.MethodAuthDone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d sdk.AuthDoneParams
+	if err := json.Unmarshal(done.Params, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.OK || d.Error != "Trebi added Sandbox. Slack rejected the login for Ocral." {
+		t.Errorf("done %+v", d)
+	}
+	if ws := store.Workspaces(); len(ws) != 1 || ws["sandbox"].Token == "" {
+		t.Errorf("store %+v", ws)
+	}
+	if st := waitStatus(t, c, func(s sdk.Status) bool { return s.State == sdk.StateConnected }); st.Account == nil || st.Account.Name != "Sandbox" {
+		t.Errorf("status %+v", st)
+	}
+}
+
 func TestPartialReject(t *testing.T) {
 	fake := startFake(t)
 	fake.Reject(ocralToken)

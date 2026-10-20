@@ -214,11 +214,11 @@ func (l *Login) pick(ctx context.Context, method string, choices []sdk.Choice, p
 	return ch, nil
 }
 
-// add checks each workspace and saves the good ones. It fails when no
-// workspace passes.
+// add checks each workspace and saves the good ones. It fails when a
+// workspace does not pass, and the message names the added ones too.
 func (l *Login) add(ctx context.Context, ws []config.Workspace) (Change, error) {
 	var ch Change
-	var bad []string
+	var good, bad []string
 	for _, w := range ws {
 		label := cmpOr(w.TeamName, cmpOr(w.Domain, "the workspace"))
 		if err := l.verify(ctx, &w); err != nil {
@@ -231,12 +231,15 @@ func (l *Login) add(ctx context.Context, ws []config.Workspace) (Change, error) 
 			return ch, err
 		}
 		ch.Put = append(ch.Put, name)
+		good = append(good, cmpOr(w.TeamName, label))
 	}
-	if len(ch.Put) == 0 {
-		if len(bad) == 0 {
-			return ch, errors.New("Pick at least one workspace.") //nolint:staticcheck // a sentence for the user
-		}
+	switch {
+	case len(bad) > 0 && len(good) > 0:
+		return ch, fmt.Errorf("Trebi added %s. Slack rejected the login for %s.", strings.Join(good, ", "), strings.Join(bad, ", ")) //nolint:staticcheck // a sentence for the user
+	case len(bad) > 0:
 		return ch, fmt.Errorf("Slack rejected the login for %s.", strings.Join(bad, ", ")) //nolint:staticcheck // a sentence for the user
+	case len(ch.Put) == 0:
+		return ch, errors.New("Pick at least one workspace.") //nolint:staticcheck // a sentence for the user
 	}
 	return ch, nil
 }
