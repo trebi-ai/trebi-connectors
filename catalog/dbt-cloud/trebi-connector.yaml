@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: dbt-cloud
 title: "dbt Cloud"
 description: "Run and watch dbt Cloud jobs, and download their run artifacts."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste a service token
+      input: DBT_CLOUD_CLI_TOKEN
+      test: 'dbt-cloud-cli auth status'
   inputs:
     - name: DBT_CLOUD_CLI_TOKEN
       label: "Service token"

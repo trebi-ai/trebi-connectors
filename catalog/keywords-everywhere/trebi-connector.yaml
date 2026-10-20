@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: keywords-everywhere
 title: "Keywords Everywhere"
 description: "Get keyword volume, cost per click, trends, and related keywords."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: KEYWORDS_EVERYWHERE_API_KEY
+      test: 'keywords-everywhere-cli auth status >/dev/null 2>&1'
   inputs:
     - name: KEYWORDS_EVERYWHERE_API_KEY
       label: "API key"

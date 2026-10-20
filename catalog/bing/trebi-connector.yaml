@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: bing
 title: "Bing Webmaster Tools"
 description: "Read Bing search traffic, crawl, and index data for your sites."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: BING_CLI_API_KEY
+      test: 'bing-cli auth status >/dev/null 2>&1'
   inputs:
     - name: BING_CLI_API_KEY
       label: "API key"

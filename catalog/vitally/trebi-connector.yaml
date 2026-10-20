@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: vitally
 title: "Vitally"
 description: "Read and change accounts, users, notes, tasks, and projects in Vitally."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: VITALLY_API_KEY
+      test: 'vitally-cli auth status'
   inputs:
     - name: VITALLY_API_KEY
       label: "API key"

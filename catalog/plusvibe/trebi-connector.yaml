@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: plusvibe
 title: "PlusVibe"
 description: "Manage cold email campaigns, leads, sending accounts, and replies in PlusVibe."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: PLUSVIBE_API_KEY
+      test: 'plusvibe-cli auth status'
   inputs:
     - name: PLUSVIBE_API_KEY
       label: "API key"

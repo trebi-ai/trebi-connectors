@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: hightouch
 title: "Hightouch"
 description: "List and run Hightouch syncs, and read their run history."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: HIGHTOUCH_API_KEY
+      test: 'hightouch-cli auth status'
   inputs:
     - name: HIGHTOUCH_API_KEY
       label: "API key"

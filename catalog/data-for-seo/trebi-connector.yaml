@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: data-for-seo
 title: "DataForSEO"
 description: "Get search results, keyword data, backlinks, and site audits from DataForSEO."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste the API password
+      input: DATAFORSEO_PASSWORD
+      test: 'data-for-seo-cli auth status >/dev/null 2>&1'
   inputs:
     - name: DATAFORSEO_LOGIN
       label: "API login"
@@ -12,6 +18,7 @@ setup:
       required: true
     - name: DATAFORSEO_PASSWORD
       label: "API password"
+      help: "Find the API password in DataForSEO under API access. It is not the password of your account."
       url: "https://app.dataforseo.com/api-access"
       secret: true
       required: true
