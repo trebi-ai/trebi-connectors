@@ -11,6 +11,11 @@ import (
 
 var apiTokenRE = regexp.MustCompile(`"api_token":"(xoxc-[^"]+)"`)
 
+// mintWeb mints a token from https://<domain>.slack.com.
+func mintWeb(ctx context.Context, domain, cookie string) (string, error) {
+	return Mint(ctx, http.DefaultClient, "https://"+domain+".slack.com", cookie)
+}
+
 // Mint gets a fresh xoxc- token from the workspace web page with the "d"
 // cookie. baseURL is https://<domain>.slack.com.
 func Mint(ctx context.Context, hc *http.Client, baseURL, cookie string) (string, error) {

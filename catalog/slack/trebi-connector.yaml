@@ -2,22 +2,22 @@ schema: trebi-connector/1
 name: slack
 title: Slack
 description: "Messages, mentions, and reactions from your Slack workspaces. Search and read the history."
-version: 0.2.0
+version: 0.3.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
-warning: "Uses the session of the Slack app on this computer. Slack does not support this officially."
+warning: "Uses the Slack login on this computer or a session from your web browser. Slack does not support this officially."
 platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
 install:
   catalog: true
   bin: slack-cli
   version_command: slack-cli --version
 setup:
-  inputs:
-    - name: SLACK_WORKSPACES
-      label: Workspaces
-      help: "The workspaces to follow, separated by commas. Type all to follow every workspace."
-      default: all
+  login:
+    - {id: desktop, type: existing, label: Use the Slack app on this computer, help: "Pick the workspaces of the Slack app to follow."}
+    - {id: slk, type: existing, label: Use the slk login on this computer, help: "Pick the workspaces of the slk login to follow."}
+    - {id: token, type: key, label: Paste a token, help: "A token gives actions only. Live events need the Slack app login or a browser session."}
+    - {id: session, type: key, label: Paste a browser session, help: "Copy the session token and the d cookie of Slack from your web browser."}
 actions:
   cli: {commands: [slack-cli]}
   operations:
@@ -35,7 +35,7 @@ actions:
         type: object
         properties:
           query: {type: string, maxLength: 500, description: The words to find. Slack search words such as in:#channel and from:@name also work.}
-          workspace: {type: string, maxLength: 100, description: "The workspace. The default is the first of the connection workspaces."}
+          workspace: {type: string, maxLength: 100, description: "The workspace. The default is the first workspace of the login."}
           limit: {type: integer, minimum: 1, maximum: 100, description: The maximum number of messages. The default is 20.}
         required: [query]
     - name: history

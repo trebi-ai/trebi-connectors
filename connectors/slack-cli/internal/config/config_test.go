@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -137,27 +136,21 @@ func TestMaskSecret(t *testing.T) {
 	}
 }
 
-func TestPick(t *testing.T) {
-	c := &Config{Workspace: "btd"}
+func TestNameFor(t *testing.T) {
+	c := &Config{}
 	c.Set("btd", Workspace{TeamID: "T1"})
-	c.Set("nanit", Workspace{TeamID: "T2"})
 	cases := []struct {
-		list           string
-		names, missing string
+		w    Workspace
+		want string
 	}{
-		{"", "btd", ""},
-		{"all", "btd,nanit", ""},
-		{"*", "btd,nanit", ""},
-		{"nanit, T1 nanit", "nanit,btd", ""},
-		{"btd,nope", "btd", "nope"},
+		{Workspace{TeamID: "T1", Domain: "bigtimedata"}, "btd"},
+		{Workspace{TeamID: "T2", Domain: "ocral"}, "ocral"},
+		{Workspace{TeamID: "T3"}, "T3"},
+		{Workspace{}, "workspace"},
 	}
 	for _, tc := range cases {
-		names, missing := c.Pick(tc.list)
-		if got := strings.Join(names, ","); got != tc.names {
-			t.Errorf("Pick(%q) names = %q, want %q", tc.list, got, tc.names)
-		}
-		if got := strings.Join(missing, ","); got != tc.missing {
-			t.Errorf("Pick(%q) missing = %q, want %q", tc.list, got, tc.missing)
+		if got := c.NameFor(tc.w); got != tc.want {
+			t.Errorf("NameFor(%+v) = %q, want %q", tc.w, got, tc.want)
 		}
 	}
 }

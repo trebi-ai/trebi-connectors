@@ -185,10 +185,10 @@ Each normalized line has `workspace`, `team_id`, `type`, `subtype`, `channel`,
 
 `slack-cli serve` is a [Trebi](https://trebi.ai) connector. It speaks the trebi-connector/1 protocol on stdin and stdout, and writes logs to stderr. It sends these events: `message`, `mention`, `message.edited`, `message.deleted`, `reaction`, and `channel.join`. It does not send messages. The catalog entry is `catalog/slack` in this repository. Its skill is `catalog/slack/skill/SKILL.md`.
 
-`SLACK_WORKSPACES` (or `--workspaces`) selects the workspaces: a comma-separated list of names, team ids, or domains. `all` selects every workspace. An empty value selects the default workspace. Each workspace needs a session token or an app token.
+`serve` follows every saved workspace. In Trebi, the person adds the workspaces with one of four login methods: "Use the Slack app on this computer" (`desktop`), "Use the slk login on this computer" (`slk`), "Paste a token" (`token`, xoxp- or xoxb-), and "Paste a browser session" (`session`, xoxc- and the `d` cookie). The first two show a list of the signed-in workspaces; the saved workspaces are preselected. Each method checks the token with `auth.test`, and adds or replaces workspaces. Log out removes all workspaces. A session token or an app token streams events. A xoxp-/xoxb- token gives actions only. When Slack rejects one workspace, the others keep running, and the account of that workspace needs a login.
 
 ```bash
-SLACK_WORKSPACES=acme,beta slack-cli serve
+slack-cli serve
 slack-cli serve --sandbox    # a fake Slack in the process, for conformance checks
 ```
 
@@ -214,7 +214,8 @@ Trebi starts `slack-cli serve` with `TREBI_STATE_DIR` set. This is Trebi mode. T
 - `auth import`, `auth slk`, `auth add`, `auth use`, and `auth remove` fail with "Set this value in Trebi".
 - The name caches are in `TREBI_CACHE_DIR`, or in the state folder when that variable is not set.
 - `serve` is the one writer of the state folder. It saves a new session token there when the old one expires. A CLI command in a job reads the state and does not write it.
-- With no workspace in the state, `serve` starts and sends `status` `auth_required` with the message "log in to Slack in Trebi".
+- The login methods of `serve` write the workspaces to the state. Log out removes them.
+- With no workspace in the state, `serve` starts and sends `status` `auth_required` with the reason `logged_out`.
 
 The rules for all connector programs are in "Adapter folder contract" in `../../CLAUDE.md`.
 

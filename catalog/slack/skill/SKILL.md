@@ -55,7 +55,7 @@ Workspace commands: `auth list` (shows the default with `*`), `auth use <name>`
 
 Env vars: `SLACK_WORKSPACE`, `SLACK_CLI_CONFIG`, `SLACK_API_URL`, `SLACK_DEBUG`.
 
-In a Trebi connection (`TREBI_STATE_DIR` is set), Trebi sets the workspaces. The config file is in the state folder, and `SLACK_CLI_CONFIG` and `~/.cli-tools/slack-cli` are not read. `auth import`, `auth slk`, `auth add`, `auth use`, and `auth remove` fail with "Set this value in Trebi". Use `-w` to pick one of the connection workspaces.
+In a Trebi connection (`TREBI_STATE_DIR` is set), the person adds the workspaces with the Trebi login of the connection. The connection follows every workspace of the login. The config file is in the state folder, and `SLACK_CLI_CONFIG` and `~/.cli-tools/slack-cli` are not read. `auth import`, `auth slk`, `auth add`, `auth use`, and `auth remove` fail with "Set this value in Trebi". Use `-w` to pick one of the connection workspaces.
 
 ## Command shape
 
@@ -113,10 +113,11 @@ backoff. Each normalized line: `workspace`, `team_id`, `type`, `subtype`,
 
 `slack-cli serve` speaks the trebi-connector/1 protocol on stdin and stdout
 (SDK `github.com/trebi-ai/trebi-connectors/sdk`). Logs go to stderr. It streams
-the workspaces in `--workspaces` (env `SLACK_WORKSPACES`): a comma-separated
-list of names, team ids, or domains; `all` for every workspace; empty for the
-default workspace. A workspace needs a session token (desktop socket, eager)
-or an app token (Socket Mode). A missing workspace gives a status message.
+every saved workspace. The login methods are `desktop` (the Slack app), `slk`,
+`token` (xoxp-/xoxb-), and `session` (xoxc- and the `d` cookie). Each adds or
+replaces workspaces; `auth/logout` removes all. A session token streams the
+desktop socket (eager), an app token uses Socket Mode, and a xoxp-/xoxb- token
+gives actions only. When Slack rejects one workspace, the others keep running.
 
 - Event types: `message`, `mention` (a message that names you; also sent as
   `message`), `message.edited` (text change only, not unfurls),
@@ -151,7 +152,7 @@ slack-cli files upload ./report.pdf --channel '#reports' --title 'Q3'
 slack-cli api users.list --all
 slack-cli listen --channel '#general' --mentions
 slack-cli -w T0123ABCD listen --all-workspaces --count 5
-SLACK_WORKSPACES=acme,beta slack-cli serve
+slack-cli serve
 echo '{"room":"#general","limit":20}' | slack-cli op history
 ```
 

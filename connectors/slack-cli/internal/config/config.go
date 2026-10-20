@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -152,6 +151,9 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// New returns an empty config that saves to path.
+func New(path string) *Config { return &Config{path: path} }
+
 // File returns the config file path.
 func (c *Config) File() string { return c.path }
 
@@ -232,6 +234,20 @@ func (c *Config) FindTeam(teamID string) (string, bool) {
 	return "", false
 }
 
+// NameFor returns the name of the saved workspace with the team id of w,
+// else a new name: the domain, else the team id.
+func (c *Config) NameFor(w Workspace) string {
+	if n, ok := c.FindTeam(w.TeamID); ok && w.TeamID != "" {
+		return n
+	}
+	for _, v := range []string{w.Domain, w.TeamID} {
+		if v != "" {
+			return v
+		}
+	}
+	return "workspace"
+}
+
 // Select returns the workspace for key. An empty key selects the default
 // workspace, or the only workspace.
 func (c *Config) Select(key string) (string, Workspace, error) {
@@ -256,32 +272,6 @@ func (c *Config) Select(key string) (string, Workspace, error) {
 		return "", Workspace{}, fmt.Errorf("no workspace %q (known: %s)", key, strings.Join(c.Names(), ", "))
 	}
 	return n, w, nil
-}
-
-// Pick returns the workspace names for a list of keys, separated by commas
-// or spaces. "*" or "all" picks every workspace; an empty list picks the
-// default workspace. missing holds the keys that match no workspace.
-func (c *Config) Pick(list string) (names, missing []string) {
-	keys := strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' })
-	if len(keys) == 0 {
-		if n, _, err := c.Select(""); err == nil {
-			return []string{n}, nil
-		}
-		return nil, nil
-	}
-	for _, k := range keys {
-		if k == "*" || strings.EqualFold(k, "all") {
-			return c.Names(), nil
-		}
-		n, _, ok := c.Find(k)
-		switch {
-		case !ok:
-			missing = append(missing, k)
-		case !slices.Contains(names, n):
-			names = append(names, n)
-		}
-	}
-	return names, missing
 }
 
 // MaskSecret returns a masked form of a secret for display.

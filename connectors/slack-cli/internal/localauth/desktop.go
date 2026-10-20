@@ -3,6 +3,7 @@
 package localauth
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -42,6 +43,8 @@ type Desktop struct {
 	Dir string
 	// Passwords returns the "Slack Safe Storage" key candidates.
 	Passwords func() ([][]byte, error)
+	// Mint gets a token for a workspace that has none in Local Storage.
+	Mint func(ctx context.Context, domain, cookie string) (string, error)
 }
 
 // NewDesktop finds the Slack desktop app data dir. SLACK_DESKTOP_DIR overrides it.
@@ -53,7 +56,7 @@ func NewDesktop() (*Desktop, error) {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("%w (looked in %s)", ErrDesktopNotFound, dir)
 	}
-	return &Desktop{Dir: dir, Passwords: keyringPasswords}, nil
+	return &Desktop{Dir: dir, Passwords: keyringPasswords, Mint: mintWeb}, nil
 }
 
 func desktopDir(goos string, getenv func(string) string) string {
@@ -89,9 +92,8 @@ func desktopDir(goos string, getenv func(string) string) string {
 }
 
 // Sessions returns the signed-in workspaces with their token and cookie.
-// A workspace without a token in Local Storage gets one from its web page
-// (see Mint).
-func (d *Desktop) Sessions(mint func(domain, cookie string) (string, error)) ([]Session, error) {
+// A workspace without a token in Local Storage gets one from d.Mint.
+func (d *Desktop) Sessions(ctx context.Context) ([]Session, error) {
 	teams, err := d.Workspaces()
 	if err != nil {
 		return nil, err
@@ -108,8 +110,8 @@ func (d *Desktop) Sessions(mint func(domain, cookie string) (string, error)) ([]
 	for _, t := range teams {
 		t.Cookie = cookie
 		t.Token = tokens[t.TeamID]
-		if t.Token == "" && mint != nil && t.Domain != "" {
-			if t.Token, err = mint(t.Domain, cookie); err != nil {
+		if t.Token == "" && d.Mint != nil && t.Domain != "" {
+			if t.Token, err = d.Mint(ctx, t.Domain, cookie); err != nil {
 				return nil, fmt.Errorf("%s: %w", t.Domain, err)
 			}
 		}

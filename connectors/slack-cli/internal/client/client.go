@@ -413,3 +413,22 @@ func baseName(p string) string {
 	}
 	return p
 }
+
+// Verify checks the token with auth.test and fills the team and user of w.
+func (c *Client) Verify(ctx context.Context, w *config.Workspace) error {
+	var at struct {
+		URL    string `json:"url"`
+		Team   string `json:"team"`
+		User   string `json:"user"`
+		TeamID string `json:"team_id"`
+		UserID string `json:"user_id"`
+	}
+	if err := c.CallJSON(ctx, "auth.test", url.Values{}, &at); err != nil {
+		return err
+	}
+	w.TeamID, w.TeamName, w.URL, w.UserID, w.User = at.TeamID, at.Team, at.URL, at.UserID, at.User
+	if u, err := url.Parse(at.URL); err == nil && w.Domain == "" {
+		w.Domain = strings.TrimSuffix(u.Host, ".slack.com")
+	}
+	return nil
+}

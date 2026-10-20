@@ -58,8 +58,9 @@ Warning: whatsapp-cli uses the WhatsApp Web protocol. WhatsApp can ban an accoun
 
 ## slack-cli
 
-- Login: the Slack workspaces are in `config.toml` in the state folder. A later change adds the login steps. With no workspace, the status is `auth_required` with reason `logged_out`.
-- The input `SLACK_WORKSPACES` selects the workspaces: names, team ids, or domains, separated by commas. `all` selects every workspace.
+- Login methods: `desktop` and `slk` (existing) show one `Workspaces` field with a choice for each signed-in workspace; the saved workspaces are preselected, or all when none is saved. `token` (xoxp-/xoxb-) and `session` (xoxc- and the `d` cookie) are key methods of the adapter. Each method checks the token with `auth.test` and adds or replaces workspaces. `auth/logout` removes all workspaces.
+- The connection follows every workspace in `config.toml` in the state folder. With no workspace, the status is `auth_required` with reason `logged_out`. `status` and `auth/status` have one row in `accounts` per workspace. When Slack rejects one workspace, the others keep running, and the status is `auth_required` with the message "Slack rejected the login for <team>. Log in again."
+- A workspace with a xoxp-/xoxb- token gives actions only. Its account row says "Live events need the Slack app login or a browser session."
 - Events: `message`, `mention`, `message.edited`, `message.deleted`, `reaction`, `channel.join`. A message that names you is a `message` and a `mention`. The message id is `<team>/<channel>/<ts>`, and the room id is `<team>/<channel>`.
 - Features: none. The connector does not send messages.
 - Operations: `search` and `history`, as `slack-op <name>` with a JSON input on stdin. `slack-op` is a copy of `slack-cli` that `scripts/build.sh` writes next to the program, because an operation program must not also be a run command.

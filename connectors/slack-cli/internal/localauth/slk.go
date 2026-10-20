@@ -1,6 +1,7 @@
 package localauth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -19,6 +20,15 @@ func SlkDir() string {
 	}
 	return filepath.Join(base, "slk", "tokens")
 }
+
+// Slk is the token folder of gammons/slk.
+type Slk struct{ Dir string }
+
+// Workspaces returns the saved sessions. A missing folder gives none.
+func (s Slk) Workspaces() ([]Session, error) { return SlkSessions(s.Dir) }
+
+// Sessions is Workspaces: the token files hold the tokens.
+func (s Slk) Sessions(context.Context) ([]Session, error) { return SlkSessions(s.Dir) }
 
 // SlkSessions reads the gammons/slk token files (<team id>.json) in dir.
 // A missing dir gives no sessions and no error.

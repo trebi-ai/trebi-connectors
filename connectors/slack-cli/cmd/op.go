@@ -24,8 +24,8 @@ func OpCommand() *cli.Command {
 		Description: `Each operation reads one JSON object on stdin and writes one JSON object.
 The messages have the shape of the events of ` + "`slack-cli serve`" + `.
 
-The workspace is the "workspace" field, else the first of SLACK_WORKSPACES,
-else --workspace, else the default workspace.
+The workspace is the "workspace" field, else --workspace, else the default
+workspace. In Trebi mode the default is the first workspace of the login.
 
   echo '{"query":"deploy in:#ops","limit":10}' | slack-cli op search
   echo '{"room":"T123/C456","limit":20}' | slack-cli op history`,
@@ -99,7 +99,7 @@ else --workspace, else the default workspace.
 }
 
 // opTeam selects the workspace of an operation: the team id of a room, the
-// workspace field, the first of SLACK_WORKSPACES, then the global flag.
+// workspace field, the global flag, then the default workspace.
 func opTeam(ctx context.Context, c *cli.Command, workspace, teamID string) (*serve.Team, *client.Directory, error) {
 	a := FromCmd(c)
 	switch {
@@ -111,10 +111,6 @@ func opTeam(ctx context.Context, c *cli.Command, workspace, teamID string) (*ser
 		a.WorkspaceFlag = name
 	case workspace != "":
 		a.WorkspaceFlag = workspace
-	case a.WorkspaceFlag == "":
-		if names, _ := a.Config.Pick(os.Getenv(EnvWorkspaces)); len(names) > 0 {
-			a.WorkspaceFlag = names[0]
-		}
 	}
 	cl, err := a.Client()
 	if err != nil {

@@ -1,19 +1,23 @@
 // Package fakeslack is an in-process Slack for `serve --sandbox` and tests:
 // a Web API and a desktop client socket on local httptest servers. It has
-// one fixed workspace and accepts any token. Each socket connection gets
-// the same fixed events, so a restart gives the same event ids.
+// one fixed workspace and accepts any token, except the tokens of Reject.
+// AddTeam gives a token its own team in auth.test. Each socket connection
+// gets the same fixed events, so a restart gives the same event ids.
 package fakeslack
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/localauth"
 )
 
 // Fixed ids of the fake.
@@ -74,11 +78,15 @@ var history = map[string][]string{
 type Server struct {
 	api *httptest.Server
 	ws  *httptest.Server
+
+	mu       sync.Mutex
+	teams    map[string]string // token -> auth.test answer
+	rejected map[string]bool
 }
 
 // Start runs the fake. Close stops it.
 func Start() *Server {
-	s := &Server{}
+	s := &Server{teams: map[string]string{}, rejected: map[string]bool{}}
 	s.api = httptest.NewServer(http.HandlerFunc(s.serveAPI))
 	s.ws = httptest.NewServer(http.HandlerFunc(s.serveWS))
 	return s
@@ -106,12 +114,58 @@ func (s *Server) Config() *config.Config {
 	return cfg
 }
 
+// Session is the login of the fake workspace on the computer.
+func Session() localauth.Session {
+	return localauth.Session{TeamID: TeamID, TeamName: TeamName, Domain: "sandbox", Token: "xoxc-sandbox", Cookie: "xoxd-sandbox"}
+}
+
+// Local is a Slack login on the computer with the fake workspace.
+type Local struct{}
+
+// Workspaces returns the fake workspace.
+func (Local) Workspaces() ([]localauth.Session, error) { return []localauth.Session{Session()}, nil }
+
+// Sessions returns the fake workspace.
+func (Local) Sessions(context.Context) ([]localauth.Session, error) { return Local{}.Workspaces() }
+
+// AddTeam makes auth.test of token answer with its own team.
+func (s *Server) AddTeam(token, teamID, name, domain string) {
+	b, _ := json.Marshal(map[string]any{ //nolint:errcheck // strings always encode
+		"ok": true, "user_id": SelfID, "user": "trebi", "team_id": teamID, "team": name, "url": "https://" + domain + ".slack.com/",
+	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.teams[token] = string(b)
+}
+
+// Reject makes every call with token fail with invalid_auth.
+func (s *Server) Reject(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejected[token] = true
+}
+
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	method := strings.TrimPrefix(r.URL.Path, "/api/")
 	w.Header().Set("Content-Type", "application/json")
+	token := r.Form.Get("token")
+	if token == "" {
+		token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	}
+	s.mu.Lock()
+	team, rejected := s.teams[token], s.rejected[token]
+	s.mu.Unlock()
+	if rejected {
+		writeJSON(w, `{"ok":false,"error":"invalid_auth"}`)
+		return
+	}
 	switch method {
 	case "auth.test":
+		if team != "" {
+			writeJSON(w, team)
+			return
+		}
 		writeJSON(w, `{"ok":true,"user_id":"U0SELF","user":"trebi","team_id":"T0SANDBOX","team":"Sandbox","url":"https://sandbox.slack.com/"}`)
 	case "users.info":
 		one(w, "user", users[r.Form.Get("user")], "user_not_found")

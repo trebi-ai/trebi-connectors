@@ -82,27 +82,9 @@ func sessionFromImport(ctx context.Context, s localauth.Session, verify bool) (c
 		w.URL = "https://" + w.Domain + ".slack.com"
 	}
 	if verify {
-		id, err := verifyWorkspace(ctx, &w)
-		if err != nil {
-			return w, err
-		}
-		_ = id
+		return w, client.New(w).Verify(ctx, &w)
 	}
 	return w, nil
-}
-
-// verifyWorkspace calls auth.test and fills the identity fields.
-func verifyWorkspace(ctx context.Context, w *config.Workspace) (authTest, error) {
-	cl := client.New(*w)
-	var at authTest
-	if err := cl.CallJSON(ctx, "auth.test", url.Values{}, &at); err != nil {
-		return at, err
-	}
-	w.TeamID, w.TeamName, w.URL, w.UserID, w.User = at.TeamID, at.Team, at.URL, at.UserID, at.User
-	if w.Domain == "" {
-		w.Domain = domainFromURL(at.URL)
-	}
-	return at, nil
 }
 
 type authTest struct {
@@ -141,10 +123,7 @@ macOS may prompt once to let slack-cli read the "Slack Safe Storage" key.`,
 			if err != nil {
 				return err
 			}
-			hc := &http.Client{}
-			sessions, err := d.Sessions(func(domain, cookie string) (string, error) {
-				return localauth.Mint(ctx, hc, "https://"+domain+".slack.com", cookie)
-			})
+			sessions, err := d.Sessions(ctx)
 			if err != nil {
 				return err
 			}
@@ -207,17 +186,10 @@ func importSessions(ctx context.Context, a *AppContext, c *cli.Command, sessions
 	return nil
 }
 
-// importName picks a stable workspace name: the domain, else team id.
+// importName picks a stable workspace name.
 func importName(cfg *config.Config, ws config.Workspace, s localauth.Session) string {
-	if n, ok := cfg.FindTeam(ws.TeamID); ok {
-		return n
-	}
-	for _, v := range []string{ws.Domain, s.Domain, ws.TeamID, s.TeamID} {
-		if v != "" {
-			return v
-		}
-	}
-	return "workspace"
+	ws.Domain, ws.TeamID = firstNonEmpty(ws.Domain, s.Domain), firstNonEmpty(ws.TeamID, s.TeamID)
+	return cfg.NameFor(ws)
 }
 
 func authAddCommand() *cli.Command {
@@ -268,7 +240,7 @@ workspace by its domain unless you pass a name.`,
 				ws.Domain = domainFromURL(ws.URL)
 			}
 			if !c.Bool("no-verify") {
-				if _, err := verifyWorkspace(ctx, &ws); err != nil {
+				if err := client.New(ws).Verify(ctx, &ws); err != nil {
 					return fmt.Errorf("token check failed (nothing saved): %w", err)
 				}
 			}
