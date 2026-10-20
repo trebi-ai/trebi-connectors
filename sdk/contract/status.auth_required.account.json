@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"status","params":{"state":"auth_required","reason":"revoked","message":"Slack rejected the login for Ocral. Log in again.","accounts":[{"id":"T01","name":"Big Time Data","state":"connected"},{"id":"T02","name":"Ocral","state":"auth_required","message":"Slack rejected the login for Ocral. Log in again."}]}}

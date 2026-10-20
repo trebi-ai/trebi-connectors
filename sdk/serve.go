@@ -9,6 +9,7 @@ package sdk
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -100,14 +101,27 @@ type StatusReporter interface {
 	AuthStatus(ctx context.Context) (AuthState, error)
 }
 
-// Authenticator runs interactive login flows. BeginAuth runs one whole
-// flow: the first Step answers auth/begin, each later Step is an auth/step
-// notification, and the return ends the flow (nil is a login). ctx ends on
-// auth/cancel. The SDK sends auth/done and the status changes.
+// Authenticator runs interactive login flows.
+//
+// LoginMethods answers auth/methods with the live state of each method. The
+// ids and types are the ones of the manifest setup.login entries with no
+// input. An unavailable method has a reason that a person can read.
+//
+// BeginAuth runs one whole flow of one method. The SDK picks the method
+// first: an empty id is the first available method, and an unknown or
+// unavailable method is invalid. The first Step answers auth/begin, each
+// later Step is an auth/step notification, and the return ends the flow
+// (nil is a login). ctx ends on auth/cancel. The SDK sends auth/done and
+// the status changes.
+//
+// SubmitAuth gets the answer to the last step that has fields. The SDK
+// checks it first: each field of an input step has a value, a field
+// without Multiple has one value, and a pick list gets only its choices.
 type Authenticator interface {
 	StatusReporter
-	BeginAuth(ctx context.Context, kind string, steps StepSink) error
-	SubmitAuth(ctx context.Context, flowID string, fields map[string]string) error
+	LoginMethods(ctx context.Context) ([]LoginMethod, error)
+	BeginAuth(ctx context.Context, method string, steps StepSink) error
+	SubmitAuth(ctx context.Context, flowID string, fields map[string]Value) error
 	Logout(ctx context.Context) error
 }
 
@@ -358,12 +372,8 @@ func (s *session) initialize(m inMsg) {
 	}
 	res.Protocol = Protocol
 	res.Features = deriveFeatures(s.a, res.Features)
-	if _, ok := s.a.(Authenticator); !ok {
-		res.Login = nil
-	}
 	res.Events = orEmpty(res.Events)
 	res.Features = orEmpty(res.Features)
-	res.Login = orEmpty(res.Login)
 	s.mu.Lock()
 	if missing {
 		s.missing = &mi
@@ -435,7 +445,7 @@ func (s *session) status(ctx context.Context) Status {
 	if st.State == StateAuthRequired && st.Reason == "" {
 		st.Reason = ReasonNone
 	}
-	return Status{State: st.State, Reason: st.Reason, Account: st.Account}
+	return Status{State: st.State, Reason: st.Reason, Account: st.Account, Accounts: st.Accounts}
 }
 
 func (s *session) has(feature string) bool {
@@ -599,8 +609,8 @@ func (s *session) call(ctx context.Context, m inMsg) (any, error) {
 		return Empty{}, s.a.(WebhookReceiver).ReceiveWebhook(ctx, p)
 	case MethodAuthStatus:
 		st := s.status(ctx)
-		return AuthStatusResult{State: st.State, Account: st.Account}, nil
-	case MethodAuthBegin, MethodAuthSubmit, MethodAuthCancel, MethodAuthLogout:
+		return AuthStatusResult{State: st.State, Account: st.Account, Accounts: st.Accounts}, nil
+	case MethodAuthMethods, MethodAuthBegin, MethodAuthSubmit, MethodAuthCancel, MethodAuthLogout:
 		return s.auth(ctx, m)
 	}
 	return nil, Unsupported("unknown method " + m.Method)
@@ -700,46 +710,72 @@ func (s *session) getRoom(ctx context.Context, id string) (Room, error) {
 	return Room{}, NotFound("unknown room")
 }
 
-// flow is one active login flow.
+// flow is one active login flow. step is the last step with fields.
+// submit is held while auth/submit runs, so its reply goes out before
+// auth/done.
 type flow struct {
 	id         string
 	reqID      json.RawMessage
 	cancel     context.CancelFunc
 	started    bool
 	superseded bool
+	step       *Step
+	submit     sync.Mutex
 }
 
 func (s *session) auth(ctx context.Context, m inMsg) (any, error) {
 	a, ok := s.a.(Authenticator)
-	s.mu.Lock()
-	login := s.init.Login
-	s.mu.Unlock()
-	if !ok || len(login) == 0 {
+	if !ok {
+		if m.Method == MethodAuthMethods {
+			return AuthMethodsResult{Methods: []LoginMethod{}}, nil
+		}
 		return nil, Unsupported("login is not a feature of this adapter")
 	}
 	switch m.Method {
+	case MethodAuthMethods:
+		methods, err := loginMethods(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		return AuthMethodsResult{Methods: methods}, nil
 	case MethodAuthBegin:
 		var p AuthBeginParams
 		if err := decode(m.Params, &p); err != nil {
 			return nil, err
 		}
-		if p.Kind == "" {
-			p.Kind = login[0]
+		mctx, cancel := context.WithTimeout(ctx, timeout(MethodAuthMethods))
+		method, err := pickMethod(mctx, a, p.Method)
+		cancel()
+		if err != nil {
+			return nil, err
 		}
-		if !slices.Contains(login, p.Kind) {
-			return nil, Invalid("unknown login kind " + strconv.Quote(p.Kind))
-		}
-		s.beginAuth(a, m.ID, p.Kind)
+		s.beginAuth(a, m.ID, method)
 		return nil, errReplied
 	case MethodAuthSubmit:
 		var p AuthSubmitParams
 		if err := decode(m.Params, &p); err != nil {
 			return nil, err
 		}
-		if s.flow(p.FlowID) == nil {
+		f := s.flow(p.FlowID)
+		if f == nil {
 			return nil, NotFound("unknown login flow")
 		}
-		return AuthSubmitResult{}, a.SubmitAuth(ctx, p.FlowID, p.Fields)
+		s.mu.Lock()
+		step := f.step
+		s.mu.Unlock()
+		if step == nil {
+			return nil, Invalid("this login step takes no answer")
+		}
+		if err := step.checkSubmit(p.Fields); err != nil {
+			return nil, err
+		}
+		f.submit.Lock()
+		defer f.submit.Unlock()
+		if err := a.SubmitAuth(ctx, p.FlowID, p.Fields); err != nil {
+			return nil, err
+		}
+		s.reply(m.ID, AuthSubmitResult{}, nil)
+		return nil, errReplied
 	case MethodAuthCancel:
 		var p AuthFlowParams
 		if err := decode(m.Params, &p); err != nil {
@@ -758,6 +794,70 @@ func (s *session) auth(ctx context.Context, m inMsg) (any, error) {
 	}
 }
 
+// loginMethods asks the adapter for its methods and checks them: a known
+// type, one row per id, and a reason for each unavailable method.
+func loginMethods(ctx context.Context, a Authenticator) ([]LoginMethod, error) {
+	methods, err := a.LoginMethods(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, m := range methods {
+		switch {
+		case m.ID == "":
+			return nil, Permanent("the adapter returns a login method with no id")
+		case seen[m.ID]:
+			return nil, Permanent("the adapter returns the login method " + strconv.Quote(m.ID) + " two times")
+		case !slices.Contains(LoginTypes(), m.Type):
+			return nil, Permanent("the login method " + strconv.Quote(m.ID) + " has the unknown type " + strconv.Quote(m.Type))
+		case !m.Available && m.Reason == "":
+			return nil, Permanent("the login method " + strconv.Quote(m.ID) + " is not available and has no reason")
+		}
+		seen[m.ID] = true
+	}
+	return orEmpty(methods), nil
+}
+
+// pickMethod returns the id of the named method, or of the first available
+// one for an empty id. An unknown or unavailable method is invalid.
+func pickMethod(ctx context.Context, a Authenticator, id string) (string, error) {
+	methods, err := loginMethods(ctx, a)
+	if err != nil {
+		return "", err
+	}
+	i := slices.IndexFunc(methods, func(m LoginMethod) bool {
+		return m.ID == id || (id == "" && m.Available)
+	})
+	switch {
+	case i < 0 && id == "":
+		return "", Invalid("no login method is available")
+	case i < 0:
+		return "", Invalid("unknown login method " + strconv.Quote(id))
+	case !methods[i].Available:
+		return "", Invalid(methods[i].Reason)
+	}
+	return methods[i].ID, nil
+}
+
+// checkSubmit checks an answer to the fields of the step.
+func (st Step) checkSubmit(fields map[string]Value) error {
+	for _, f := range st.Fields {
+		v := fields[f.Name]
+		if st.Kind == StepInput && v.String() == "" && len(v) <= 1 {
+			return Invalid(cmp.Or(f.Label, f.Name) + " is required")
+		}
+		if len(v) > 1 && !f.Multiple {
+			return Invalid(cmp.Or(f.Label, f.Name) + " takes one value")
+		}
+		for _, x := range v {
+			if len(f.Choices) > 0 && !slices.ContainsFunc(f.Choices, func(c Choice) bool { return c.Value == x }) {
+				return Invalid(strconv.Quote(x) + " is not a choice of " + cmp.Or(f.Label, f.Name))
+			}
+		}
+	}
+	return nil
+}
+
 func (s *session) flow(id string) *flow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -765,7 +865,7 @@ func (s *session) flow(id string) *flow {
 }
 
 // beginAuth runs one flow to its end. A new flow supersedes the old one.
-func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, kind string) {
+func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, method string) {
 	fctx, cancel := context.WithCancel(s.ctx)
 	s.mu.Lock()
 	for _, old := range s.flows {
@@ -776,8 +876,10 @@ func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, kind string)
 	f := &flow{id: "f" + strconv.Itoa(s.nflows), reqID: reqID, cancel: cancel}
 	s.flows[f.id] = f
 	s.mu.Unlock()
-	err := a.BeginAuth(fctx, kind, &stepSink{s: s, f: f, ctx: fctx})
+	err := a.BeginAuth(fctx, method, &stepSink{s: s, f: f, ctx: fctx})
 	cancel()
+	f.submit.Lock()
+	f.submit.Unlock() //nolint:staticcheck // waits for the reply of a running auth/submit
 	s.mu.Lock()
 	delete(s.flows, f.id)
 	started, superseded := f.started, f.superseded
@@ -823,6 +925,9 @@ func (k *stepSink) Step(st Step) error {
 	k.s.mu.Lock()
 	first := !k.f.started
 	k.f.started = true
+	if len(st.Fields) > 0 {
+		k.f.step = &st
+	}
 	k.s.mu.Unlock()
 	if first {
 		k.s.reply(k.f.reqID, AuthBeginResult{FlowID: k.f.id, Step: st}, nil)

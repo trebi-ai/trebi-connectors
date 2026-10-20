@@ -13,7 +13,7 @@ The module depends only on the Go standard library. Tags are `sdk/vX.Y.Z`. The v
 - It checks `limits.max_text` before it calls `Send`.
 - It maps errors to the seven codes of the protocol. Return a typed `*sdk.Error` to choose the code. A timeout or a network error becomes `transient`. Any other error becomes `permanent`.
 - It builds the feature list from the interfaces the adapter implements. A request for a feature that is not in the list answers `unsupported`.
-- It runs login flows: it assigns the flow id, answers `auth/begin` with the first step, sends the later steps, and sends `auth/done` and the status changes.
+- It runs login flows. It answers `auth/methods` from `LoginMethods` and checks the list. It picks the method of `auth/begin`: an empty method is the first available one, and an unknown or unavailable method answers `invalid`. It assigns the flow id, answers `auth/begin` with the first step, sends the later steps, and sends `auth/done` and the status changes. It checks the values of `auth/submit` against the step: each field of an `input` step has a value, a field without `multiple` has one value, and a pick list gets only its choices. The reply to `auth/submit` goes out before `auth/done`.
 - It reports a missing input. See "Trebi mode".
 
 ## Trebi mode
@@ -48,13 +48,33 @@ Add the optional interfaces for the features you have:
 | `Reactor` | `reactions` | `reactions/add` |
 | `Editor` | `edit` | `messages/edit` |
 | `StatusReporter` | | `auth/status` and the first `status` |
-| `Authenticator` | `setup.login` | `auth/begin`, `auth/submit`, `auth/cancel`, `auth/logout` |
+| `Authenticator` | `setup.login` | `auth/methods`, `auth/begin`, `auth/submit`, `auth/cancel`, `auth/logout` |
 | `Subscriber` | `subscriptions` | `subscriptions/options`, `subscriptions/sync` |
 | `SubscriptionSubmitter` | `subscriptions` | `subscriptions/submit` |
 | `WebhookReceiver` | `webhooks` | `webhook/receive` |
 | `Runner` | | receives the `Emitter` after `initialized` |
 
 The features `attachments.in`, `attachments.out`, and `replies` have no method. Put them in `InitializeResult.Features`. Declare `replies` when the adapter sets `reply_to` on an inbound quoted reply and honours `SendParams.ReplyTo` on send. When `Features` is not empty, the SDK keeps only the listed features that the adapter can serve, in the listed order. When it is empty, the SDK lists every method feature the adapter implements. Without `RoomGetter`, the SDK answers `rooms/get` from the pages of `ListRooms`.
+
+## Log in
+
+A connector lists its ways to log in under `setup.login` in the manifest. Each entry has an `id` and a `type`: `existing` (a login that is on this computer), `browser`, `phone`, or `key`. A method with `input` belongs to the daemon: the daemon asks for that secret input itself. The adapter owns each method with no `input`, and it implements `Authenticator`:
+
+```go
+type Authenticator interface {
+	StatusReporter
+	LoginMethods(ctx context.Context) ([]sdk.LoginMethod, error)
+	BeginAuth(ctx context.Context, method string, steps sdk.StepSink) error
+	SubmitAuth(ctx context.Context, flowID string, fields map[string]sdk.Value) error
+	Logout(ctx context.Context) error
+}
+```
+
+- `LoginMethods` returns the live state of each adapter method, with the same ids and types as the manifest. Set `Available: false` and a `Reason` that a person can read when a method cannot run now, for example "No Slack app is on this computer.".
+- `BeginAuth` gets the id of one available method. It sends each step with `steps.Step` and returns at the end of the flow. Return nil for a good login.
+- A step of kind `input` has `Fields`. A field can have a `URL` where the user gets the value, `Choices` for a pick list, `Multiple` for more than one pick, and a `Default`. A step of kind `url` can have `Fields` for a pasted answer, when the page cannot come back to the program.
+- `SubmitAuth` gets the answer to the last step with fields. A `sdk.Value` is a list of strings; `v.String()` returns the first one.
+- `AuthState.Accounts` has one row per account of a connection that follows several accounts. One account can need a login while the others run. The SDK puts the rows into `status` and `auth/status`.
 
 ## Watch things
 
@@ -137,7 +157,7 @@ Stdout belongs to the protocol. Write logs to stderr only. The daemon puts stder
 
 ## The reference sandbox
 
-`sdk.NewSandbox(cfg)` is the reference adapter that `trebi connector conformance` must pass. It has three rooms and one thread. It serves every write feature on its rooms. It emits a `message` event with `sender.self: true` for each send. It keeps its login, rooms, and events in `$TREBI_STATE_DIR/sandbox.json` with relative paths only, so a restart or a restore stays logged in. An unknown room gives `not_found`. A send with no text and no file gives `invalid`. It writes nothing outside the state and cache folders.
+`sdk.NewSandbox(cfg)` is the reference adapter that `trebi connector conformance` must pass. It has three rooms and one thread. `SandboxConfig.Login` lists its login methods; a method with a `Reason` is not available. The type of a method sets its fake flow: `phone` shows two QR codes, `browser` a `url` step with a pasted fallback field, `existing` a pick list of two accounts that sets `accounts`, and `key` one secret field. It serves every write feature on its rooms. It emits a `message` event with `sender.self: true` for each send. It keeps its login, rooms, and events in `$TREBI_STATE_DIR/sandbox.json` with relative paths only, so a restart or a restore stays logged in. An unknown room gives `not_found`. A send with no text and no file gives `invalid`. It writes nothing outside the state and cache folders.
 
 With `SandboxConfig.Subscriptions`, it also has the features `subscriptions` and `webhooks`. It has one dynamic room field `target` with three options. `sandbox/alpha` and `sandbox/beta` use mode `api`: with a webhook, they become `active`, and each new one gets one POST to the webhook URL. The body is `{"target": …, "text": "hello"}` and the header `x-sandbox-signature` is `sha256=<hex HMAC of the body>` with the webhook secret. `sandbox/manual` uses mode `manual`: it becomes `action_required` and asks for a `code`. After `subscriptions/submit`, it becomes `active` and gets one delivery. Without a webhook, each target becomes `polling`. `webhook/receive` checks the signature and emits one `message` event in the room of the target.
 
@@ -149,8 +169,11 @@ Use it in SDK tests and as an example. A connector program does not use it for `
 
 - `sdktest.Run(t, adapter, "contract/flow.reply.jsonl")` plays a transcript. It sends each daemon line and checks that each adapter line matches, with `"<any>"` as a wildcard. It maps the request ids.
 - `sdktest.Start(adapter)` returns a `Conn` with `Initialize`, `Call`, `Notify`, and `WaitNote` for single requests.
+- `Conn.LogIn(method)` runs the login of `trebi connector conformance`: `auth/begin`, an answer to a first step with fields (`sdktest.Answer`: the default, else the first choice, else `sandbox`), and the wait for `auth/done`.
 
 ## Versions
+
+`sdk/v0.8.0` changes the login to login methods. `InitializeResult.Login` is removed. `Authenticator` gets `LoginMethods`, `BeginAuth` gets the method id in place of the step kind, and `SubmitAuth` gets `map[string]sdk.Value`. The SDK answers the new request `auth/methods`. `AuthBeginParams.Kind` is now `Method`. `StepField` gets `URL`, `Choices`, `Multiple`, and `Default`. `Status`, `AuthStatusResult`, and `AuthState` get `Accounts`. `SandboxConfig.Login` is a list of `LoginMethod`. Update the manifest `setup.login` to the object form at the same time, for example `- {id: qr, type: phone, label: Link your phone}`. It needs a `trebi` release with the same protocol.
 
 `sdk/v0.7.0` adds `StateWatcher.Retain` and `WriteFileAtomic`. A change of a threshold now moves or recovers an open breach. The event ids of `StateWatcher` include an epoch, so the ids of an existing state file change once. A slow send now blocks only the sends of its room, and a send that waits for its room stops when its context ends. The first `status` no longer blocks the read loop.
 

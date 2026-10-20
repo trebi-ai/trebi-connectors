@@ -27,9 +27,12 @@ type flowAdapter struct {
 	result   sdk.InitializeResult
 	live     []sdk.Event
 	replay   []sdk.Event
+	methods  []sdk.LoginMethod
 	steps    []sdk.Step
 	account  *sdk.Account
+	accounts []sdk.AccountState
 	loggedIn bool
+	answers  chan map[string]sdk.Value
 	synced   []sdk.SubscriptionState
 	submit   sdk.SubscriptionState
 	hook     sdk.Event
@@ -58,13 +61,25 @@ func (a *flowAdapter) AuthStatus(context.Context) (sdk.AuthState, error) {
 	if !a.loggedIn {
 		return sdk.AuthState{State: sdk.StateAuthRequired}, nil
 	}
-	return sdk.AuthState{State: sdk.StateConnected, Account: a.account}, nil
+	return sdk.AuthState{State: sdk.StateConnected, Account: a.account, Accounts: a.accounts}, nil
 }
 
-func (a *flowAdapter) BeginAuth(_ context.Context, _ string, steps sdk.StepSink) error {
+func (a *flowAdapter) LoginMethods(context.Context) ([]sdk.LoginMethod, error) {
+	return a.methods, nil
+}
+
+// BeginAuth sends the steps. A step with fields waits for its answer.
+func (a *flowAdapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
 	for _, st := range a.steps {
 		if err := steps.Step(st); err != nil {
 			return err
+		}
+		if len(st.Fields) > 0 {
+			select {
+			case <-a.answers:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 	a.mu.Lock()
@@ -73,8 +88,12 @@ func (a *flowAdapter) BeginAuth(_ context.Context, _ string, steps sdk.StepSink)
 	return nil
 }
 
-func (a *flowAdapter) SubmitAuth(context.Context, string, map[string]string) error { return nil }
-func (a *flowAdapter) Logout(context.Context) error                                { return nil }
+func (a *flowAdapter) SubmitAuth(_ context.Context, _ string, fields map[string]sdk.Value) error {
+	a.answers <- fields
+	return nil
+}
+
+func (a *flowAdapter) Logout(context.Context) error { return nil }
 
 func (a *flowAdapter) Send(_ context.Context, m sdk.SendParams) (sdk.SendResult, error) {
 	if m.Room == "1180000000000000009" {
@@ -133,8 +152,8 @@ func TestFlows(t *testing.T) {
 				Events:   []sdk.EventDecl{{Type: "message"}},
 				Features: []string{"rooms.list", "typing", "seen"},
 				Limits:   sdk.Limits{MaxText: 65536, Formats: []string{"text"}},
-				Login:    []string{"qr"},
 			},
+			methods: []sdk.LoginMethod{{ID: "qr", Type: sdk.LoginPhone, Available: true}},
 			account: ana,
 			steps: []sdk.Step{
 				{Kind: sdk.StepQR, Data: "2@AbCdEf,GhIjKl,MnOpQr", ExpiresAt: "2026-09-28T08:20:20Z"},
@@ -143,6 +162,35 @@ func TestFlows(t *testing.T) {
 			},
 		}
 		sdktest.Run(t, a, "contract/flow.login.qr.jsonl")
+	})
+	t.Run("login.methods", func(t *testing.T) {
+		t.Parallel()
+		ws := []sdk.Choice{
+			{Value: "T01", Label: "Big Time Data", Description: "bigtimedata.slack.com"},
+			{Value: "T02", Label: "Ocral", Description: "ocral.slack.com"},
+		}
+		a := &flowAdapter{
+			result: sdk.InitializeResult{
+				Adapter:  sdk.AdapterInfo{Name: "slack-cli", Version: "0.4.0"},
+				Events:   []sdk.EventDecl{{Type: "message"}},
+				Features: []string{"rooms.list"},
+				Limits:   sdk.Limits{MaxText: 40000, Formats: []string{"text", "markdown"}},
+			},
+			methods: []sdk.LoginMethod{
+				{ID: "desktop", Type: sdk.LoginExisting, Label: "Use the Slack app on this computer", Available: true},
+				{ID: "token", Type: sdk.LoginKey, Label: "Paste a token", Available: true},
+			},
+			account: &sdk.Account{ID: "T01,T02", Name: "Big Time Data, Ocral"},
+			accounts: []sdk.AccountState{
+				{ID: "T01", Name: "Big Time Data", State: sdk.StateConnected},
+				{ID: "T02", Name: "Ocral", State: sdk.StateConnected},
+			},
+			steps: []sdk.Step{{Kind: sdk.StepInput, Fields: []sdk.StepField{
+				{Name: "workspaces", Label: "Workspaces", Choices: ws, Multiple: true, Default: sdk.Value{"T01", "T02"}},
+			}}},
+			answers: make(chan map[string]sdk.Value, 1),
+		}
+		sdktest.Run(t, a, "contract/flow.login.methods.jsonl")
 	})
 	t.Run("replay", func(t *testing.T) {
 		t.Parallel()
@@ -153,8 +201,8 @@ func TestFlows(t *testing.T) {
 				Events:   []sdk.EventDecl{{Type: "message"}},
 				Features: []string{"replay", "typing"},
 				Limits:   sdk.Limits{MaxText: 65536, Formats: []string{"text"}},
-				Login:    []string{"qr"},
 			},
+			methods: []sdk.LoginMethod{{ID: "qr", Type: sdk.LoginPhone, Available: true}},
 			account: ana, loggedIn: true,
 			replay: []sdk.Event{{
 				ID: "3EB0C431B3A2", Type: "message", TS: "2026-09-28T08:14:57.000000Z", Room: family,
@@ -257,7 +305,7 @@ func TestLifecycle(t *testing.T) {
 	if err := c.Call(sdk.MethodInitialize, sdk.InitializeParams{Protocol: sdk.Protocol}, &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.Protocol != sdk.Protocol || res.Features == nil || res.Login == nil || len(res.Features) != 0 {
+	if res.Protocol != sdk.Protocol || res.Features == nil || len(res.Features) != 0 {
 		t.Fatalf("result %+v", res)
 	}
 	if err := c.Call(sdk.MethodPing, nil, nil); err != nil {
@@ -351,10 +399,15 @@ func TestDedupeSurvivesRestart(t *testing.T) {
 
 func sandboxConfig() sdk.SandboxConfig {
 	return sdk.SandboxConfig{
-		Adapter:    sdk.AdapterInfo{Name: "sandbox-cli", Version: "1.0.0"},
-		Features:   []string{"rooms.list", "rooms.open", "threads", "history", "typing", "seen", "reactions", "attachments.in"},
-		Limits:     sdk.Limits{MaxText: 10, Formats: []string{"text"}},
-		Login:      []string{"qr", "input"},
+		Adapter:  sdk.AdapterInfo{Name: "sandbox-cli", Version: "1.0.0"},
+		Features: []string{"rooms.list", "rooms.open", "threads", "history", "typing", "seen", "reactions", "attachments.in"},
+		Limits:   sdk.Limits{MaxText: 10, Formats: []string{"text"}},
+		Login: []sdk.LoginMethod{
+			{ID: "qr", Type: sdk.LoginPhone},
+			{ID: "key", Type: sdk.LoginKey},
+			{ID: "pick", Type: sdk.LoginExisting},
+			{ID: "web", Type: sdk.LoginBrowser, Reason: "The sandbox has no browser."},
+		},
 		LoginDelay: 10 * time.Millisecond,
 	}
 }
@@ -377,13 +430,8 @@ func TestSandbox(t *testing.T) {
 	if err := c.Call(sdk.MethodMessagesSend, send, nil); sdk.CodeOf(err) != sdk.CodeAuthRequired {
 		t.Fatalf("send before login: %v", err)
 	}
-	var begin sdk.AuthBeginResult
-	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Kind: "qr"}, &begin); err != nil || begin.Step.Kind != sdk.StepQR {
-		t.Fatalf("auth/begin %+v: %v", begin, err)
-	}
-	done, err := c.WaitNote(sdk.MethodAuthDone)
-	if err != nil || !strings.Contains(string(done.Params), `"ok":true`) {
-		t.Fatalf("auth/done %s: %v", done.Params, err)
+	if done, err := c.LogIn("qr"); err != nil || done.Account == nil {
+		t.Fatalf("login %+v: %v", done, err)
 	}
 	var sent, again sdk.SendResult
 	if err := c.Call(sdk.MethodMessagesSend, send, &sent); err != nil {
@@ -439,9 +487,16 @@ func TestSandboxLoginCancelAndInput(t *testing.T) {
 	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
 		t.Fatal(err)
 	}
+	var methods sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 4 || methods.Methods[3].Available || !methods.Methods[0].Available {
+		t.Fatalf("auth/methods %+v: %v", methods, err)
+	}
 	var begin sdk.AuthBeginResult
 	if err := c.Call(sdk.MethodAuthBegin, nil, &begin); err != nil || begin.Step.Kind != sdk.StepQR {
 		t.Fatalf("auth/begin %+v: %v", begin, err)
+	}
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID}, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+		t.Fatalf("a submit to a QR step: %v", err)
 	}
 	if err := c.Call(sdk.MethodAuthCancel, sdk.AuthFlowParams{FlowID: begin.FlowID}, nil); err != nil {
 		t.Fatal(err)
@@ -450,17 +505,51 @@ func TestSandboxLoginCancelAndInput(t *testing.T) {
 	if err != nil || !strings.Contains(string(done.Params), `"ok":false`) {
 		t.Fatalf("auth/done %s: %v", done.Params, err)
 	}
-	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Kind: "url"}, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
-		t.Fatalf("an undeclared kind: %v", err)
+	for _, m := range []string{"sms", "web"} {
+		if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: m}, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+			t.Fatalf("method %s: %v", m, err)
+		}
 	}
-	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Kind: "input"}, &begin); err != nil || begin.Step.Kind != sdk.StepInput {
-		t.Fatalf("input begin %+v: %v", begin, err)
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: "key"}, &begin); err != nil || begin.Step.Kind != sdk.StepInput {
+		t.Fatalf("key begin %+v: %v", begin, err)
 	}
-	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]string{"code": "1"}}, nil); err != nil {
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]sdk.Value{"key": {""}}}, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+		t.Fatalf("an empty key: %v", err)
+	}
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]sdk.Value{"key": {"a", "b"}}}, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+		t.Fatalf("two keys: %v", err)
+	}
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]sdk.Value{"key": {"1"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
+	waitDone(t, c, begin.FlowID)
+	var auth sdk.AuthStatusResult
+	if _, err := c.LogIn("pick"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Call(sdk.MethodAuthStatus, nil, &auth); err != nil || len(auth.Accounts) != 2 {
+		t.Fatalf("auth/status after the default pick %+v: %v", auth, err)
+	}
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: "pick"}, &begin); err != nil || len(begin.Step.Fields) != 1 || !begin.Step.Fields[0].Multiple {
+		t.Fatalf("pick begin %+v: %v", begin, err)
+	}
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]sdk.Value{"accounts": {"sandbox-a", "nope"}}}, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+		t.Fatalf("a value that is not a choice: %v", err)
+	}
+	if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: map[string]sdk.Value{"accounts": {"sandbox-b"}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitDone(t, c, begin.FlowID)
+	if err := c.Call(sdk.MethodAuthStatus, nil, &auth); err != nil || len(auth.Accounts) != 1 || auth.Accounts[0].Name != "Sandbox B" {
+		t.Fatalf("auth/status %+v: %v", auth, err)
+	}
+}
+
+// waitDone waits for a good auth/done of the flow.
+func waitDone(t *testing.T, c *sdktest.Conn, flowID string) {
+	t.Helper()
 	for {
-		done, err = c.WaitNote(sdk.MethodAuthDone)
+		done, err := c.WaitNote(sdk.MethodAuthDone)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -468,9 +557,9 @@ func TestSandboxLoginCancelAndInput(t *testing.T) {
 		if err := json.Unmarshal(done.Params, &p); err != nil {
 			t.Fatal(err)
 		}
-		if p.FlowID == begin.FlowID {
+		if p.FlowID == flowID {
 			if !p.OK || p.Account == nil {
-				t.Fatalf("input login %+v", p)
+				t.Fatalf("login %+v", p)
 			}
 			return
 		}
@@ -687,5 +776,37 @@ func TestSlowSendBlocksOnlyItsRoom(t *testing.T) {
 	close(a.release)
 	if m := next(); string(m.ID) != "1" || m.Error != nil {
 		t.Fatalf("answer %+v", m)
+	}
+}
+
+func TestLoginMethodGuards(t *testing.T) {
+	t.Parallel()
+	for name, m := range map[string]sdk.LoginMethod{
+		"no reason":    {ID: "key", Type: sdk.LoginKey},
+		"unknown type": {ID: "sms", Type: "sms", Available: true},
+	} {
+		c := sdktest.Start(&flowAdapter{methods: []sdk.LoginMethod{m}})
+		if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Call(sdk.MethodAuthMethods, nil, nil); sdk.CodeOf(err) != sdk.CodePermanent {
+			t.Errorf("%s: auth/methods %v", name, err)
+		}
+		if err := c.Call(sdk.MethodAuthBegin, nil, nil); sdk.CodeOf(err) != sdk.CodePermanent {
+			t.Errorf("%s: auth/begin %v", name, err)
+		}
+		c.Close() //nolint:errcheck // the test checks the calls
+	}
+	c := sdktest.Start(bare{})
+	defer c.Close() //nolint:errcheck // the test checks the calls
+	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
+		t.Fatal(err)
+	}
+	var res sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, nil, &res); err != nil || res.Methods == nil || len(res.Methods) != 0 {
+		t.Fatalf("an adapter with no login: %+v %v", res, err)
+	}
+	if err := c.Call(sdk.MethodAuthBegin, nil, nil); sdk.CodeOf(err) != sdk.CodeUnsupported {
+		t.Fatalf("auth/begin with no login: %v", err)
 	}
 }

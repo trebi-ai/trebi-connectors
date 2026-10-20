@@ -1,5 +1,5 @@
 {"from":"daemon","msg":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.42.0"},"instance":{"key":"con_01j9x7k2m4q8r3t5v6w7y8z9ab","name":"linear"},"webhook":{"url":"https://in.trebi.ai/hook/Zm9vYmFyYmF6cXV4","secret":"c2VjcmV0LXN1Z2dlc3Rpb24tMzItYnl0ZXM"}}}}
-{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"linear-cli","version":"0.1.0"},"account":{"id":"u-1","name":"Ana"},"events":[{"type":"issue"},{"type":"comment"}],"features":["subscriptions","webhooks"],"limits":{},"login":[]}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"linear-cli","version":"0.1.0"},"account":{"id":"u-1","name":"Ana"},"events":[{"type":"issue"},{"type":"comment"}],"features":["subscriptions","webhooks"],"limits":{}}}}
 {"from":"daemon","msg":{"jsonrpc":"2.0","method":"initialized","params":{}}}
 {"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"connected","account":{"id":"u-1","name":"Ana"}}}}
 {"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"subscriptions/sync","params":{"subscriptions":[{"id":"sub_01j9zq3k4m5n6p7r8s9t0v1w2x","values":{"team":["ENG"],"resources":["Issue"]},"types":["issue"]},{"id":"sub_01j9zq5a6b7c8d9e0f1g2h3j4k","values":{"resources":["Issue"]}}]}}}

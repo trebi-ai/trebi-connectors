@@ -1,0 +1,17 @@
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.3.0"},"instance":{"key":"slack","name":"slack"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"slack-cli","version":"0.4.0"},"events":[{"type":"message"}],"features":["rooms.list"],"limits":{"max_text":40000,"formats":["text","markdown"]}}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","method":"initialized","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"auth_required","reason":"none"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":2,"method":"auth/methods","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":2,"result":{"methods":[{"id":"desktop","type":"existing","label":"Use the Slack app on this computer","available":true},{"id":"token","type":"key","label":"Paste a token","available":true}]}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":3,"method":"auth/begin","params":{"method":"desktop"}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":3,"result":{"flow_id":"f1","step":{"kind":"input","fields":[{"name":"workspaces","label":"Workspaces","choices":[{"value":"T01","label":"Big Time Data","description":"bigtimedata.slack.com"},{"value":"T02","label":"Ocral","description":"ocral.slack.com"}],"multiple":true,"default":["T01","T02"]}]}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"auth_pending"}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":4,"method":"auth/submit","params":{"flow_id":"f1","fields":{"workspaces":["T01","T02"]}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":4,"result":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"auth/done","params":{"flow_id":"f1","ok":true,"account":{"id":"T01,T02","name":"Big Time Data, Ocral"}}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"connected","account":{"id":"T01,T02","name":"Big Time Data, Ocral"},"accounts":[{"id":"T01","name":"Big Time Data","state":"connected"},{"id":"T02","name":"Ocral","state":"connected"}]}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":5,"method":"auth/status","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":5,"result":{"state":"connected","account":{"id":"T01,T02","name":"Big Time Data, Ocral"},"accounts":[{"id":"T01","name":"Big Time Data","state":"connected"},{"id":"T02","name":"Ocral","state":"connected"}]}}}
+{"from":"daemon","msg":{"jsonrpc":"2.0","id":6,"method":"shutdown","params":{}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":6,"result":{}}}

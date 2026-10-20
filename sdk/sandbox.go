@@ -35,7 +35,11 @@ type SandboxConfig struct {
 	Events   []EventDecl
 	Features []string
 	Limits   Limits
-	Login    []string
+	// Login are the login methods. A method with a Reason is not
+	// available. The type sets the fake flow: phone shows QR codes, browser
+	// a url step with a pasted fallback, existing a pick list of accounts,
+	// and key one secret field.
+	Login []LoginMethod
 	// LoginDelay is the time a login flow waits before it completes. The
 	// default is one second, so auth/cancel can end a flow first.
 	LoginDelay time.Duration
@@ -63,7 +67,7 @@ type sandboxDelivery struct {
 
 // Sandbox is the reference adapter for `serve --sandbox` and for SDK tests:
 // fixed rooms and a thread, sends that come back as self message events,
-// and a fake login of each kind. It keeps its login, rooms, and events in
+// and a fake login of each method type. It keeps its login, rooms, and events in
 // TREBI_STATE_DIR, so a restart stays logged in. It needs no account, so
 // catalog CI runs the conformance checks on it.
 type Sandbox struct {
@@ -73,7 +77,7 @@ type Sandbox struct {
 	folders Trebi
 	st      sandboxState
 	emit    Emitter
-	inputs  map[string]chan map[string]string
+	inputs  map[string]chan map[string]Value
 	hook    *Webhook
 	client  *http.Client
 }
@@ -81,7 +85,9 @@ type Sandbox struct {
 // sandboxState is the durable part of a sandbox. Attachment paths in it
 // are relative to the state folder.
 type sandboxState struct {
-	LoggedIn bool                `json:"logged_in"`
+	LoggedIn bool `json:"logged_in"`
+	// Accounts are the account ids that the existing login picked.
+	Accounts []string            `json:"accounts,omitempty"`
 	Seq      int                 `json:"seq"`
 	Rooms    []Room              `json:"rooms"`
 	Threads  map[string][]Thread `json:"threads"`
@@ -135,7 +141,7 @@ func NewSandbox(cfg SandboxConfig) *Sandbox {
 			},
 			Threads: map[string][]Thread{"sandbox-general": {{ID: "sandbox-thread-1", Title: "Sandbox thread"}}},
 		},
-		inputs: map[string]chan map[string]string{},
+		inputs: map[string]chan map[string]Value{},
 		client: &http.Client{Timeout: 5 * time.Second},
 	}
 }
@@ -166,7 +172,7 @@ func (s *Sandbox) UseFolders(t Trebi) error {
 	if st.Threads != nil {
 		s.st.Threads = st.Threads
 	}
-	s.st.LoggedIn, s.st.Seq, s.st.Events = st.LoggedIn, st.Seq, st.Events
+	s.st.LoggedIn, s.st.Accounts, s.st.Seq, s.st.Events = st.LoggedIn, st.Accounts, st.Seq, st.Events
 	s.st.Subscriptions, s.st.States, s.st.Answers = st.Subscriptions, st.States, st.Answers
 	return nil
 }
@@ -194,7 +200,6 @@ func (s *Sandbox) Initialize(_ context.Context, in InitializeParams) (Initialize
 		Events:   slices.Clone(s.cfg.Events),
 		Features: s.features(),
 		Limits:   s.cfg.Limits,
-		Login:    slices.Clone(s.cfg.Login),
 	}
 	s.mu.Lock()
 	s.hook = in.Webhook
@@ -238,7 +243,14 @@ func (s *Sandbox) Run(ctx context.Context, e Emitter) error {
 	return nil
 }
 
-// AuthStatus is connected after a login, or always with no login kinds.
+// sandboxAccounts are the accounts of the pick list of the existing login.
+var sandboxAccounts = []Choice{
+	{Value: "sandbox-a", Label: "Sandbox A", Description: "a.sandbox.example"},
+	{Value: "sandbox-b", Label: "Sandbox B", Description: "b.sandbox.example"},
+}
+
+// AuthStatus is connected after a login, or always with no login methods.
+// After an existing login it has one row per picked account.
 func (s *Sandbox) AuthStatus(context.Context) (AuthState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -246,32 +258,56 @@ func (s *Sandbox) AuthStatus(context.Context) (AuthState, error) {
 		return AuthState{State: StateAuthRequired, Reason: ReasonNone}, nil
 	}
 	acct := s.cfg.Account
-	return AuthState{State: StateConnected, Account: &acct}, nil
+	st := AuthState{State: StateConnected, Account: &acct}
+	for _, id := range s.st.Accounts {
+		row := AccountState{ID: id, State: StateConnected}
+		if i := slices.IndexFunc(sandboxAccounts, func(c Choice) bool { return c.Value == id }); i >= 0 {
+			row.Name = sandboxAccounts[i].Label
+		}
+		st.Accounts = append(st.Accounts, row)
+	}
+	return st, nil
 }
 
 func (s *Sandbox) connected() bool { return s.st.LoggedIn || len(s.cfg.Login) == 0 }
 
-// BeginAuth sends a fake first step, waits LoginDelay (or the input of an
-// input step), sends one more step, and logs in.
-func (s *Sandbox) BeginAuth(ctx context.Context, kind string, steps StepSink) error {
-	exp := FormatTime(time.Now().Add(20 * time.Second))
-	var first, next Step
-	switch kind {
-	case StepQR:
-		first = Step{Kind: StepQR, Data: "sandbox-qr-1", ExpiresAt: exp}
-		next = Step{Kind: StepQR, Data: "sandbox-qr-2", ExpiresAt: exp}
-	case StepDeviceCode:
-		first = Step{Kind: StepDeviceCode, URL: "https://example.com/device", Code: "SANDBOX-1", ExpiresAt: exp}
-		next = Step{Kind: StepWait, Message: "Enter the code on the device page"}
-	case StepURL:
-		first = Step{Kind: StepURL, URL: "https://example.com/login", ExpiresAt: exp}
-		next = Step{Kind: StepWait, Message: "Finish the login in the browser"}
-	case StepInput:
-		first = Step{Kind: StepInput, Fields: []StepField{{Name: "code", Label: "Code", Secret: true, Help: "Any value works in the sandbox."}}}
-	default:
-		first = Step{Kind: StepWait, Message: "Wait for the sandbox login"}
+// LoginMethods returns the configured methods. A method with a reason is
+// not available.
+func (s *Sandbox) LoginMethods(context.Context) ([]LoginMethod, error) {
+	out := slices.Clone(s.cfg.Login)
+	for i := range out {
+		out[i].Available = out[i].Reason == ""
 	}
-	in := make(chan map[string]string, 1)
+	return out, nil
+}
+
+// BeginAuth sends a fake first step for the type of the method. A flow
+// with fields waits for the answer; a url step also ends after LoginDelay.
+// A QR flow sends a second code after LoginDelay. Then it logs in.
+func (s *Sandbox) BeginAuth(ctx context.Context, method string, steps StepSink) error {
+	i := slices.IndexFunc(s.cfg.Login, func(m LoginMethod) bool { return m.ID == method })
+	if i < 0 {
+		return Invalid("unknown login method " + strconv.Quote(method))
+	}
+	exp := FormatTime(time.Now().Add(20 * time.Second))
+	var first Step
+	var next *Step
+	switch s.cfg.Login[i].Type {
+	case LoginPhone:
+		first = Step{Kind: StepQR, Data: "sandbox-qr-1", ExpiresAt: exp}
+		next = &Step{Kind: StepQR, Data: "sandbox-qr-2", ExpiresAt: exp}
+	case LoginBrowser:
+		first = Step{Kind: StepURL, URL: "https://example.com/login", ExpiresAt: exp, Fields: []StepField{
+			{Name: "redirect", Label: "Address of the page", Help: "Any value works in the sandbox."},
+		}}
+	case LoginExisting:
+		first = Step{Kind: StepInput, Message: "Pick the accounts to follow.", Fields: []StepField{
+			{Name: "accounts", Label: "Accounts", Choices: sandboxAccounts, Multiple: true, Default: Value{sandboxAccounts[0].Value, sandboxAccounts[1].Value}},
+		}}
+	default:
+		first = Step{Kind: StepInput, Fields: []StepField{{Name: "key", Label: "Key", Secret: true, Help: "Any value works in the sandbox."}}}
+	}
+	in := make(chan map[string]Value, 1)
 	s.mu.Lock()
 	s.inputs[steps.FlowID()] = in
 	s.mu.Unlock()
@@ -283,33 +319,32 @@ func (s *Sandbox) BeginAuth(ctx context.Context, kind string, steps StepSink) er
 	if err := steps.Step(first); err != nil {
 		return err
 	}
-	if kind == StepInput {
-		select {
-		case fields := <-in:
-			if fields["code"] == "" {
-				return Invalid("the code is empty")
+	var wait <-chan time.Time
+	if first.Kind != StepInput {
+		wait = time.After(s.cfg.LoginDelay)
+	}
+	var picked []string
+	select {
+	case fields := <-in:
+		picked = fields["accounts"]
+	case <-wait:
+		if next != nil {
+			if err := steps.Step(*next); err != nil {
+				return err
 			}
-		case <-ctx.Done():
-			return ctx.Err()
 		}
-	} else {
-		select {
-		case <-time.After(s.cfg.LoginDelay):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-		if err := steps.Step(next); err != nil {
-			return err
-		}
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.st.LoggedIn = true
+	s.st.LoggedIn, s.st.Accounts = true, picked
 	return s.save()
 }
 
-// SubmitAuth answers an input step.
-func (s *Sandbox) SubmitAuth(_ context.Context, flowID string, fields map[string]string) error {
+// SubmitAuth answers a step with fields. The SDK already checked the
+// values against the step.
+func (s *Sandbox) SubmitAuth(_ context.Context, flowID string, fields map[string]Value) error {
 	s.mu.Lock()
 	in, ok := s.inputs[flowID]
 	s.mu.Unlock()
@@ -327,7 +362,7 @@ func (s *Sandbox) SubmitAuth(_ context.Context, flowID string, fields map[string
 func (s *Sandbox) Logout(context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.st.LoggedIn = false
+	s.st.LoggedIn, s.st.Accounts = false, nil
 	return s.save()
 }
 

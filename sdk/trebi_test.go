@@ -109,7 +109,7 @@ func TestSandboxState(t *testing.T) {
 	if st, err := c.WaitNote(sdk.MethodStatus); err != nil || !strings.Contains(string(st.Params), `"auth_required"`) {
 		t.Fatalf("empty state: %s %v", st.Params, err)
 	}
-	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Kind: "qr"}, nil); err != nil {
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: "qr"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if done, err := c.WaitNote(sdk.MethodAuthDone); err != nil || !strings.Contains(string(done.Params), `"ok":true`) {

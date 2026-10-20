@@ -186,6 +186,55 @@ func (c *Conn) WaitNote(method string) (Message, error) {
 	}
 }
 
+// LogIn runs the login of the trebi conformance check: auth/begin with
+// method (empty is the first available one), the Answer to each field of a
+// first step with fields, then the wait for auth/done of the flow. A failed
+// login returns an error.
+func (c *Conn) LogIn(method string) (sdk.AuthDoneParams, error) {
+	var begin sdk.AuthBeginResult
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: method}, &begin); err != nil {
+		return sdk.AuthDoneParams{}, err
+	}
+	if len(begin.Step.Fields) > 0 {
+		fields := map[string]sdk.Value{}
+		for _, f := range begin.Step.Fields {
+			fields[f.Name] = Answer(f)
+		}
+		if err := c.Call(sdk.MethodAuthSubmit, sdk.AuthSubmitParams{FlowID: begin.FlowID, Fields: fields}, nil); err != nil {
+			return sdk.AuthDoneParams{}, err
+		}
+	}
+	for {
+		m, err := c.WaitNote(sdk.MethodAuthDone)
+		if err != nil {
+			return sdk.AuthDoneParams{}, err
+		}
+		var d sdk.AuthDoneParams
+		if err := json.Unmarshal(m.Params, &d); err != nil {
+			return d, err
+		}
+		if d.FlowID != begin.FlowID {
+			continue
+		}
+		if !d.OK {
+			return d, fmt.Errorf("auth/done: %s", d.Error)
+		}
+		return d, nil
+	}
+}
+
+// Answer is the answer of the conformance login to one field: the default,
+// else the first choice, else "sandbox".
+func Answer(f sdk.StepField) sdk.Value {
+	switch {
+	case len(f.Default) > 0:
+		return f.Default
+	case len(f.Choices) > 0:
+		return sdk.Value{f.Choices[0].Value}
+	}
+	return sdk.Value{"sandbox"}
+}
+
 // Close closes the input of the adapter and returns what Serve returned.
 func (c *Conn) Close() error {
 	c.in.Close() //nolint:errcheck // a pipe close does not fail
