@@ -187,11 +187,15 @@ func TestDeviceLogin(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	c, _, res := start(t, "", nil, WithLogin(config.NewLoginStore(dir), "app"))
-	if res.Account != nil || len(res.Login) != 1 || res.Login[0] != sdk.StepDeviceCode {
+	if res.Account != nil {
 		t.Fatalf("init %+v", res)
 	}
+	var methods sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 1 || methods.Methods[0].ID != LoginDevice || !methods.Methods[0].Available {
+		t.Fatalf("methods %+v %v", methods, err)
+	}
 	var begin sdk.AuthBeginResult
-	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{}, &begin); err != nil {
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: LoginDevice}, &begin); err != nil {
 		t.Fatal(err)
 	}
 	if begin.Step.Kind != sdk.StepDeviceCode || begin.Step.Code != fakegithub.UserCode {
@@ -208,6 +212,18 @@ func TestDeviceLogin(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, config.AuthFile))
 	if err != nil || !strings.Contains(string(data), fakegithub.Token) {
 		t.Fatalf("auth.json %s %v", data, err)
+	}
+}
+
+func TestDeviceLoginNeedsAnApp(t *testing.T) {
+	t.Parallel()
+	c, _, _ := start(t, "", nil, WithLogin(config.NewLoginStore(t.TempDir()), ""))
+	var methods sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 1 || methods.Methods[0].Available || methods.Methods[0].Reason == "" {
+		t.Fatalf("methods %+v %v", methods, err)
+	}
+	if err := c.Call(sdk.MethodAuthBegin, nil, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
+		t.Fatalf("begin with no app: %v", err)
 	}
 }
 

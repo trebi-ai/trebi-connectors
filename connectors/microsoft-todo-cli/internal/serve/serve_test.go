@@ -103,8 +103,12 @@ func start(t *testing.T, hook bool, opts ...Option) *rig {
 	if _, err := r.conn.Initialize(p); err != nil {
 		t.Fatal(err)
 	}
+	var methods sdk.AuthMethodsResult
+	if err := r.conn.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 1 || methods.Methods[0].ID != LoginDevice || !methods.Methods[0].Available {
+		t.Fatalf("methods %+v %v", methods, err)
+	}
 	var res sdk.AuthBeginResult
-	if err := r.conn.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{}, &res); err != nil {
+	if err := r.conn.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: LoginDevice}, &res); err != nil {
 		t.Fatal(err)
 	}
 	if res.Step.Kind != sdk.StepDeviceCode || res.Step.Code == "" || res.Step.URL == "" {
@@ -196,8 +200,8 @@ func TestLoginNeedsAppID(t *testing.T) {
 	if _, err := conn.Initialize(sdk.InitializeParams{}); err != nil {
 		t.Fatal(err)
 	}
-	err = conn.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{}, nil)
-	if code(err) != sdk.CodePermanent || !strings.Contains(err.Error(), "no Microsoft app id") {
+	err = conn.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: LoginDevice}, nil)
+	if code(err) != sdk.CodeInvalid || !strings.Contains(err.Error(), "Microsoft app id") {
 		t.Fatalf("auth/begin: %v", err)
 	}
 }

@@ -1,4 +1,4 @@
 {"from":"daemon","msg":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"trebi-connector/1","daemon":{"version":"0.3.0"},"instance":{"key":"web@ws1","name":"web","workspace":"ws1"}}}}
-{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"web-cli","version":"test"},"events":[{"type":"entry"},{"type":"state.changed"}],"features":[],"limits":{},"login":[]}}}
+{"from":"adapter","msg":{"jsonrpc":"2.0","id":1,"result":{"protocol":"trebi-connector/1","adapter":{"name":"web-cli","version":"test"},"events":[{"type":"entry"},{"type":"state.changed"}],"features":[],"limits":{}}}}
 {"from":"daemon","msg":{"jsonrpc":"2.0","method":"initialized","params":{}}}
 {"from":"adapter","msg":{"jsonrpc":"2.0","method":"status","params":{"state":"connected"}}}

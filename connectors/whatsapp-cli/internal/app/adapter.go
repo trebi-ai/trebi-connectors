@@ -47,8 +47,11 @@ var (
 		sdk.FeatureAttachmentsIn, sdk.FeatureAttachmentsOut, sdk.FeatureReplies,
 	}
 	AdapterLimits = sdk.Limits{MaxText: 65536, Formats: []string{sdk.FormatText}}
-	AdapterLogin  = []string{sdk.StepQR}
 )
+
+// LoginQR is the one login method: link this computer as a device of the
+// phone. The manifest setup.login has the same id and type.
+const LoginQR = "qr"
 
 // Adapter serves the trebi-connector/1 protocol over one WhatsApp session.
 type Adapter struct {
@@ -77,7 +80,6 @@ func (d *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.
 		Events:   AdapterEvents,
 		Features: AdapterFeatures,
 		Limits:   AdapterLimits,
-		Login:    AdapterLogin,
 	}, nil
 }
 
@@ -99,11 +101,18 @@ func (d *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 	return sdk.AuthState{State: sdk.StateConnected, Account: d.account()}, nil
 }
 
-// BeginAuth links a new device with a QR code. Each new code is a step.
-func (d *Adapter) BeginAuth(ctx context.Context, kind string, steps sdk.StepSink) error {
-	if kind != "" && kind != sdk.StepQR {
-		return sdk.Invalid("the login kind must be qr")
+// LoginMethods has the QR link. It is not available while a phone is
+// linked.
+func (d *Adapter) LoginMethods(context.Context) ([]sdk.LoginMethod, error) {
+	m := sdk.LoginMethod{ID: LoginQR, Type: sdk.LoginPhone, Label: "Link your phone", Available: true}
+	if d.app.wa.IsAuthed() {
+		m.Available, m.Reason = false, "A phone is already linked. Log out first."
 	}
+	return []sdk.LoginMethod{m}, nil
+}
+
+// BeginAuth links a new device with a QR code. Each new code is a step.
+func (d *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
 	if d.app.wa.IsAuthed() {
 		return sdk.Invalid("the session is already logged in; log out first")
 	}
@@ -132,7 +141,7 @@ func (d *Adapter) BeginAuth(ctx context.Context, kind string, steps sdk.StepSink
 	return nil
 }
 
-func (d *Adapter) SubmitAuth(ctx context.Context, flowID string, fields map[string]string) error {
+func (d *Adapter) SubmitAuth(ctx context.Context, flowID string, fields map[string]sdk.Value) error {
 	return sdk.Invalid("the qr login takes no input")
 }
 

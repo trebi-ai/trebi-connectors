@@ -78,10 +78,14 @@ func live(id string, chat, sender types.JID, ts time.Time, msg *waE2E.Message) *
 func TestAdapterEvents(t *testing.T) {
 	f := fakewa.New()
 	c, res := startAdapter(t, f)
-	if res.Account == nil || res.Account.ID != "5511000000000@s.whatsapp.net" || len(res.Features) != 10 || res.Login[0] != "qr" {
+	if res.Account == nil || res.Account.ID != "5511000000000@s.whatsapp.net" || len(res.Features) != 10 {
 		t.Fatalf("initialize: %+v", res)
 	}
 	waitStatus(t, c, sdk.StateConnected)
+	var methods sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, sdk.Empty{}, &methods); err != nil || len(methods.Methods) != 1 || methods.Methods[0].Available {
+		t.Fatalf("methods of a linked phone: %+v %v", methods, err)
+	}
 
 	ts := time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
 	f.Emit(live("M1", peer, peer, ts, &waE2E.Message{Conversation: proto.String("Any news?")}))
@@ -215,8 +219,12 @@ func TestAdapterLogin(t *testing.T) {
 	}
 	waitStatus(t, c, sdk.StateAuthRequired)
 
+	var methods sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, sdk.Empty{}, &methods); err != nil || len(methods.Methods) != 1 || !methods.Methods[0].Available || methods.Methods[0].Type != sdk.LoginPhone {
+		t.Fatalf("methods: %+v %v", methods, err)
+	}
 	var begin sdk.AuthBeginResult
-	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Kind: "qr"}, &begin); err != nil {
+	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: LoginQR}, &begin); err != nil {
 		t.Fatal(err)
 	}
 	if begin.Step.Kind != "qr" || begin.Step.Data != "qr-code-1" || begin.Step.ExpiresAt == "" {

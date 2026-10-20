@@ -162,7 +162,6 @@ func (a *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.
 	res := sdk.InitializeResult{
 		Adapter: sdk.AdapterInfo{Name: Name, Version: a.version},
 		Events:  Events,
-		Login:   []string{sdk.StepDeviceCode},
 	}
 	if st, err := a.AuthStatus(ctx); err == nil {
 		res.Account = st.Account
@@ -189,14 +188,26 @@ func (a *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 	return sdk.AuthState{State: sdk.StateConnected, Account: &sdk.Account{ID: u.Login, Name: cmp.Or(u.Name, u.Login)}}, nil
 }
 
-// BeginAuth runs the device flow and saves the token.
-func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
+// LoginDevice is the adapter login method: the GitHub device flow. The
+// manifest setup.login has the same id and type.
+const LoginDevice = "device"
+
+// LoginMethods has the device flow. It is not available outside Trebi or
+// in a build with no OAuth app.
+func (a *Adapter) LoginMethods(context.Context) ([]sdk.LoginMethod, error) {
+	m := sdk.LoginMethod{ID: LoginDevice, Type: sdk.LoginBrowser, Label: "Sign in with GitHub", Available: true}
 	switch {
 	case a.login == nil:
-		return sdk.Permanent("Log in works only in Trebi. Use --token or GITHUB_TOKEN.")
+		m.Available, m.Reason = false, "Log in works only in Trebi. Use --token or GITHUB_TOKEN."
 	case a.clientID == "":
-		return sdk.Permanent("This build has no GitHub login. Add a personal access token to the connection.")
+		m.Available, m.Reason = false, "This build has no GitHub login. Paste a personal access token."
 	}
+	return []sdk.LoginMethod{m}, nil
+}
+
+// BeginAuth runs the device flow and saves the token. The SDK starts it
+// only when LoginMethods says it is available.
+func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
 	gh := a.gh()
 	dc, err := gh.StartDevice(ctx, a.clientID, Scope)
 	if err != nil {
@@ -242,7 +253,7 @@ func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) e
 }
 
 // SubmitAuth has no use: the device flow has no input step.
-func (a *Adapter) SubmitAuth(context.Context, string, map[string]string) error {
+func (a *Adapter) SubmitAuth(context.Context, string, map[string]sdk.Value) error {
 	return sdk.Invalid("the GitHub login has no input step")
 }
 

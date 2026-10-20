@@ -155,7 +155,6 @@ func (a *Adapter) Initialize(_ context.Context, in sdk.InitializeParams) (sdk.In
 	res := sdk.InitializeResult{
 		Adapter: sdk.AdapterInfo{Name: Name, Version: a.version},
 		Events:  []sdk.EventDecl{{Type: TypeTask}},
-		Login:   []string{sdk.StepDeviceCode},
 	}
 	res.Account = account(a.cl.Session())
 	return res, nil
@@ -240,11 +239,22 @@ func account(s client.Session) *sdk.Account {
 	return &sdk.Account{ID: s.AccountID, Name: s.AccountName}
 }
 
+// LoginDevice is the adapter login method: the Microsoft device code
+// login. The manifest setup.login has the same id and type.
+const LoginDevice = "device"
+
+// LoginMethods has the device code login. It is not available with no
+// Microsoft app id.
+func (a *Adapter) LoginMethods(context.Context) ([]sdk.LoginMethod, error) {
+	m := sdk.LoginMethod{ID: LoginDevice, Type: sdk.LoginBrowser, Label: "Sign in with Microsoft", Available: true}
+	if a.cl.ClientID == "" {
+		m.Available, m.Reason = false, "This build has no Microsoft app. Set the Microsoft app id of the connection."
+	}
+	return []sdk.LoginMethod{m}, nil
+}
+
 // BeginAuth runs the device code login and saves auth.json.
 func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
-	if a.cl.ClientID == "" {
-		return sdk.Permanent("no Microsoft app id: set the Microsoft app id of the connection")
-	}
 	dc, err := a.cl.BeginDeviceCode(ctx)
 	if err != nil {
 		return wireErr(err)
@@ -271,7 +281,7 @@ func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) e
 }
 
 // SubmitAuth is not used: the device code login has no input.
-func (a *Adapter) SubmitAuth(context.Context, string, map[string]string) error {
+func (a *Adapter) SubmitAuth(context.Context, string, map[string]sdk.Value) error {
 	return sdk.Invalid("the device code login has no input")
 }
 
