@@ -13,8 +13,8 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/output"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/output"
 )
 
 // HelperCommands returns hand-written leaves added to the method tree.

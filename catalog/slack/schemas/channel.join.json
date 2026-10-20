@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a channel join event.",
+  "required": [
+    "workspace",
+    "team_id",
+    "channel_id",
+    "event"
+  ],
+  "properties": {
+    "workspace": {
+      "type": "string",
+      "description": "The name of the workspace in the connection."
+    },
+    "team_id": {
+      "type": "string",
+      "description": "The Slack team id of the workspace."
+    },
+    "team_name": {
+      "type": "string",
+      "description": "The name of the Slack team."
+    },
+    "channel_id": {
+      "type": "string",
+      "description": "The Slack id of the channel, the direct message, or the group."
+    },
+    "event": {
+      "type": "object",
+      "description": "The Slack event as Slack sends it."
+    }
+  }
+}

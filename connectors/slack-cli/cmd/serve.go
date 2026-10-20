@@ -14,10 +14,10 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/fakeslack"
-	"github.com/flarco/cli-tools/slack-cli/internal/serve"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/fakeslack"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/serve"
 )
 
 // EnvWorkspaces is the connection input that selects the workspaces.
@@ -46,10 +46,9 @@ Trebi conformance check. It reads and writes no Slack config.`,
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			a := FromCmd(c)
-			t, _ := sdk.FromEnv()
-			cacheDir := t.CacheDir
-			if cacheDir == "" && !c.Bool("sandbox") {
-				cacheDir, _ = config.Dir()
+			cacheDir := config.CacheDir()
+			if c.Bool("sandbox") && !config.Trebi() {
+				cacheDir = ""
 			}
 			cfg, list := a.Config, c.String("workspaces")
 			var fake *fakeslack.Server
@@ -61,7 +60,7 @@ Trebi conformance check. It reads and writes no Slack config.`,
 			names, missing := cfg.Pick(list)
 			var problems []string
 			if len(missing) > 0 {
-				problems = append(problems, "no Slack workspace "+strings.Join(missing, ", ")+" on this computer; run `slack-cli auth import`")
+				problems = append(problems, "no Slack login for the workspace "+strings.Join(missing, ", ")+"; "+config.LoginHint())
 			}
 			var teams []*serve.Team
 			refresh := &sessionRefresher{cfg: cfg}
@@ -85,7 +84,7 @@ Trebi conformance check. It reads and writes no Slack config.`,
 				teams = append(teams, team)
 			}
 			if len(names) == 0 && len(missing) == 0 {
-				problems = append(problems, "no Slack workspace on this computer; run `slack-cli auth import`")
+				problems = append(problems, "no Slack login; "+config.LoginHint())
 			}
 			return sdk.Serve(ctx, serve.New(version, teams, strings.Join(problems, "; ")))
 		},

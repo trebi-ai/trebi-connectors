@@ -10,7 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
 )
 
 // WSSource streams events over Slack's internal client WebSocket, the one the

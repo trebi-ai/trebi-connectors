@@ -11,9 +11,9 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/output"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/output"
 )
 
 // AppContext is the resolved config, output settings, and a lazily built client.
@@ -102,8 +102,7 @@ func (a *AppContext) Directory() (*client.Directory, error) {
 		return nil, err
 	}
 	name, _, _ := a.Workspace()
-	dir, _ := config.Dir()
-	a.dir = client.NewDirectory(cl, dir, name)
+	a.dir = client.NewDirectory(cl, config.CacheDir(), name)
 	return a.dir, nil
 }
 

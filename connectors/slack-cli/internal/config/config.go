@@ -1,7 +1,11 @@
-// Package config loads and saves the slack-cli config file.
+// Package config loads and saves the slack-cli config file. It is the only
+// code that picks between the two modes. In Trebi mode (TREBI_STATE_DIR is
+// set) the config file is in the state folder, and the home folder and
+// SLACK_CLI_CONFIG are not read.
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -11,7 +15,30 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
+
+var (
+	// ErrTrebiSets is a flag that selects a store or a credential in Trebi mode.
+	ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
+	// ErrSetInTrebi is a command that saves a setting in Trebi mode.
+	ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
+)
+
+// Trebi reports whether the program runs in Trebi mode.
+func Trebi() bool {
+	_, ok := sdk.FromEnv()
+	return ok
+}
+
+// LoginHint tells the user how to add a workspace or log in again.
+func LoginHint() string {
+	if Trebi() {
+		return "log in to Slack in Trebi"
+	}
+	return "run `slack-cli auth import` on this computer"
+}
 
 // Token sources.
 const (
@@ -65,8 +92,12 @@ func TokenKind(t string) string {
 	return ""
 }
 
-// Dir returns ~/.cli-tools/slack-cli.
+// Dir returns the config folder: the state folder in Trebi mode, else
+// ~/.cli-tools/slack-cli.
 func Dir() (string, error) {
+	if t, ok := sdk.FromEnv(); ok {
+		return t.StateDir, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -74,9 +105,23 @@ func Dir() (string, error) {
 	return filepath.Join(home, ".cli-tools", "slack-cli"), nil
 }
 
-// Path returns the config file path. SLACK_CLI_CONFIG overrides it.
+// CacheDir returns the folder of the name caches: TREBI_CACHE_DIR (else the
+// state folder) in Trebi mode, else the config folder.
+func CacheDir() string {
+	if t, ok := sdk.FromEnv(); ok {
+		if t.CacheDir != "" {
+			return t.CacheDir
+		}
+		return t.StateDir
+	}
+	d, _ := Dir() //nolint:errcheck // an empty folder turns the cache off
+	return d
+}
+
+// Path returns the config file path. SLACK_CLI_CONFIG overrides it outside
+// Trebi mode.
 func Path() (string, error) {
-	if p := os.Getenv("SLACK_CLI_CONFIG"); p != "" {
+	if p := os.Getenv("SLACK_CLI_CONFIG"); p != "" && !Trebi() {
 		return p, nil
 	}
 	d, err := Dir()
@@ -110,7 +155,7 @@ func Load() (*Config, error) {
 // File returns the config file path.
 func (c *Config) File() string { return c.path }
 
-// Save writes the config with mode 0600.
+// Save writes the config with mode 0600 through a temp file and a rename.
 func (c *Config) Save() error {
 	if c.path == "" {
 		p, err := Path()
@@ -122,16 +167,11 @@ func (c *Config) Save() error {
 	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(c.path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(c); err != nil {
 		return err
 	}
-	defer f.Close()
-	// O_CREATE does not change the mode of a file that exists.
-	if err := f.Chmod(0o600); err != nil {
-		return err
-	}
-	return toml.NewEncoder(f).Encode(c)
+	return sdk.WriteFileAtomic(c.path, buf.Bytes(), 0o600)
 }
 
 // Names returns the workspace names in order.
@@ -201,6 +241,9 @@ func (c *Config) Select(key string) (string, Workspace, error) {
 	if key == "" {
 		switch len(c.Workspaces) {
 		case 0:
+			if Trebi() {
+				return "", Workspace{}, errors.New("no Slack login in this connection: " + LoginHint())
+			}
 			return "", Workspace{}, errors.New("no workspace configured: run `slack-cli auth import` (Slack desktop app) or `slack-cli auth add`")
 		case 1:
 			n := c.Names()[0]

@@ -1,6 +1,6 @@
 # connectors
 
-The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
+The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. `slack-cli` reads Slack: it sends events and has read-only operations, but it does not send messages. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
 
 | CLI | Module | Catalog entry |
 |---|---|---|
@@ -14,6 +14,7 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 | `web-cli` | `github.com/trebi-ai/trebi-connectors/connectors/web-cli` | `catalog/web` |
 | `host-cli` | `github.com/trebi-ai/trebi-connectors/connectors/host-cli` | `catalog/host` |
 | `axiom-cli` | `github.com/trebi-ai/trebi-connectors/connectors/axiom-cli` | `catalog/axiom` |
+| `slack-cli` | `github.com/trebi-ai/trebi-connectors/connectors/slack-cli` | `catalog/slack` |
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
@@ -54,6 +55,18 @@ Warning: whatsapp-cli uses the WhatsApp Web protocol. WhatsApp can ban an accoun
 - `replay` covers messages only, not reactions. It reads the channels and the active threads that had activity after the cursor. It reads a DM only when the DM is known: a bot cannot list its DMs, so the adapter keeps each DM that it sees in its state.
 - `rooms.list` lists the guild text and announcement channels and the known DMs.
 - Outbound attachments are at most 25 MiB each.
+
+## slack-cli
+
+- Login: the Slack workspaces are in `config.toml` in the state folder. A later change adds the login steps. With no workspace, the status is `auth_required` with reason `logged_out`.
+- The input `SLACK_WORKSPACES` selects the workspaces: names, team ids, or domains, separated by commas. `all` selects every workspace.
+- Events: `message`, `mention`, `message.edited`, `message.deleted`, `reaction`, `channel.join`. A message that names you is a `message` and a `mention`. The message id is `<team>/<channel>/<ts>`, and the room id is `<team>/<channel>`.
+- Features: none. The connector does not send messages.
+- Operations: `search` and `history`, as `slack-op <name>` with a JSON input on stdin. `slack-op` is a copy of `slack-cli` that `scripts/build.sh` writes next to the program, because an operation program must not also be a run command.
+- A session token can expire. `serve` makes a new one from the cookie and saves it in the state folder. A CLI command in a job does not write the state.
+- `serve --sandbox` runs the adapter over `internal/fakeslack`, a fake Web API and socket in the same process.
+
+Warning: slack-cli uses the session of the Slack app on this computer. Slack does not support this officially.
 
 ## Connectors that watch things
 
@@ -103,6 +116,7 @@ cd connectors/discord-cli && go test ./...
 cd connectors/whatsapp-cli && CGO_ENABLED=1 go test -tags sqlite_fts5 ./...
 cd connectors/github-cli && go test -race ./...
 cd connectors/mailbox && go test -race ./...
+cd connectors/slack-cli && go test -race ./...
 ```
 
 ## Release

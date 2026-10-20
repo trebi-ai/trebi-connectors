@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
 )
 
 func newTestClient(t *testing.T, w config.Workspace, h http.HandlerFunc) *Client {

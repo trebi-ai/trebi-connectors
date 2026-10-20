@@ -13,9 +13,9 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/listen"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/listen"
 )
 
 // Name is the adapter name in initialize.
@@ -237,7 +237,7 @@ func (a *Adapter) authResult(e sdk.Emitter, t *Team, err error) {
 	}
 	st := sdk.Status{State: after.State, Reason: after.Reason, Account: after.Account}
 	if bad {
-		st.Message = fmt.Sprintf("Slack rejects the login of %s; run `slack-cli auth import` on this computer", cmpOr(t.Title, t.Workspace))
+		st.Message = fmt.Sprintf("Slack rejects the login of %s; %s", cmpOr(t.Title, t.Workspace), config.LoginHint())
 	}
 	if serr := e.Status(st); serr != nil {
 		slog.Warn("status", "err", serr)

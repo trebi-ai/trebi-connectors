@@ -11,13 +11,13 @@ events as JSON lines. `slack-cli serve` connects the workspaces to Trebi.
 ## Install
 
 ```bash
-bash scripts/build.sh        # builds ./build/slack-cli
+scripts/build.sh [version] [output]   # builds ./build/slack-cli and ./build/slack-op
 ```
 
-Or build the whole monorepo and register the binaries:
+Or install it from source:
 
 ```bash
-../build.sh                  # from the repo root
+go install github.com/trebi-ai/trebi-connectors/connectors/slack-cli@latest
 ```
 
 ## Quick start
@@ -183,23 +183,16 @@ Each normalized line has `workspace`, `team_id`, `type`, `subtype`, `channel`,
 
 ## Trebi connector
 
-`slack-cli serve` is a [Trebi](https://trebi.ai) connector. It speaks the
-trebi-connector/1 protocol on stdin and stdout, and writes logs to stderr. It
-sends these events: `message`, `mention`, `message.edited`, `message.deleted`,
-`reaction`, and `channel.join`. It does not send messages.
+`slack-cli serve` is a [Trebi](https://trebi.ai) connector. It speaks the trebi-connector/1 protocol on stdin and stdout, and writes logs to stderr. It sends these events: `message`, `mention`, `message.edited`, `message.deleted`, `reaction`, and `channel.join`. It does not send messages. The catalog entry is `catalog/slack` in this repository. Its skill is `catalog/slack/skill/SKILL.md`.
 
-`SLACK_WORKSPACES` (or `--workspaces`) selects the workspaces: a
-comma-separated list of names, team ids, or domains. `all` selects every
-workspace. An empty value selects the default workspace. Each workspace needs a
-session token (`auth import`) or an app token.
+`SLACK_WORKSPACES` (or `--workspaces`) selects the workspaces: a comma-separated list of names, team ids, or domains. `all` selects every workspace. An empty value selects the default workspace. Each workspace needs a session token or an app token.
 
 ```bash
-SLACK_WORKSPACES=big-time-data,nanit slack-cli serve
+SLACK_WORKSPACES=acme,beta slack-cli serve
 slack-cli serve --sandbox    # a fake Slack in the process, for conformance checks
 ```
 
-Two read-only operations read one JSON object on stdin and write one JSON
-object. The messages have the same shape as the events:
+Two read-only operations read one JSON object on stdin and write one JSON object. The messages have the same shape as the events:
 
 ```bash
 echo '{"query":"deploy in:#ops","limit":10}' | slack-cli op search
@@ -207,13 +200,23 @@ echo '{"room":"#general","limit":20}' | slack-cli op history
 echo '{"room":"T0123/C0456","thread":"1767225600.000100"}' | slack-cli op history
 ```
 
-`scripts/build.sh` also makes `build/slack-op`, a link to `slack-cli`:
-`slack-op search` is `slack-cli op search`. The operations use it, because Trebi
-does not let an operation binary also be a run command.
+`scripts/build.sh` also writes `slack-op`, a copy of `slack-cli`, next to the program. `slack-op search` is `slack-cli op search`. The operations use it, because Trebi does not let an operation program also be a run command. It is a copy and not a link, because Trebi installs only the regular files of an archive.
 
-`trebi/trebi-connection.yaml` is the connection for this computer
-(`from: inline`). Add it with
-`trebi connector apply --file trebi/trebi-connection.yaml`.
+### Use on its own
+
+With no `TREBI_STATE_DIR` in the env, `slack-cli` is a normal CLI. It keeps the workspaces in `~/.cli-tools/slack-cli/config.toml`, or in the file that `SLACK_CLI_CONFIG` names. `auth import`, `auth slk`, and `auth add` add workspaces. The name caches are in the same folder.
+
+### Use with Trebi
+
+Trebi starts `slack-cli serve` with `TREBI_STATE_DIR` set. This is Trebi mode. The Trebi values win over everything:
+
+- The workspaces are in `config.toml` in `TREBI_STATE_DIR`. The CLI does not read `~/.cli-tools/slack-cli` or `SLACK_CLI_CONFIG`.
+- `auth import`, `auth slk`, `auth add`, `auth use`, and `auth remove` fail with "Set this value in Trebi".
+- The name caches are in `TREBI_CACHE_DIR`, or in the state folder when that variable is not set.
+- `serve` is the one writer of the state folder. It saves a new session token there when the old one expires. A CLI command in a job reads the state and does not write it.
+- With no workspace in the state, `serve` starts and sends `status` `auth_required` with the message "log in to Slack in Trebi".
+
+The rules for all connector programs are in "Adapter folder contract" in `../../CLAUDE.md`.
 
 ## Output
 
@@ -227,10 +230,8 @@ go test ./...
 ```
 
 Tests use an `httptest` server and local crypto; they make no live Slack calls.
-The Trebi conformance check runs `slack-cli serve --sandbox`:
+The Trebi conformance check runs `slack-cli serve --sandbox`. Run it from the root of the repository:
 
 ```bash
-dir=$(mktemp -d) && mkdir "$dir/skill" && cp SKILL.md "$dir/skill/"
-sed -n '/^manifest:/,$p' trebi/trebi-connection.yaml | tail -n +2 | sed 's/^  //' > "$dir/trebi-connector.yaml"
-trebi connector conformance --manifest "$dir"
+scripts/validate.sh --conformance slack
 ```

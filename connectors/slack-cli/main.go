@@ -9,9 +9,9 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
-	"github.com/flarco/cli-tools/slack-cli/cmd"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/spec"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/cmd"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/spec"
 )
 
 var version = "dev"

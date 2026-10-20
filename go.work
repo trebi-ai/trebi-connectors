@@ -12,6 +12,7 @@ use (
 	./connectors/web-cli
 	./connectors/host-cli
 	./connectors/axiom-cli
+	./connectors/slack-cli
 )
 
 // The CLIs build against the SDK in this commit, also before its tag

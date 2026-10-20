@@ -11,9 +11,9 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/output"
-	"github.com/flarco/cli-tools/slack-cli/internal/spec"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/output"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/spec"
 )
 
 // reserved holds flag names used by the root or by every method command.

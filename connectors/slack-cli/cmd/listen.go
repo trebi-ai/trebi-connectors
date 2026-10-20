@@ -10,9 +10,9 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/listen"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/listen"
 )
 
 // ListenCommand streams live events as JSON lines.
@@ -111,8 +111,7 @@ func listenWorkspaces(a *AppContext, all bool) ([]string, error) {
 func buildSource(ctx context.Context, a *AppContext, name string, w config.Workspace, c *cli.Command) (listen.Source, error) {
 	cl := client.New(w)
 	cl.Verbose = a.Verbose
-	dir, _ := config.Dir()
-	directory := client.NewDirectory(cl, dir, name)
+	directory := client.NewDirectory(cl, config.CacheDir(), name)
 
 	filter, channels, err := buildFilter(ctx, a, w, directory, c)
 	if err != nil {

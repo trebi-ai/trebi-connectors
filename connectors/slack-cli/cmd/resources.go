@@ -5,7 +5,7 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/spec"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/spec"
 )
 
 // nounAliases are short names for the top-level groups.

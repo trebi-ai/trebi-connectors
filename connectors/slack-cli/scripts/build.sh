@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BUILD_DIR="${ROOT_DIR}/build"
-OUTPUT="${BUILD_DIR}/slack-cli"
+# Build slack-cli for the host platform.
+# Usage: scripts/build.sh [version] [output]
+#   version — embedded as -X main.version=<version>; default "dev"
+#   output  — the program path; default build/slack-cli
+# The catalog workflow runs this on one runner for each platform.
+# It also writes slack-op next to the program. The Trebi operations run as
+# slack-op <name>, because an operation program must not also be a run
+# command. It is a copy, not a link: Trebi installs only regular files.
 
-VERSION="${SLACK_CLI_VERSION:-$(git -C "${ROOT_DIR}" describe --tags --always --dirty 2>/dev/null || echo dev)}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="${1:-dev}"
+OUTPUT="${2:-${ROOT_DIR}/build/slack-cli}"
+case "${OUTPUT}" in /*) ;; *) OUTPUT="${PWD}/${OUTPUT}" ;; esac
 
-mkdir -p "${BUILD_DIR}"
-
+mkdir -p "$(dirname "${OUTPUT}")"
 cd "${ROOT_DIR}"
 echo "Building slack-cli ${VERSION} → ${OUTPUT}"
-go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "${OUTPUT}" .
-# The Trebi operations run as slack-op <name>.
-ln -sf slack-cli "${BUILD_DIR}/slack-op"
-echo "Done."
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "${OUTPUT}" .
+rm -f "$(dirname "${OUTPUT}")/slack-op"
+cp "${OUTPUT}" "$(dirname "${OUTPUT}")/slack-op"

@@ -193,7 +193,9 @@ jobs:
             work/${{ matrix.bin }} --version | grep -F "${{ matrix.version }}"
           fi
           mkdir -p "out/${{ matrix.name }}"
-          tar -czf "out/${{ matrix.name }}/${{ matrix.bin }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" -C work "${{ matrix.bin }}"
+          # build.sh can write helper programs next to the program, such as
+          # slack-op. The archive holds each file in work/.
+          (cd work && tar -czf "../out/${{ matrix.name }}/${{ matrix.bin }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" *)
       - uses: actions/upload-artifact@v4
         with:
           name: bin-${{ matrix.name }}-${{ matrix.os }}-${{ matrix.arch }}

@@ -9,7 +9,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
 )
 
 // SocketSource streams Events API payloads over Socket Mode. It needs an

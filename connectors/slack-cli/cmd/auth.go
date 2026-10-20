@@ -13,10 +13,10 @@ import (
 	cli "github.com/urfave/cli/v3"
 	"golang.org/x/term"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/localauth"
-	"github.com/flarco/cli-tools/slack-cli/internal/output"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/localauth"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/output"
 )
 
 // AuthCommand returns the `auth` command tree.
@@ -25,6 +25,8 @@ func AuthCommand() *cli.Command {
 		Name:  "auth",
 		Usage: "Manage Slack workspace credentials",
 		Description: `slack-cli keeps one or more workspaces in ~/.cli-tools/slack-cli/config.toml (mode 0600).
+With TREBI_STATE_DIR set, the file is in that folder, Trebi sets the
+workspaces, and import, slk, add, use, and remove fail.
 
 Get credentials in one of these ways:
   auth import   Read the signed-in workspaces from the Slack desktop app.
@@ -34,16 +36,29 @@ Get credentials in one of these ways:
 Pick a default with "auth use <name>". Override per call with --workspace/-w.
 A -w value matches a workspace name, team id, domain, or team name.`,
 		Commands: []*cli.Command{
-			authImportCommand(),
-			authSlkCommand(),
-			authAddCommand(),
+			savesSetting(authImportCommand()),
+			savesSetting(authSlkCommand()),
+			savesSetting(authAddCommand()),
 			authListCommand(),
-			authUseCommand(),
-			authRemoveCommand(),
+			savesSetting(authUseCommand()),
+			savesSetting(authRemoveCommand()),
 			authTestCommand(),
 			authShowCommand(),
 		},
 	}
+}
+
+// savesSetting makes a command that writes the config fail in Trebi mode:
+// the workspaces come from the connection.
+func savesSetting(c *cli.Command) *cli.Command {
+	action := c.Action
+	c.Action = func(ctx context.Context, c *cli.Command) error {
+		if config.Trebi() {
+			return config.ErrSetInTrebi
+		}
+		return action(ctx, c)
+	}
+	return c
 }
 
 // mintToken gets a fresh xoxc- token from a workspace web page with its cookie.
@@ -303,7 +318,7 @@ func authListCommand() *cli.Command {
 				rows = append(rows, []string{mark, n, w.TeamName, w.TeamID, w.Kind(), w.Source})
 			}
 			if len(rows) == 0 {
-				fmt.Fprintln(a.Out(c), "(no workspaces — run `slack-cli auth import`)")
+				fmt.Fprintln(a.Out(c), "(no workspaces — "+config.LoginHint()+")")
 				return nil
 			}
 			return output.Table(a.Out(c), []string{"", "NAME", "TEAM", "TEAM_ID", "KIND", "SOURCE"}, rows)

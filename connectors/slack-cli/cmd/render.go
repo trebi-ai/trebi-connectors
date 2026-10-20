@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/flarco/cli-tools/slack-cli/internal/client"
-	"github.com/flarco/cli-tools/slack-cli/internal/config"
-	"github.com/flarco/cli-tools/slack-cli/internal/output"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/client"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/output"
 )
 
 // renderTable renders a response body as a table, picking the list field
@@ -84,6 +84,9 @@ func (a *AppContext) refreshSession(ctx context.Context, name string, w config.W
 	w.Token = token
 	a.Config.Set(name, w)
 	a.ws = w
+	if config.Trebi() {
+		return w, nil // serve is the one writer of the state folder
+	}
 	if err := a.Config.Save(); err != nil {
 		return config.Workspace{}, err
 	}

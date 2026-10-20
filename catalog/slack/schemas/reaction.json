@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a reaction event.",
+  "required": [
+    "workspace",
+    "team_id",
+    "channel_id",
+    "event",
+    "ts",
+    "emoji",
+    "message_id"
+  ],
+  "properties": {
+    "workspace": {
+      "type": "string",
+      "description": "The name of the workspace in the connection."
+    },
+    "team_id": {
+      "type": "string",
+      "description": "The Slack team id of the workspace."
+    },
+    "team_name": {
+      "type": "string",
+      "description": "The name of the Slack team."
+    },
+    "channel_id": {
+      "type": "string",
+      "description": "The Slack id of the channel, the direct message, or the group."
+    },
+    "ts": {
+      "type": "string",
+      "description": "The Slack ts of the message. The message id is <team>/<channel>/<ts>."
+    },
+    "event": {
+      "type": "object",
+      "description": "The Slack event as Slack sends it."
+    },
+    "emoji": {
+      "type": "string",
+      "description": "The name of the emoji of the reaction, with no colons."
+    },
+    "message_id": {
+      "type": "string",
+      "description": "The message that got the reaction."
+    },
+    "item_user": {
+      "type": "string",
+      "description": "The Slack user id of the author of the message that got the reaction."
+    },
+    "message_text": {
+      "type": "string",
+      "description": "The text of the message that got the reaction, when Slack returns it."
+    }
+  }
+}

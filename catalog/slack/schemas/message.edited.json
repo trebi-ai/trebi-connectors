@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a Slack message edit.",
+  "required": [
+    "workspace",
+    "team_id",
+    "channel_id",
+    "event",
+    "ts",
+    "previous_text"
+  ],
+  "properties": {
+    "workspace": {
+      "type": "string",
+      "description": "The name of the workspace in the connection."
+    },
+    "team_id": {
+      "type": "string",
+      "description": "The Slack team id of the workspace."
+    },
+    "team_name": {
+      "type": "string",
+      "description": "The name of the Slack team."
+    },
+    "channel_id": {
+      "type": "string",
+      "description": "The Slack id of the channel, the direct message, or the group."
+    },
+    "ts": {
+      "type": "string",
+      "description": "The Slack ts of the message. The message id is <team>/<channel>/<ts>."
+    },
+    "event": {
+      "type": "object",
+      "description": "The Slack event as Slack sends it."
+    },
+    "previous_text": {
+      "type": "string",
+      "description": "The text of the message before the change."
+    }
+  }
+}
