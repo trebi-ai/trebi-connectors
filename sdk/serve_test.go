@@ -36,6 +36,7 @@ type flowAdapter struct {
 	synced   []sdk.SubscriptionState
 	submit   sdk.SubscriptionState
 	hook     sdk.Event
+	fail     error // BeginAuth returns it after the steps
 
 	mu    sync.Mutex
 	sends int
@@ -81,6 +82,9 @@ func (a *flowAdapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSin
 				return ctx.Err()
 			}
 		}
+	}
+	if a.fail != nil {
+		return a.fail
 	}
 	a.mu.Lock()
 	a.loggedIn = true
@@ -776,6 +780,42 @@ func TestSlowSendBlocksOnlyItsRoom(t *testing.T) {
 	close(a.release)
 	if m := next(); string(m.ID) != "1" || m.Error != nil {
 		t.Fatalf("answer %+v", m)
+	}
+}
+
+// A failed second login gives the adapter error and keeps the status of
+// the accounts that still run.
+func TestLoginFailKeepsStatus(t *testing.T) {
+	t.Parallel()
+	c := sdktest.Start(&flowAdapter{
+		methods:  []sdk.LoginMethod{{ID: "token", Type: sdk.LoginKey, Available: true}},
+		steps:    []sdk.Step{{Kind: sdk.StepWait, Message: "Checking"}},
+		account:  &sdk.Account{Name: "Ocral"},
+		loggedIn: true,
+		fail:     errors.New("Slack did not accept the token."),
+	})
+	defer c.Close() //nolint:errcheck // the test checks the calls
+	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.WaitNote(sdk.MethodStatus); err != nil { // the status at start
+		t.Fatal(err)
+	}
+	if d, err := c.LogIn("token"); err == nil || d.OK || d.Error != "Slack did not accept the token." {
+		t.Fatalf("login = %+v %v, want the adapter error", d, err)
+	}
+	var st sdk.Status
+	for st.State == "" || st.State == sdk.StateAuthPending {
+		m, err := c.WaitNote(sdk.MethodStatus)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(m.Params, &st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st.State != sdk.StateConnected || st.Account == nil || st.Account.Name != "Ocral" {
+		t.Fatalf("status after a failed login = %+v", st)
 	}
 }
 

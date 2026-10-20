@@ -877,6 +877,7 @@ func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, method strin
 	s.flows[f.id] = f
 	s.mu.Unlock()
 	err := a.BeginAuth(fctx, method, &stepSink{s: s, f: f, ctx: fctx})
+	canceled := fctx.Err() != nil
 	cancel()
 	f.submit.Lock()
 	f.submit.Unlock() //nolint:staticcheck // waits for the reply of a running auth/submit
@@ -900,12 +901,15 @@ func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, method strin
 		return
 	}
 	msg := err.Error()
-	if fctx.Err() != nil {
+	if canceled {
 		msg = "The login was canceled."
 	}
 	s.notify(MethodAuthDone, AuthDoneParams{FlowID: f.id, OK: false, Error: msg})
 	if !superseded {
-		s.notify(MethodStatus, Status{State: StateAuthRequired, Reason: ReasonNone})
+		ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodAuthStatus))
+		st := s.status(ctx)
+		cancel()
+		s.notify(MethodStatus, st)
 	}
 }
 
