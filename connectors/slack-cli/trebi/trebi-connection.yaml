@@ -1,0 +1,73 @@
+# Trebi connection for the Slack workspaces of this computer. It uses the
+# session tokens of `slack-cli auth import`. Apply it with
+# `trebi connector apply --file slack-cli/trebi/trebi-connection.yaml`.
+type: slack
+slug: slack
+title: Slack
+from: inline
+inputs:
+  SLACK_WORKSPACES: big-time-data
+manifest:
+  schema: trebi-connector/1
+  name: slack
+  title: Slack
+  description: "Messages, mentions, and reactions from your Slack workspaces. Search and read the history."
+  version: 0.1.1
+  source: github.com/flarco/cli-tools/slack-cli
+  setup:
+    inputs:
+      - name: SLACK_WORKSPACES
+        label: Workspaces
+        help: "The workspaces to follow, separated by commas. Type all to follow every workspace on this computer."
+        default: big-time-data
+  actions:
+    cli: {commands: [slack-cli]}
+    operations:
+      # slack-op is a link to slack-cli: Trebi does not let an operation
+      # binary also be a run command.
+      - name: search
+        label: Search messages
+        description: "Find messages with the Slack search words, such as in:#channel, from:@name, or after:2026-01-31. The newest message comes first."
+        readonly: true
+        default: on
+        command: [slack-op, search]
+        stdin: json
+        output: json
+        timeout: 30s
+        input:
+          type: object
+          properties:
+            query: {type: string, maxLength: 500, description: The words to find. Slack search words such as in:#channel and from:@name also work.}
+            workspace: {type: string, maxLength: 100, description: "The workspace. The default is the first of the connection workspaces."}
+            limit: {type: integer, minimum: 1, maximum: 100, description: The maximum number of messages. The default is 20.}
+          required: [query]
+      - name: history
+        label: Read a channel
+        description: "Read the messages of a channel, a direct message, or a thread. The oldest message comes first."
+        readonly: true
+        default: on
+        command: [slack-op, history]
+        stdin: json
+        output: json
+        timeout: 30s
+        input:
+          type: object
+          properties:
+            room: {type: string, maxLength: 200, description: "The room id of an event (team/channel), a channel id, or a #name."}
+            thread: {type: string, maxLength: 50, description: The thread id of an event. It reads the replies of that thread.}
+            before: {type: string, maxLength: 50, description: "Read only the messages before this time (a Slack ts). Use the next value of the last result to read older messages."}
+            after: {type: string, maxLength: 50, description: Read only the messages after this time (a Slack ts).}
+            limit: {type: integer, minimum: 1, maximum: 200, description: The maximum number of messages. The default is 50.}
+            workspace: {type: string, maxLength: 100, description: "The workspace when the room is a #name or a channel id."}
+          required: [room]
+  events:
+    protocol: trebi-connector/1
+    command: slack-cli serve
+    restart: always
+    types:
+      - {type: message, description: "A new message in a channel, a direct message, or a group"}
+      - {type: mention, description: A message that names you}
+      - {type: message.edited, description: A person changed the text of a message}
+      - {type: message.deleted, description: A person deleted a message}
+      - {type: reaction, description: A reaction on a message}
+      - {type: channel.join, description: A person joined a channel}
