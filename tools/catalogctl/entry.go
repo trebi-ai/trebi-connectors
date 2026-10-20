@@ -45,7 +45,8 @@ type Manifest struct {
 	Platforms   []string `yaml:"platforms"`
 	Install     *Install `yaml:"install"`
 	Setup       *struct {
-		Login []string `yaml:"login"`
+		Inputs []Input       `yaml:"inputs"`
+		Login  []LoginMethod `yaml:"login"`
 	} `yaml:"setup"`
 	Skill *struct {
 		Path string `yaml:"path"`
@@ -85,6 +86,21 @@ type GitHubRelease struct {
 	Checksums string `yaml:"checksums"`
 }
 
+// Input is one setup.inputs entry.
+type Input struct {
+	Name   string `yaml:"name"`
+	Secret bool   `yaml:"secret"`
+}
+
+// LoginMethod is one setup.login entry. A method with an input belongs to
+// the daemon; the adapter owns the others.
+type LoginMethod struct {
+	ID    string `yaml:"id"`
+	Type  string `yaml:"type"`
+	Input string `yaml:"input"`
+	Test  string `yaml:"test"`
+}
+
 // Capabilities lists the blocks the manifest has.
 func (m Manifest) Capabilities() []string {
 	out := []string{}
@@ -109,6 +125,38 @@ func (m Manifest) Protocol() string {
 		return "lines"
 	}
 	return m.Events.Protocol
+}
+
+// checkLogin checks the rules of setup.login that the schema cannot hold:
+// unique ids, input only on a key method and only for a secret input, test
+// only with input, and a protocol connector for an adapter method.
+func (m Manifest) checkLogin(add func(string, ...any)) {
+	if m.Setup == nil {
+		return
+	}
+	ids := map[string]bool{}
+	for i, l := range m.Setup.Login {
+		field := fmt.Sprintf("setup.login[%d]", i)
+		if ids[l.ID] {
+			add("%s.id: duplicate %s", field, l.ID)
+		}
+		ids[l.ID] = true
+		if l.Input == "" {
+			if l.Test != "" {
+				add("%s.test: is allowed only with input", field)
+			}
+			if m.Protocol() != ProtocolConnector {
+				add("%s: a method with no input needs events.protocol: %s", field, ProtocolConnector)
+			}
+			continue
+		}
+		if l.Type != "key" {
+			add("%s.input: is allowed only with type: key", field)
+		}
+		if !slices.ContainsFunc(m.Setup.Inputs, func(in Input) bool { return in.Name == l.Input && in.Secret }) {
+			add("%s.input: must name a secret input of setup.inputs", field)
+		}
+	}
 }
 
 // CatalogBin returns the program that the catalog builds and hosts, or ""
@@ -213,9 +261,7 @@ func (e *Entry) Validate(schema *jsonschema.Resolved) []error {
 			}
 		}
 	}
-	if m.Setup != nil && len(m.Setup.Login) > 0 && m.Protocol() != ProtocolConnector {
-		add("setup.login needs events.protocol: %s", ProtocolConnector)
-	}
+	m.checkLogin(add)
 	if m.Channel != nil && m.Protocol() != ProtocolConnector {
 		add("channel needs events.protocol: %s", ProtocolConnector)
 	}

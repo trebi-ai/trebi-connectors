@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: microsoft-todo
 title: Microsoft To Do
 description: "Start work when a task changes in a Microsoft To Do list. Read and change lists, tasks, steps, links, files, and extensions."
-version: 0.2.1
+version: 0.3.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,7 +12,8 @@ install:
   bin: microsoft-todo-cli
   version_command: microsoft-todo-cli --version
 setup:
-  login: [device_code]
+  login:
+    - {id: device, type: browser, label: Sign in with Microsoft}
   inputs:
     - name: MICROSOFT_TODO_CLIENT_ID
       label: "Microsoft app id"

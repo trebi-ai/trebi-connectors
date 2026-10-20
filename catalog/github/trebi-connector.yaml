@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: github
 title: GitHub
 description: "Start work when something happens in a GitHub repository, and read repositories, events, and webhooks."
-version: 0.1.1
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,11 +12,13 @@ install:
   bin: github-cli
   version_command: github-cli --version
 setup:
-  login: [device_code]
+  login:
+    - {id: device, type: browser, label: Sign in with GitHub}
+    - {id: token, type: key, label: Paste a token, input: GITHUB_TOKEN}
   inputs:
     - name: GITHUB_TOKEN
       label: Personal access token
-      help: "Optional. Use it in place of Log in. Make a fine-grained token with the permissions Webhooks: read and write, and Contents: read."
+      help: "Make a fine-grained token with the permissions Webhooks: read and write, and Contents: read."
       url: https://github.com/settings/personal-access-tokens/new
       secret: true
 actions:

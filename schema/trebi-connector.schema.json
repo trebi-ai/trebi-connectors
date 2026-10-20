@@ -83,7 +83,19 @@
         },
         "login": {
           "type": "array",
-          "items": {"enum": ["qr", "device_code", "url", "input", "wait"]}
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+              "type": {"enum": ["existing", "browser", "phone", "key"]},
+              "label": {"type": "string"},
+              "help": {"type": "string"},
+              "input": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+              "test": {"type": "string", "minLength": 1}
+            }
+          }
         }
       }
     },

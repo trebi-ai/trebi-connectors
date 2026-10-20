@@ -26,7 +26,7 @@ Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it
 
 ## whatsapp-cli
 
-- Login: `setup.login: [qr]`. The QR code of each attempt is one `qr` step. The drawer shows it.
+- Login: the method `qr` (type `phone`). The QR code of each attempt is one `qr` step. The drawer shows it. The method is not available while a phone is linked.
 - Events: `message`, `reaction`. A message that you send from the phone is an event with `sender.self: true`.
 - Features: `rooms.list`, `rooms.open`, `history`, `replay`, `typing`, `seen`, `reactions`, `attachments.in`, `attachments.out`, `replies`.
 - `text` is the message text, the caption of a file, or the text of a button or list reply. The store keeps `reply_to_id`, so `history` and `replay` keep the reply chain.

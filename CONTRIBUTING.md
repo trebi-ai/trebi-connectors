@@ -141,24 +141,37 @@ Choose one of two kinds of auth.
 
 **Inputs only.** The user pastes an API key or a token into a form. Use `setup.inputs` with `secret: true`. This works for every path, also for path A. Most connectors use it.
 
-**A login flow.** The user logs in through the UI: they scan a code, open a page, or type a code. Use `setup.login`. A login flow needs a program that speaks `trebi-connector/1` (path B or C), because the program runs the flow. List the step kinds that the program can start:
+**A login flow.** The user logs in through the UI: they scan a code, open a page, pick an account, or paste a key. Use `setup.login`. List each way to log in as one method with an `id` and a `type`. Trebi fixes four types and shows them in this order:
 
-| Step kind | What the user sees | Example |
+| Type | What the user sees | Example |
 |---|---|---|
-| `qr` | A QR code to scan with a phone. | WhatsApp linked device |
-| `device_code` | A URL and a short code to type on that page. | Microsoft, GitHub device flow |
-| `url` | A button that opens a page, for example an OAuth consent page. | OAuth with a redirect |
-| `input` | A form with one or more fields, for example an SMS code. | A two-step code |
-| `wait` | A message while the program waits for the system. | An approval on another device |
+| `existing` | Use a login that is on this computer. | The Slack app on this computer |
+| `browser` | A page to open, or a page and a short code. | GitHub and Microsoft device login, OAuth |
+| `phone` | A code to scan or type on a phone. | WhatsApp linked device |
+| `key` | A field for a key or a token. | A personal access token |
 
-The flow on the wire:
+The first available method is the main button. The others go under "Other ways to log in". Give each method a `label` that a person understands, for example "Link your phone".
 
-1. The user clicks "Log in". Trebi sends `auth/begin` with a `kind`.
-2. The program answers with the first `step`. It sends more steps with `auth/step` when the flow needs them.
-3. For an `input` step, Trebi sends the values of the user with `auth/submit`.
-4. The program sends `auth/done` with `ok` and the `account`, then `status` `connected`.
+A `key` method with `input` belongs to Trebi, also for path A. Trebi asks for that secret input in one field, saves it, and restarts the connection. Then it checks the key: with `test`, it runs that read-only command; else a protocol connection must become `connected`. The install form does not ask for that input.
 
-The Go SDK runs this for you when the adapter implements `sdk.Authenticator`. The fixtures in `sdk/contract/auth.*.json` and `sdk/contract/flow.login.qr.jsonl` show each message.
+```yaml
+setup:
+  inputs:
+    - {name: EXAMPLE_TOKEN, label: API token, secret: true}
+  login:
+    - {id: device, type: browser, label: Sign in with Example}
+    - {id: token, type: key, label: Paste a token, input: EXAMPLE_TOKEN, test: example-cli whoami}
+```
+
+A method with no `input` belongs to the program. It needs a program that speaks `trebi-connector/1` (path B or C), because the program runs the flow. The flow on the wire:
+
+1. Trebi sends `auth/methods`. The program answers with the live state of each method. A method that cannot run now has `available: false` and a `reason` that a person can read.
+2. The user clicks a method. Trebi sends `auth/begin` with its `method`.
+3. The program answers with the first `step`: `qr`, `device_code`, `url`, `input`, or `wait`. It sends more steps with `auth/step` when the flow needs them. An `input` field can have a `url`, `choices`, `multiple`, and a `default`. A `url` step can have `fields` for a pasted answer.
+4. For a step with fields, Trebi sends the values of the user with `auth/submit`. A value is a string, or a list for a field with `multiple`.
+5. The program sends `auth/done` with `ok` and the `account`, then `status` `connected`. A connection that follows several accounts adds `accounts` to `status`.
+
+The Go SDK runs this for you when the adapter implements `sdk.Authenticator`. The fixtures in `sdk/contract/auth.*.json`, `sdk/contract/flow.login.qr.jsonl`, and `sdk/contract/flow.login.methods.jsonl` show each message.
 
 Rules for auth:
 

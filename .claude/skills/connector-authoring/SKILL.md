@@ -27,7 +27,8 @@ install:
   bin: example-cli
   version_command: example-cli --version
 setup:
-  login: [qr]              # only for an interactive login
+  login:                   # only for an interactive login
+    - {id: qr, type: phone, label: Link your phone}
   inputs:
     - {name: EXAMPLE_TOKEN, label: API token, secret: true, required: true}
 actions:
