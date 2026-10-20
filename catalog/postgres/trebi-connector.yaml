@@ -2,13 +2,19 @@ schema: trebi-connector/1
 name: postgres
 title: PostgreSQL
 description: "Run read-only queries on a PostgreSQL database for reports and live data."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
 install:
   bin: psql
 setup:
+  login:
+    - id: key
+      type: key
+      label: Type the password
+      input: PGPASSWORD
+      test: 'psql --no-psqlrc -X -tAc ''select 1'''
   inputs:
     - name: PGHOST
       label: Server
@@ -26,6 +32,7 @@ setup:
       required: true
     - name: PGPASSWORD
       label: Password
+      help: The password of the database user.
       secret: true
 actions:
   operations:

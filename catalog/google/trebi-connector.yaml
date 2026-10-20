@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: google
 title: "Google Search Console"
 description: "Read Search Console traffic and index data, and run PageSpeed Insights checks."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste a refresh token
+      input: GOOGLE_CLI_REFRESH_TOKEN
+      test: 'f="$TMPDIR/google-cli-check.toml"; GOOGLE_CLI_CONFIG="$f" google-cli auth status; s=$?; rm -f "$f"; exit $s'
   inputs:
     - name: GOOGLE_CLI_CLIENT_ID
       label: "OAuth client ID"

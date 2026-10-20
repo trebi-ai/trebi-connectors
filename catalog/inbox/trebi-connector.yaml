@@ -2,9 +2,15 @@ schema: trebi-connector/1
 name: inbox
 title: "Agentic Inbox"
 description: "Read, send, and organize email in a self-hosted Agentic Inbox."
-version: 0.1.0
+version: 0.2.0
 publisher: trebi
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste the access client secret
+      input: CF_ACCESS_CLIENT_SECRET
+      test: 'INBOX_CLI_AUTH=service_token inbox-cli auth status >/dev/null 2>&1 || { echo "Check the inbox URL, the access client ID, and the access client secret."; exit 1; }'
   inputs:
     - name: INBOX_CLI_BASE_URL
       label: "Inbox URL"
@@ -17,6 +23,8 @@ setup:
       required: true
     - name: CF_ACCESS_CLIENT_SECRET
       label: "Access client secret"
+      help: "The secret of the Cloudflare Access service token that protects the inbox."
+      url: "https://one.dash.cloudflare.com/"
       secret: true
       required: true
     - name: INBOX_CLI_MAILBOX
