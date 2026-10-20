@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: linear
 title: Linear
 description: "Start work when an issue or a comment changes in Linear, and read teams and issues."
-version: 0.1.1
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,6 +12,11 @@ install:
   bin: linear-cli
   version_command: linear-cli --version
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: LINEAR_API_KEY
   inputs:
     - name: LINEAR_API_KEY
       label: API key

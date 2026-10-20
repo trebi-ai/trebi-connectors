@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: discord
 title: Discord
 description: "Talk with people in Discord servers and direct messages through your bot."
-version: 0.3.3
+version: 0.4.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,6 +12,11 @@ install:
   bin: discord-cli
   version_command: discord-cli --version
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste a bot token
+      input: DISCORD_TOKEN
   inputs:
     - name: DISCORD_TOKEN
       label: Bot token

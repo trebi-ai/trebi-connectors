@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: gmail
 title: Gmail
 description: "Search and read your Gmail, and save replies as drafts. Sending is off until you turn it on."
-version: 0.1.1
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,6 +12,11 @@ install:
   bin: mailbox
   version_command: mailbox --version
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an app password
+      input: MAILBOX_PASSWORD
   inputs:
     - name: MAILBOX_ADDRESS
       label: Gmail address

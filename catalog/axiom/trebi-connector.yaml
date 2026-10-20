@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: axiom
 title: "Axiom"
 description: "Query logs and traces, and manage datasets, monitors, and dashboards in Axiom. Start work when a monitor triggers or resolves."
-version: 0.2.1
+version: 0.3.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,6 +12,12 @@ install:
   bin: axiom-cli
   version_command: axiom-cli --version
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API token
+      input: AXIOM_TOKEN
+      test: 'axiom-cli monitors list >/dev/null'
   inputs:
     - name: AXIOM_TOKEN
       label: "API token"

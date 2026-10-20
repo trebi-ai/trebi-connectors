@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: notion
 title: Notion
 description: "Start jobs when pages and databases change in your Notion workspace, and search pages."
-version: 0.1.1
+version: 0.2.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -12,6 +12,11 @@ install:
   bin: notion-cli
   version_command: notion-cli --version
 setup:
+  login:
+    - id: key
+      type: key
+      label: Paste the integration secret
+      input: NOTION_TOKEN
   inputs:
     - name: NOTION_TOKEN
       label: Integration secret
