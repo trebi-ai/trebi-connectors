@@ -164,6 +164,13 @@ func TestReplyHeaders(t *testing.T) {
 	if strings.Join(c.To, ",") != "list@example.com,Bob <bob@example.com>" || strings.Join(c.Cc, ",") != "cat@example.com" {
 		t.Fatalf("all: to %v cc %v", c.To, c.Cc)
 	}
+	own := mail.Headers{From: "Me <me@example.com>", To: []string{"Bob <bob@example.com>"}, Cc: []string{"cat@example.com"}, Subject: "Hi"}
+	if c, err = mail.ReplyHeaders(own, "me@example.com", false); err != nil || strings.Join(c.To, ",") != "Bob <bob@example.com>" || len(c.Cc) != 0 {
+		t.Fatalf("own message: %+v %v", c, err)
+	}
+	if c, _ = mail.ReplyHeaders(own, "me@example.com", true); strings.Join(c.Cc, ",") != "cat@example.com" {
+		t.Fatalf("own message, all: %+v", c)
+	}
 	orig.ReplyTo, orig.Subject = nil, "Lunch"
 	c, _ = mail.ReplyHeaders(orig, "me@example.com", false)
 	if c.To[0] != "Ann <ann@example.com>" || c.Subject != "Re: Lunch" {

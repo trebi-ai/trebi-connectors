@@ -50,7 +50,7 @@ type Attachment struct {
 type Message struct {
 	ID          string       `json:"id"`
 	ThreadID    string       `json:"thread_id,omitempty"`
-	Labels      []string     `json:"labels,omitempty"`
+	Labels      []string     `json:"labels"`
 	Headers     Headers      `json:"headers"`
 	Text        string       `json:"text"`
 	HTML        string       `json:"html,omitempty"`
@@ -69,7 +69,7 @@ func Parse(raw []byte) (Message, error) {
 
 // parse returns what it could read, also with an error.
 func parse(raw []byte) (Message, error) {
-	msg := Message{Attachments: []Attachment{}, Headers: Headers{To: []string{}}}
+	msg := Message{Attachments: []Attachment{}, Labels: []string{}, Headers: Headers{To: []string{}}}
 	r, err := mail.CreateReader(bytes.NewReader(raw))
 	if r == nil {
 		return msg, err

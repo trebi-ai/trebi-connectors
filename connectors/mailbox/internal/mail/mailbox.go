@@ -143,7 +143,7 @@ type Summary struct {
 	Snippet   string   `json:"snippet"`
 	MessageID string   `json:"message_id"`
 	Unread    bool     `json:"unread"`
-	Labels    []string `json:"labels,omitempty"`
+	Labels    []string `json:"labels"`
 }
 
 // maxGmailQuery caps the length of gmail_query.
@@ -316,7 +316,7 @@ func (s *session) summaries(folder string, uids []imap.UID) ([]Summary, error) {
 	}
 	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(b.UID, a.UID) })
 	for _, msg := range msgs {
-		sum := Summary{ID: MessageRef{Folder: folder, UID: msg.UID}.String(), To: []string{}, Unread: !slices.Contains(msg.Flags, imap.FlagSeen)}
+		sum := Summary{ID: MessageRef{Folder: folder, UID: msg.UID}.String(), To: []string{}, Labels: []string{}, Unread: !slices.Contains(msg.Flags, imap.FlagSeen)}
 		if g, ok := meta[msg.UID]; ok {
 			sum.ID, sum.ThreadID, sum.Labels = g.GmailID(), g.ThreadID(), g.Labels
 		}
