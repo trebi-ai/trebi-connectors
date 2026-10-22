@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -189,12 +190,22 @@ type Compose struct {
 }
 
 // NewAttach is one attachment of a new message: a file on this computer,
-// or the content in base64.
+// or the content in base64. In JSON, a plain string is a path, because
+// Trebi passes a list of strings only.
 type NewAttach struct {
 	Path          string `json:"path,omitempty"`
 	Name          string `json:"name,omitempty"`
 	MIME          string `json:"mime,omitempty"`
 	ContentBase64 string `json:"content_base64,omitempty"`
+}
+
+func (a *NewAttach) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		*a = NewAttach{}
+		return json.Unmarshal(b, &a.Path)
+	}
+	type plain NewAttach
+	return json.Unmarshal(b, (*plain)(a))
 }
 
 // Built is a message ready to save or send.

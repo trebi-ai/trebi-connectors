@@ -2,9 +2,11 @@ package mail_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -435,6 +437,13 @@ func TestBuildAttachmentFromPath(t *testing.T) {
 	}
 	if len(msg.Attachments) != 1 || msg.Attachments[0].Name != "plan.txt" || msg.Attachments[0].Size != 8 {
 		t.Fatalf("attachments %+v", msg.Attachments)
+	}
+	var in mail.Compose
+	if err := json.Unmarshal([]byte(`{"attachments":["/a/b.pdf",{"content_base64":"eA==","name":"x.txt"}]}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	if want := []mail.NewAttach{{Path: "/a/b.pdf"}, {ContentBase64: "eA==", Name: "x.txt"}}; !reflect.DeepEqual(in.Attachments, want) {
+		t.Fatalf("decoded %+v", in.Attachments)
 	}
 	for _, a := range []mail.NewAttach{
 		{Path: "plan.txt"},

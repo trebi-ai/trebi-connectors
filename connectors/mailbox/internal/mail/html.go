@@ -23,7 +23,7 @@ var blockTags = map[string]bool{
 func HTMLText(src string) string {
 	z := html.NewTokenizer(strings.NewReader(src))
 	var b strings.Builder
-	skip := 0
+	skip, cells := 0, 0
 	var href string
 	for {
 		tt := z.Next()
@@ -54,6 +54,13 @@ func HTMLText(src string) string {
 			case "li":
 				b.WriteString("\n- ")
 				continue
+			case "tr":
+				cells = 0
+			case "td", "th":
+				if cells > 0 {
+					b.WriteString(" | ")
+				}
+				cells++
 			}
 			if blockTags[tag] {
 				b.WriteString("\n")
@@ -71,6 +78,8 @@ func HTMLText(src string) string {
 					b.WriteString(" (" + href + ")")
 				}
 				href = ""
+			case "li", "tr": // the next item or row starts its own line
+				continue
 			}
 			if blockTags[tag] {
 				b.WriteString("\n")

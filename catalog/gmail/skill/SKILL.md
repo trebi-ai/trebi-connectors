@@ -34,10 +34,12 @@ trebi connector call gmail reply --input id=gm:1784123456789012345 --input text=
 trebi connector call gmail send_draft --input id="[Gmail]/Drafts:7" --json
 ```
 
-To write a new message, call `draft` with `to`, `subject`, and `text` or `html`. To attach a file, give `attachments` as a list. Each item has `path` (the full path of a file on this computer) or `content_base64`, and an optional `name` and `mime`. All files together are at most 25 MiB. To forward a file from a message, call `attachment` first and give its `path`.
+To write a new message, call `draft` with `to`, `subject`, and `text` or `html`. To attach files, give `attachments` as a list of full file paths on this computer. All files together are at most 25 MiB. To attach content that is not in a file, write it to a file first. To forward a file from a message, call `attachment` first and give its `path`.
+
+Prefer `html` for a formatted message: headings, lists, tables, bold text, and links. The program also adds a plain text version for mail apps that show no HTML. Use `text` for a short, plain message.
 
 ```json
-{"to": ["ann@example.com"], "subject": "Report", "html": "<p>The report is attached.</p>", "attachments": [{"path": "/Users/ann/Reports/report.pdf"}]}
+{"to": ["ann@example.com"], "subject": "Report", "html": "<p>The report is attached.</p>", "attachments": ["/Users/ann/Reports/report.pdf"]}
 ```
 
 ## Search
