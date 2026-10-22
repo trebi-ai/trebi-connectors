@@ -34,7 +34,7 @@ const (
 	DefaultLimit = 20
 	MaxLimit     = 100
 	snippetLen   = 200
-	snippetBytes = 8192
+	snippetBytes = 32 << 10 // Gmail headers and a CSS head can fill the first 16 KB
 	dialTimeout  = 20 * time.Second
 )
 
