@@ -46,7 +46,7 @@ An entry with `install: {catalog: true, bin: <cli>}` gets its program from the c
 
 1. Change the code in `connectors/<cli>/` and bump `version` in `catalog/<name>/trebi-connector.yaml` in the same PR.
 2. On `main`, the `plan` job of `catalog.yml` lists each `install.catalog` entry whose version is not in the published index.
-3. The `build` job builds each platform on a native runner, so a CGO program needs no cross compiler. It stamps the entry version into the program. The archive holds each file that `build.sh` writes in the output folder, so a helper program such as `slack-op` ships next to the program.
+3. The `build` job runs once for each platform that has pending builds, and builds all pending programs of that platform. It tries the artifact upload a second time when the first one fails. It stamps the entry version into the program. The archive holds each file that `build.sh` writes in the output folder, so a helper program such as `slack-op` ships next to the program.
 4. The `publish` job puts the archives in `v1/bin/`, and the index lists the digest of each archive. The daemon checks that digest before it installs the program.
 
 There are no release tags and no GitHub releases for these programs. A published archive is immutable, like a snapshot.

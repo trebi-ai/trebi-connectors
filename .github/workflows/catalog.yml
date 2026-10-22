@@ -141,6 +141,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       builds: ${{ steps.pending.outputs.builds }}
+      platforms: ${{ steps.pending.outputs.platforms }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -157,20 +158,25 @@ jobs:
           builds="$(GOWORK=off go run . pending --root ../.. --previous "$RUNNER_TEMP/previous.json")"
           echo "$builds"
           echo "builds=$builds" >> "$GITHUB_OUTPUT"
+          echo "platforms=$(jq -c '[.[] | {os, arch}] | unique' <<<"$builds")" >> "$GITHUB_OUTPUT"
 
-  # Builds one archive. The Linux host builds linux/amd64 and cross-compiles
-  # linux/arm64 with aarch64-linux-gnu-gcc. The Mac builds darwin/arm64 and
-  # cross-compiles darwin/amd64 with Apple clang. The Linux host has glibc
-  # 2.31, so the programs also run on older distributions.
+  # Builds the pending archives of one platform. One job per platform keeps
+  # the setup and upload cost low. The Linux host builds linux/amd64 and
+  # cross-compiles linux/arm64 with aarch64-linux-gnu-gcc. The Mac builds
+  # darwin/arm64 and cross-compiles darwin/amd64 with Apple clang. The Linux
+  # host has glibc 2.31, so the programs also run on older distributions.
   build:
     needs: plan
     if: needs.plan.outputs.builds != '[]'
+    name: build (${{ matrix.os }}, ${{ matrix.arch }})
+    # A network fault on one platform does not cancel the others. publish
+    # still needs all of them.
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.plan.outputs.builds) }}
+        include: ${{ fromJSON(needs.plan.outputs.platforms) }}
     runs-on: ${{ matrix.os == 'darwin' && fromJSON('["self-hosted","macOS","ARM64"]') || fromJSON('["self-hosted","Linux","X64"]') }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GOOS: ${{ matrix.os }}
       GOARCH: ${{ matrix.arch }}
@@ -180,28 +186,52 @@ jobs:
       MICROSOFT_TODO_CLIENT_ID: ${{ vars.MICROSOFT_TODO_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
+      # One toolchain for all programs. It must be at least the newest go
+      # line in connectors/*/go.mod.
       - uses: actions/setup-go@v5
         with:
-          go-version-file: connectors/${{ matrix.bin }}/go.mod
+          go-version: "1.26"
           cache: false
       - name: Build
+        env:
+          BUILDS: ${{ needs.plan.outputs.builds }}
         run: |
-          connectors/${{ matrix.bin }}/scripts/build.sh "${{ matrix.version }}" "work/${{ matrix.bin }}"
-          file "work/${{ matrix.bin }}"
-          # The Linux host cannot run an arm64 program. The Mac runs amd64 through Rosetta.
-          if [ "${{ matrix.os }}/${{ matrix.arch }}" != linux/arm64 ]; then
-            work/${{ matrix.bin }} --version | grep -F "${{ matrix.version }}"
-          fi
-          mkdir -p "out/${{ matrix.name }}"
-          # build.sh can write helper programs next to the program, such as
-          # slack-op. The archive holds each file in work/.
-          (cd work && tar -czf "../out/${{ matrix.name }}/${{ matrix.bin }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" *)
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          while read -r name bin version; do
+            work="work/$name"
+            "connectors/$bin/scripts/build.sh" "$version" "$work/$bin"
+            file "$work/$bin"
+            # The Linux host cannot run an arm64 program. The Mac runs amd64 through Rosetta.
+            if [ "$GOOS/$GOARCH" != linux/arm64 ]; then
+              "$work/$bin" --version | grep -F "$version"
+            fi
+            mkdir -p "out/$name"
+            # build.sh can write helper programs next to the program, such as
+            # slack-op. The archive holds each file in the work folder.
+            (cd "$work" && tar -czf "../../out/$name/${bin}_${GOOS}_${GOARCH}.tar.gz" *)
+          done < <(jq -r --arg os "$GOOS" --arg arch "$GOARCH" \
+            '.[] | select(.os == $os and .arch == $arch) | "\(.name) \(.bin) \(.version)"' <<<"$BUILDS")
+      # The artifact service is in the GitHub US datacenter. The runner line
+      # can lose packets on that path, so try the upload a second time.
+      - id: upload
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
-          name: bin-${{ matrix.name }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: bin-${{ matrix.os }}-${{ matrix.arch }}
           path: out/
           retention-days: 3
           if-no-files-found: error
+      - name: Wait before the second upload
+        if: steps.upload.outcome == 'failure'
+        run: sleep 30
+      - if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.os }}-${{ matrix.arch }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
 
   publish:
     needs: [validate, plan, build]
