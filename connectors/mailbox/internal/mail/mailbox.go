@@ -328,17 +328,7 @@ func (m *Mailbox) Read(ctx context.Context, id string, withHTML bool) (Message, 
 }
 
 func (s *session) read(id string, withHTML bool) (Message, error) {
-	ref, err := s.locate(id)
-	if err != nil {
-		return Message{}, err
-	}
-	if _, err := s.selectFolder(ref.Folder, false); err != nil {
-		return Message{}, err
-	}
-	_, raw, err := s.fetchRaw(ref.UID)
-	if errors.Is(err, errNoMessage) {
-		return Message{}, fmt.Errorf("no message %s", id)
-	}
+	raw, err := s.raw(id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -351,6 +341,22 @@ func (s *session) read(id string, withHTML bool) (Message, error) {
 		msg.HTML = ""
 	}
 	return msg, nil
+}
+
+// raw fetches the full bytes of one message.
+func (s *session) raw(id string) ([]byte, error) {
+	ref, err := s.locate(id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.selectFolder(ref.Folder, false); err != nil {
+		return nil, err
+	}
+	_, raw, err := s.fetchRaw(ref.UID)
+	if errors.Is(err, errNoMessage) {
+		return nil, fmt.Errorf("no message %s", id)
+	}
+	return raw, err
 }
 
 // Draft saves the message in the Drafts folder with the \Draft flag.

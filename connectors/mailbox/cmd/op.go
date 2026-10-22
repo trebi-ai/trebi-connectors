@@ -55,6 +55,16 @@ func OpCommand() *cli.Command {
 				msg, err := mb.Read(c.Context, q.ID, q.HTML)
 				return map[string]any{"message": msg}, err
 			}),
+			opCommand("attachment", "Save one attachment on this computer and return its path (input: id, name or index)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+				var q mail.AttachmentInput
+				if err := decode(in, &q); err != nil {
+					return nil, err
+				}
+				if q.ID == "" {
+					return nil, errNoID
+				}
+				return mb.SaveAttachment(c.Context, q)
+			}),
 			opCommand("thread", "Read the conversation of a message, oldest first (input: id, limit, html)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
 				var q struct {
 					ID    string `json:"id"`

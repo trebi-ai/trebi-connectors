@@ -12,6 +12,7 @@ import (
 	"mime"
 	netmail "net/mail"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -185,11 +186,13 @@ type Compose struct {
 	references []string
 }
 
-// NewAttach is one attachment of a new message.
+// NewAttach is one attachment of a new message: a file on this computer,
+// or the content in base64.
 type NewAttach struct {
-	Name          string `json:"name"`
+	Path          string `json:"path,omitempty"`
+	Name          string `json:"name,omitempty"`
 	MIME          string `json:"mime,omitempty"`
-	ContentBase64 string `json:"content_base64"`
+	ContentBase64 string `json:"content_base64,omitempty"`
 }
 
 // Built is a message ready to save or send.
@@ -409,12 +412,25 @@ func (c Compose) decodeAttachments() ([]attachFile, error) {
 	var out []attachFile
 	for i, a := range c.Attachments {
 		name := strings.TrimSpace(a.Name)
+		if name == "" && a.Path != "" {
+			name = filepath.Base(a.Path)
+		}
 		if name == "" || strings.ContainsAny(name, "\r\n") {
 			return nil, fmt.Errorf("attachments[%d]: give a file name", i)
 		}
-		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(a.ContentBase64))
-		if err != nil {
-			return nil, fmt.Errorf("attachments[%d] %q: content_base64 is not valid base64", i, name)
+		var data []byte
+		var err error
+		switch {
+		case (a.Path == "") == (a.ContentBase64 == ""):
+			return nil, fmt.Errorf("attachments[%d] %q: give path or content_base64", i, name)
+		case a.Path != "":
+			if data, err = readAttachFile(a.Path); err != nil {
+				return nil, fmt.Errorf("attachments[%d]: %w", i, err)
+			}
+		default:
+			if data, err = base64.StdEncoding.DecodeString(strings.TrimSpace(a.ContentBase64)); err != nil {
+				return nil, fmt.Errorf("attachments[%d] %q: content_base64 is not valid base64", i, name)
+			}
 		}
 		typ := strings.TrimSpace(a.MIME)
 		if typ == "" {

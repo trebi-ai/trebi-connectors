@@ -3,6 +3,8 @@ package mail_test
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +12,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/mailbox/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/mailbox/internal/fakemail"
 	"github.com/trebi-ai/trebi-connectors/connectors/mailbox/internal/mail"
 )
 
@@ -405,5 +409,75 @@ func TestStripQuotes(t *testing.T) {
 	}
 	if got := mail.StripHTMLQuotes("<p>plain</p>"); got != "<p>plain</p>" {
 		t.Errorf("no quote: %q", got)
+	}
+}
+
+func TestBuildAttachmentFromPath(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "plan.txt")
+	if err := os.WriteFile(p, []byte("the plan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := mail.Compose{To: []string{"ann@example.com"}, Text: "x", Attachments: []mail.NewAttach{{Path: p}}}
+	b, err := c.Build(addr, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := mail.Parse(b.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.Attachments) != 1 || msg.Attachments[0].Name != "plan.txt" || msg.Attachments[0].Size != 8 {
+		t.Fatalf("attachments %+v", msg.Attachments)
+	}
+	for _, a := range []mail.NewAttach{
+		{Path: "plan.txt"},
+		{Path: p, ContentBase64: "eA=="},
+		{Path: filepath.Dir(p)},
+		{Path: filepath.Join(filepath.Dir(p), "none.txt")},
+	} {
+		c.Attachments = []mail.NewAttach{a}
+		if _, err := c.Build(addr, now); err == nil {
+			t.Fatalf("want an error for %+v", a)
+		}
+	}
+}
+
+func TestSaveAttachment(t *testing.T) {
+	fake, err := fakemail.Start(addr, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(fake.Close)
+	state := t.TempDir()
+	mb := mail.New(config.Settings{Address: addr, Password: pass, IMAPHost: fake.IMAPAddr(), SMTPHost: fake.SMTPAddr(), StateDir: state}, mail.WithTLS(fake.ClientTLS()))
+	b, err := mail.Compose{To: []string{addr}, Text: "files", Attachments: []mail.NewAttach{
+		{Name: "a.txt", ContentBase64: base64.StdEncoding.EncodeToString([]byte("first"))},
+		{Name: "../a.txt", ContentBase64: base64.StdEncoding.EncodeToString([]byte("second"))},
+	}}.Build("ann@example.com", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fake.Deliver("INBOX", b.Raw); err != nil {
+		t.Fatal(err)
+	}
+	got, err := mb.SaveAttachment(ctx(t), mail.AttachmentInput{ID: "INBOX:1", Name: "a.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(got.Path); string(data) != "first" || got.Size != 5 || got.Type != "text/plain" {
+		t.Fatalf("saved %+v data %q", got, data)
+	}
+	got, err = mb.SaveAttachment(ctx(t), mail.AttachmentInput{ID: "INBOX:1", Index: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(got.Path); string(data) != "second" || !strings.HasPrefix(got.Path, filepath.Join(state, "attachments", "INBOX_1")+"/") {
+		t.Fatalf("saved %+v data %q", got, data)
+	}
+	if _, err := mb.SaveAttachment(ctx(t), mail.AttachmentInput{ID: "INBOX:1", Name: "b.txt"}); err == nil || !strings.Contains(err.Error(), "a.txt") {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := mb.SaveAttachment(ctx(t), mail.AttachmentInput{ID: "INBOX:1"}); err == nil {
+		t.Fatal("want an error with no name and no index")
 	}
 }

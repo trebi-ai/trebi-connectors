@@ -71,6 +71,22 @@ actions:
           id: {type: string, maxLength: 300, description: "The id from search, read, or an event, for example INBOX:42."}
           html: {type: boolean, description: Also return the HTML part.}
         required: [id]
+    - name: attachment
+      label: Download an attachment
+      description: Save one attachment of a message on this computer. The result has the full path of the file.
+      readonly: true
+      default: on
+      command: [mailbox, --provider, gmail, op, attachment]
+      stdin: json
+      output: json
+      timeout: 120s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: "The id from search, read, or an event, for example INBOX:42."}
+          name: {type: string, maxLength: 255, description: The file name from read.}
+          index: {type: integer, minimum: 1, maximum: 1000, description: "The position in the attachments of read. 1 is the first."}
+        required: [id]
     - name: thread
       label: Read a conversation
       description: Read all messages of the conversation of one message, oldest first. Quoted text of earlier messages is removed.
@@ -117,7 +133,7 @@ actions:
           subject: {type: string, maxLength: 998}
           text: {type: string, description: The plain text body.}
           html: {type: string, description: "The HTML body. With no text, the program makes the text from it."}
-          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+          attachments: {type: array, description: "Files to attach. Each file is an object with path (the full path of a file on this computer, for example from the attachment operation) or content_base64 (the content in base64), plus an optional name and mime (the file type). All files together are at most 25 MiB."}
           in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this message replies to. Use reply to fill all reply fields.}
           mime_base64: {type: string, description: A full message in base64. Give this or the other fields.}
     - name: reply
@@ -138,7 +154,7 @@ actions:
           all: {type: boolean, description: Reply to all recipients. The default replies only to the sender.}
           cc: {type: array, items: {type: string}}
           bcc: {type: array, items: {type: string}}
-          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+          attachments: {type: array, description: "Files to attach. Each file is an object with path (the full path of a file on this computer, for example from the attachment operation) or content_base64 (the content in base64), plus an optional name and mime (the file type). All files together are at most 25 MiB."}
         required: [id]
     - name: draft_delete
       label: Delete a draft
@@ -233,7 +249,7 @@ actions:
           subject: {type: string, maxLength: 998}
           text: {type: string, description: The plain text body.}
           html: {type: string, description: "The HTML body. With no text, the program makes the text from it."}
-          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+          attachments: {type: array, description: "Files to attach. Each file is an object with path (the full path of a file on this computer, for example from the attachment operation) or content_base64 (the content in base64), plus an optional name and mime (the file type). All files together are at most 25 MiB."}
           in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this message replies to. Use reply to fill all reply fields.}
           mime_base64: {type: string, description: A full message in base64. Give this or the other fields.}
     - name: reply_send
@@ -254,7 +270,7 @@ actions:
           all: {type: boolean, description: Reply to all recipients. The default replies only to the sender.}
           cc: {type: array, items: {type: string}}
           bcc: {type: array, items: {type: string}}
-          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+          attachments: {type: array, description: "Files to attach. Each file is an object with path (the full path of a file on this computer, for example from the attachment operation) or content_base64 (the content in base64), plus an optional name and mime (the file type). All files together are at most 25 MiB."}
         required: [id]
     - name: send_draft
       label: Send a draft

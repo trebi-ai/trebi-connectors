@@ -36,8 +36,9 @@ echo '{"to": ["ann@example.com"], "subject": "Hello", "text": "Hi Ann"}' | mailb
 
 - `search` takes `query`, `from`, `to`, `since` and `before` (`YYYY-MM-DD`), `unread`, `folder` (default `INBOX`), `limit` (default 20, max 100), and `cursor`. It returns `messages`, newest first, and `next_cursor`. Give `next_cursor` back as `cursor` to get the next page. An empty `next_cursor` is the last page. An `id` is `<folder>:<uid>`.
 - `read` takes `id` and `html`. It returns `message` with `headers`, `text`, and `attachments`. The text is the plain part, or the HTML part as text. It never returns attachment bytes. `html: true` also returns the HTML part.
+- `attachment` takes `id` and `name` or `index` (1 is the first attachment of `read`). It saves the file in `attachments/<id>/` in the state folder (`~/.cli-tools/mailbox` outside Trebi) and returns `path`, `name`, `type`, and `size`.
 - `thread` takes `id`, `limit` (default 20, max 50), and `html`. It returns `thread_id` and `messages` of the conversation, oldest first, from the folder of the message and the Sent folder. It removes the quoted text of earlier messages.
-- `draft` and `send` take `to`, `cc`, `bcc`, `subject`, `text`, `html`, `attachments`, and `in_reply_to`, or one `mime_base64` with a full MIME message. An attachment is `{"name", "content_base64", "mime"}`; the whole message is at most 25 MiB. With only `html`, the program makes the text part. `draft` saves the message in the Drafts folder with the `\Draft` flag. `send` sends it over SMTP and then saves a copy in the Sent folder, when there is one.
+- `draft` and `send` take `to`, `cc`, `bcc`, `subject`, `text`, `html`, `attachments`, and `in_reply_to`, or one `mime_base64` with a full MIME message. An attachment is `{"path"}` (the full path of a file) or `{"name", "content_base64"}`, with an optional `name` and `mime`; the whole message is at most 25 MiB. With only `html`, the program makes the text part. `draft` saves the message in the Drafts folder with the `\Draft` flag. `send` sends it over SMTP and then saves a copy in the Sent folder, when there is one.
 - `reply` and `reply_send` take `id`, `text` or `html`, `all`, `cc`, `bcc`, and `attachments`. The program sets the recipients (Reply-To wins over From; `all` adds the other recipients but not this account), the subject, `In-Reply-To`, and `References`. `reply` saves a draft. `reply_send` sends.
 - `send_draft` takes the `id` of a draft. It sends the draft as saved, then deletes it. `draft_delete` deletes a draft. Both refuse a message that is not a draft in the Drafts folder.
 - `mark` takes `ids` (at most 100), `read`, and `starred`. `label` takes `ids`, `add`, `remove`, and `create`. `archive` and `trash` take `ids`. Each returns `changed` and `failed` (an `id` and a `reason`). On a server with no labels, `label` copies to the folder for `add` and refuses `remove`.
@@ -55,7 +56,7 @@ echo '{"to": ["ann@example.com"], "subject": "Hello", "text": "Hi Ann"}' | mailb
 
 ## Use with Trebi
 
-Trebi runs `mailbox --provider gmail serve` with `TREBI_STATE_DIR` set. This is Trebi mode. The values come only from the inputs of the connection. The program writes no file.
+Trebi runs `mailbox --provider gmail serve` with `TREBI_STATE_DIR` set. This is Trebi mode. The values come only from the inputs of the connection. The program writes only to the state folder: the cursor of the events and the saved attachments.
 
 - With no address or no password, `serve` sends `status` `auth_required` with reason `missing_input`.
 - `serve` logs in at start, then waits in IDLE and sends a `mail.received` event for each new message in INBOX. A catch-up sync runs after each wake-up, each reconnect, and every 5 minutes. The cursor is `cursor.json` in the state folder. A cursor from a newer version gives `error` and stays on disk.
