@@ -72,7 +72,8 @@ func (m *Mailbox) Reply(ctx context.Context, in ReplyInput, send bool) (ReplyRes
 // ReplyHeaders makes the recipients, the subject, and the thread headers
 // of an answer to orig. self is the account address; it never gets the
 // answer. With all, the other To and Cc addresses get it too. An answer to
-// a message from self goes to its To addresses, as in Gmail.
+// a message from self goes to its To addresses, or to self when there is
+// no other address, as in Gmail.
 func ReplyHeaders(orig Headers, self string, all bool) (Compose, error) {
 	var c Compose
 	to := orig.ReplyTo
@@ -84,9 +85,13 @@ func ReplyHeaders(orig Headers, self string, all bool) (Compose, error) {
 	if len(c.To) == 0 && len(to) > 0 {
 		c.To = appendNew(nil, orig.To, skip)
 	}
+	note := len(c.To) == 0 && len(to) > 0 && len(orig.To) > 0 // a note to self
 	if all {
 		c.To = appendNew(c.To, orig.To, skip)
 		c.Cc = appendNew(nil, orig.Cc, append(skip, c.To...))
+	}
+	if len(c.To) == 0 && len(c.Cc) == 0 && note {
+		c.To = to
 	}
 	if len(c.To) == 0 {
 		if len(c.Cc) == 0 {

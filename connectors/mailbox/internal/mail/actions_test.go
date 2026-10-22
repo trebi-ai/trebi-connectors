@@ -173,6 +173,10 @@ func TestReplyHeaders(t *testing.T) {
 	if c, _ = mail.ReplyHeaders(own, "me@example.com", true); strings.Join(c.Cc, ",") != "cat@example.com" {
 		t.Fatalf("own message, all: %+v", c)
 	}
+	note := mail.Headers{From: "Me <me@example.com>", To: []string{"me@example.com"}, Subject: "Note"}
+	if c, err = mail.ReplyHeaders(note, "me@example.com", true); err != nil || strings.Join(c.To, ",") != "Me <me@example.com>" {
+		t.Fatalf("note to self: %+v %v", c, err)
+	}
 	orig.ReplyTo, orig.Subject = nil, "Lunch"
 	c, _ = mail.ReplyHeaders(orig, "me@example.com", false)
 	if c.To[0] != "Ann <ann@example.com>" || c.Subject != "Re: Lunch" {
