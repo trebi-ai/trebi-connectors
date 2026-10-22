@@ -21,16 +21,16 @@ Trebi runs each operation of this connection for you. Use `trebi connector call 
 
 ## Answer a message
 
-1. Find the message with `search`. Each result has an `id` (for example `INBOX:42`).
+1. Find the message with `search`. Each result has an `id` (for example `gm:1784123456789012345`). The id stays the same when the message changes labels or folders.
 2. Read the conversation with `thread` and the `id`. It gives all messages, oldest first, with the quoted text removed.
 3. Call `reply` with the `id` and the `text`. The program sets the recipients, the subject, and the conversation. Add `all: true` to answer all recipients.
 4. Tell the user that the draft is in Gmail Drafts. The result has a `draft_id`.
 5. When the user says "send it" and sending is on, call `send_draft` with the `draft_id`. Do not write the reply again.
 
 ```bash
-trebi connector call gmail search --input query="invoice" --input limit=5 --json
-trebi connector call gmail thread --input id=INBOX:42 --json
-trebi connector call gmail reply --input id=INBOX:42 --input text="Yes, noon works." --json
+trebi connector call gmail search --input gmail_query="from:ann invoice" --input limit=5 --json
+trebi connector call gmail thread --input id=gm:1784123456789012345 --json
+trebi connector call gmail reply --input id=gm:1784123456789012345 --input text="Yes, noon works." --json
 trebi connector call gmail send_draft --input id="[Gmail]/Drafts:7" --json
 ```
 
@@ -42,6 +42,7 @@ To write a new message, call `draft` with `to`, `subject`, and `text` or `html`.
 
 ## Search
 
+- `gmail_query` takes the same search words as the Gmail search box. Prefer it. Examples: `from:ann`, `to:me`, `subject:invoice`, `has:attachment`, `filename:pdf`, `is:unread`, `is:starred`, `label:work`, `in:inbox`, `newer_than:7d`, `older_than:1y`, `after:2026/01/31`, `larger:5M`, and `"exact words"`. Combine words with a space for AND, `OR` for OR, and `-` for NOT. With `gmail_query`, the default folder is all mail.
 - `query` finds text in the headers and the body. `from` and `to` find a sender and a recipient. `since` and `before` are dates as `YYYY-MM-DD`. `unread: true` finds unread messages.
 - The default folder is `INBOX`. Use `[Gmail]/All Mail` for all mail and `[Gmail]/Sent Mail` for sent mail. `folders` lists all folders and labels.
 - The result has `next_cursor`. To get the next page, call `search` again with the same input and `cursor` set to `next_cursor`. An empty `next_cursor` is the last page.
@@ -49,10 +50,10 @@ To write a new message, call `draft` with `to`, `subject`, and `text` or `html`.
 ## Sort the inbox
 
 - `mark` takes `ids` and `read` (true or false) and `starred` (true or false).
-- `label` takes `ids`, `add`, and `remove`. A label that does not exist gives an error. Add `create: true` only when the user asked for a new label.
-- `archive` takes `ids` and takes the messages out of the inbox. They stay in All Mail.
+- `label` takes `ids`, `add`, and `remove`. `Inbox`, `Starred`, and `Important` are labels too: remove `Inbox` to archive, add `Inbox` to move a message back to the inbox. A label that does not exist gives an error. Add `create: true` only when the user asked for a new label.
+- `archive` takes `ids` and takes the messages out of the inbox. They stay in all mail.
 - Each of these takes at most 100 ids. The result has `changed` and `failed`. Tell the user about each failed id and its `reason`.
 
 ## New mail
 
-The connection sends a `mail.received` event for each new message in the inbox. A rule can start a job on it. The event data has `id`, `from`, `to`, `cc`, `subject`, `date`, `message_id`, `thread_id`, `labels`, `snippet` (the start of the body), `has_attachments`, and `size`. Use the `id` with `read`, `thread`, `reply`, or the operations in "Sort the inbox". Mail that this account sends gives no event.
+The connection sends a `mail.received` event for each new message in the inbox. A rule can start a job on it. The event data has `id`, `from`, `to`, `cc`, `subject`, `date`, `message_id`, `thread_id`, `labels` (for example `Inbox` and `Important`), `snippet` (the start of the body), `has_attachments`, and `size`. Use the `id` with `read`, `thread`, `reply`, or the operations in "Sort the inbox". Mail that this account sends gives no event.

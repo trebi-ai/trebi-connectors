@@ -120,6 +120,7 @@ type SearchQuery struct {
 	Since  string `json:"since,omitempty"`  // YYYY-MM-DD
 	Before string `json:"before,omitempty"` // YYYY-MM-DD
 	Unread bool   `json:"unread,omitempty"`
+	Gmail  string `json:"gmail_query,omitempty"`
 	Folder string `json:"folder,omitempty"`
 	Limit  int    `json:"limit,omitempty"`
 	Cursor string `json:"cursor,omitempty"`
@@ -143,6 +144,14 @@ type Summary struct {
 	MessageID string   `json:"message_id"`
 	Unread    bool     `json:"unread"`
 	Labels    []string `json:"labels,omitempty"`
+}
+
+// maxGmailQuery caps the length of gmail_query.
+const maxGmailQuery = 500
+
+// onlyGmail reports whether gmail_query is the only search input.
+func (q SearchQuery) onlyGmail() bool {
+	return strings.TrimSpace(q.Query+q.From+q.To+q.Since+q.Before) == "" && !q.Unread
 }
 
 func (q SearchQuery) criteria() (*imap.SearchCriteria, error) {
@@ -221,13 +230,25 @@ func (m *Mailbox) Search(ctx context.Context, q SearchQuery) (SearchResult, erro
 		limit = DefaultLimit
 	}
 	limit = min(limit, MaxLimit)
+	gq := strings.TrimSpace(q.Gmail)
+	if len(gq) > maxGmailQuery {
+		return res, fmt.Errorf("gmail_query: use at most %d characters", maxGmailQuery)
+	}
 	s, err := m.open(ctx)
 	if err != nil {
 		return res, err
 	}
 	defer s.close()
+	if gq != "" && !s.isGmail() {
+		return res, errors.New("gmail_query: this mail server is not Gmail; use query, from, to, since, and before")
+	}
 	if folder == "" {
 		folder = "INBOX"
+		if gq != "" {
+			if folder, err = s.allMail(); err != nil {
+				return res, err
+			}
+		}
 	}
 	sel, err := s.selectFolder(folder, false)
 	if err != nil {
@@ -236,12 +257,33 @@ func (m *Mailbox) Search(ctx context.Context, q SearchQuery) (SearchResult, erro
 	if cur.UID != 0 && cur.UIDValidity != sel.UIDValidity {
 		return res, errors.New("cursor: the folder changed since the last page; search again with no cursor")
 	}
-	data, err := s.c.UIDSearch(crit, nil).Wait()
-	if err != nil {
-		return res, fmt.Errorf("search: %w", err)
+	var uids []imap.UID
+	if gq == "" || !q.onlyGmail() {
+		data, err := s.c.UIDSearch(crit, nil).Wait()
+		if err != nil {
+			return res, fmt.Errorf("search: %w", err)
+		}
+		uids = data.AllUIDs()
+		slices.Sort(uids)
 	}
-	uids := data.AllUIDs()
-	slices.Sort(uids)
+	if gq != "" {
+		g, err := s.gmail()
+		if err != nil {
+			return res, err
+		}
+		if err := g.selectFolder(folder, false); err != nil {
+			return res, err
+		}
+		found, err := g.searchRaw(gq)
+		if err != nil {
+			return res, fmt.Errorf("gmail_query: %w", err)
+		}
+		if q.onlyGmail() {
+			uids = found
+		} else {
+			uids = slices.DeleteFunc(uids, func(u imap.UID) bool { _, ok := slices.BinarySearch(found, u); return !ok })
+		}
+	}
 	if cur.UID != 0 {
 		uids = uids[:sort.Search(len(uids), func(i int) bool { return uids[i] >= cur.UID })]
 	}
@@ -268,9 +310,16 @@ func (s *session) summaries(folder string, uids []imap.UID) ([]Summary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
+	meta, err := s.gmailMeta(folder, uids)
+	if err != nil {
+		return nil, err
+	}
 	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(b.UID, a.UID) })
 	for _, msg := range msgs {
 		sum := Summary{ID: MessageRef{Folder: folder, UID: msg.UID}.String(), To: []string{}, Unread: !slices.Contains(msg.Flags, imap.FlagSeen)}
+		if g, ok := meta[msg.UID]; ok {
+			sum.ID, sum.ThreadID, sum.Labels = g.GmailID(), g.ThreadID(), g.Labels
+		}
 		if env := msg.Envelope; env != nil {
 			sum.Subject, sum.MessageID = env.Subject, angle(env.MessageID)
 			if len(env.From) > 0 {
@@ -291,7 +340,8 @@ func (s *session) summaries(folder string, uids []imap.UID) ([]Summary, error) {
 	return out, nil
 }
 
-// MessageRef is the id of a message: "<folder>:<uid>".
+// MessageRef is the id of a message: "<folder>:<uid>". On Gmail, the id
+// "gm:<number>" stays the same when the message changes folders.
 type MessageRef struct {
 	Folder string
 	UID    imap.UID
@@ -301,6 +351,9 @@ func (r MessageRef) String() string { return r.Folder + ":" + strconv.FormatUint
 
 // ParseRef reads an id. A bare number is a UID in INBOX.
 func ParseRef(id string) (MessageRef, error) {
+	if strings.HasPrefix(id, GmailPrefix) {
+		return MessageRef{}, fmt.Errorf("id %q: this id is for a Gmail account only", id)
+	}
 	folder, num := "INBOX", id
 	if i := strings.LastIndex(id, ":"); i >= 0 {
 		folder, num = id[:i], id[i+1:]
@@ -312,9 +365,32 @@ func ParseRef(id string) (MessageRef, error) {
 	return MessageRef{Folder: folder, UID: imap.UID(n)}, nil
 }
 
-// locate finds the folder and UID of a message id.
+// locate finds the folder and UID of a message id. A Gmail id is in All
+// Mail.
 func (s *session) locate(id string) (MessageRef, error) {
-	return ParseRef(id)
+	n, ok := parseGmailID(id)
+	if !ok || !s.isGmail() {
+		return ParseRef(id)
+	}
+	all, err := s.allMail()
+	if err != nil {
+		return MessageRef{}, err
+	}
+	g, err := s.gmail()
+	if err != nil {
+		return MessageRef{}, err
+	}
+	if err := g.selectFolder(all, false); err != nil {
+		return MessageRef{}, err
+	}
+	uid, err := g.findMsgID(n)
+	if err != nil {
+		return MessageRef{}, err
+	}
+	if uid == 0 {
+		return MessageRef{}, fmt.Errorf("no message %s", id)
+	}
+	return MessageRef{Folder: all, UID: uid}, nil
 }
 
 // Read fetches one message and parses it.
@@ -328,7 +404,30 @@ func (m *Mailbox) Read(ctx context.Context, id string, withHTML bool) (Message, 
 }
 
 func (s *session) read(id string, withHTML bool) (Message, error) {
-	raw, err := s.raw(id)
+	ref, err := s.locate(id)
+	if err != nil {
+		return Message{}, err
+	}
+	msg, err := s.readAt(ref, id)
+	if err != nil {
+		return Message{}, err
+	}
+	meta, err := s.gmailMeta(ref.Folder, []imap.UID{ref.UID})
+	if err != nil {
+		return Message{}, err
+	}
+	if g, ok := meta[ref.UID]; ok {
+		msg.ID, msg.ThreadID, msg.Labels = g.GmailID(), g.ThreadID(), g.Labels
+	}
+	if !withHTML {
+		msg.HTML = ""
+	}
+	return msg, nil
+}
+
+// readAt fetches and parses one message. id names it in an error.
+func (s *session) readAt(ref MessageRef, id string) (Message, error) {
+	raw, err := s.rawAt(ref, id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -337,9 +436,7 @@ func (s *session) read(id string, withHTML bool) (Message, error) {
 		return Message{}, err
 	}
 	msg.ID = id
-	if !withHTML {
-		msg.HTML = ""
-	}
+	msg.ThreadID = threadRoot(msg.Headers)
 	return msg, nil
 }
 
@@ -349,6 +446,10 @@ func (s *session) raw(id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.rawAt(ref, id)
+}
+
+func (s *session) rawAt(ref MessageRef, id string) ([]byte, error) {
 	if _, err := s.selectFolder(ref.Folder, false); err != nil {
 		return nil, err
 	}

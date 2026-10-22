@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -45,11 +46,16 @@ func (m *Mailbox) Thread(ctx context.Context, id string, limit int, withHTML boo
 	if err != nil {
 		return ThreadResult{}, err
 	}
-	msgs, err := s.threadByHeaders(ref, first)
+	var msgs []Message
+	if s.isGmail() {
+		msgs, err = s.threadByGmail(first, limit)
+	} else {
+		msgs, err = s.threadByHeaders(ref, first)
+	}
 	if err != nil {
 		return ThreadResult{}, err
 	}
-	res := ThreadResult{ThreadID: threadRoot(first.Headers), Messages: []Message{}}
+	res := ThreadResult{ThreadID: first.ThreadID, Messages: []Message{}}
 	slices.SortStableFunc(msgs, func(a, b Message) int { return strings.Compare(a.Headers.Date, b.Headers.Date) })
 	if len(msgs) > limit {
 		msgs = msgs[len(msgs)-limit:]
@@ -73,6 +79,53 @@ func threadRoot(h Headers) string {
 		return h.InReplyTo
 	}
 	return h.MessageID
+}
+
+// threadByGmail reads the newest limit messages of the Gmail thread of
+// first from All Mail.
+func (s *session) threadByGmail(first Message, limit int) ([]Message, error) {
+	thrid, err := strconv.ParseUint(first.ThreadID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("thread id %q: %w", first.ThreadID, err)
+	}
+	all, err := s.allMail()
+	if err != nil {
+		return nil, err
+	}
+	g, err := s.gmail()
+	if err != nil {
+		return nil, err
+	}
+	if err := g.selectFolder(all, false); err != nil {
+		return nil, err
+	}
+	uids, err := g.threadUIDs(thrid)
+	if err != nil {
+		return nil, err
+	}
+	if len(uids) > limit {
+		uids = uids[len(uids)-limit:]
+	}
+	meta, err := s.gmailMeta(all, uids)
+	if err != nil {
+		return nil, err
+	}
+	msgs := []Message{}
+	for _, u := range uids {
+		ref := MessageRef{Folder: all, UID: u}
+		msg, err := s.readAt(ref, ref.String())
+		if err != nil {
+			continue
+		}
+		if m, ok := meta[u]; ok {
+			msg.ID, msg.ThreadID, msg.Labels = m.GmailID(), m.ThreadID(), m.Labels
+		}
+		msgs = append(msgs, msg)
+	}
+	if len(msgs) == 0 {
+		msgs = append(msgs, first)
+	}
+	return msgs, nil
 }
 
 // threadByHeaders follows References and In-Reply-To in the folder of the

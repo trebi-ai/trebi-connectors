@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -18,6 +19,8 @@ import (
 type session struct {
 	c        *imapclient.Client
 	m        *Mailbox
+	ctx      context.Context //nolint:containedctx // the Gmail connection dials later in the same call
+	gm       *gmailConn
 	selected string
 	writable bool
 	sel      *imap.SelectData
@@ -30,12 +33,93 @@ func (m *Mailbox) open(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &session{c: c, m: m}, nil
+	return &session{c: c, m: m, ctx: ctx}, nil
 }
 
 func (s *session) close() {
+	s.gm.close()
 	_ = s.c.Logout().Wait() // the session ends either way
 	_ = s.c.Close()
+}
+
+// isGmail reports whether the server has the Gmail extensions.
+func (s *session) isGmail() bool { return s.c.Caps().Has(capGmail) }
+
+// gmail returns the Gmail connection. It dials on the first call.
+func (s *session) gmail() (*gmailConn, error) {
+	if s.gm != nil {
+		return s.gm, nil
+	}
+	g, err := s.m.dialGmail(s.ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.gm = g
+	return g, nil
+}
+
+// allMail is the Gmail folder with all messages.
+func (s *session) allMail() (string, error) {
+	if f := s.special(imap.MailboxAttrAll); f != "" {
+		return f, nil
+	}
+	return "", errors.New("this Gmail account shows no All Mail folder: turn on \"Show in IMAP\" for All Mail in the Gmail settings")
+}
+
+// gmailMeta returns the Gmail data of messages in a folder, or nil when
+// the server is not Gmail.
+func (s *session) gmailMeta(folder string, uids []imap.UID) (map[imap.UID]gmailMeta, error) {
+	if !s.isGmail() || len(uids) == 0 {
+		return nil, nil
+	}
+	g, err := s.gmail()
+	if err != nil {
+		return nil, err
+	}
+	if err := g.selectFolder(folder, false); err != nil {
+		return nil, err
+	}
+	meta, err := g.meta(uids)
+	if err != nil {
+		return nil, err
+	}
+	if l := s.folderLabel(folder); l != "" {
+		for u, m := range meta {
+			if !slices.Contains(m.Labels, l) {
+				m.Labels = append(m.Labels, l)
+				meta[u] = m
+			}
+		}
+	}
+	return meta, nil
+}
+
+// folderLabel is the label of a Gmail folder. Gmail leaves the label of
+// the open folder out of the labels of its messages.
+func (s *session) folderLabel(folder string) string {
+	if strings.EqualFold(folder, "INBOX") {
+		return "Inbox"
+	}
+	list, _ := s.folders() //nolint:errcheck // with no list, the name is the label
+	for _, l := range list {
+		if l.Mailbox != folder {
+			continue
+		}
+		for attr, name := range folderLabels {
+			if slices.Contains(l.Attrs, attr) {
+				return name
+			}
+		}
+	}
+	return folder
+}
+
+// folderLabels maps the special-use attributes to the Gmail labels. All
+// Mail has no label.
+var folderLabels = map[imap.MailboxAttr]string{
+	imap.MailboxAttrAll: "", imap.MailboxAttrSent: "Sent", imap.MailboxAttrDrafts: "Drafts",
+	imap.MailboxAttrFlagged: "Starred", imap.MailboxAttrImportant: "Important",
+	imap.MailboxAttrJunk: "Spam", imap.MailboxAttrTrash: "Trash",
 }
 
 // folders lists all folders with their special-use attributes.

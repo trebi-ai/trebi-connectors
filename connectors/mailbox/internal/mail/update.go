@@ -185,6 +185,9 @@ func (m *Mailbox) Label(ctx context.Context, in LabelInput) (UpdateResult, error
 		return UpdateResult{}, err
 	}
 	defer s.close()
+	if s.isGmail() {
+		return s.gmailLabels(in)
+	}
 	if len(in.Remove) > 0 {
 		return UpdateResult{}, errors.New("remove: this mail server has folders, not labels; use archive or trash to take a message out of a folder")
 	}
@@ -200,6 +203,49 @@ func (m *Mailbox) Label(ctx context.Context, in LabelInput) (UpdateResult, error
 			if _, err := s.c.Copy(imap.UIDSetNum(uids...), dest).Wait(); err != nil {
 				return fmt.Errorf("copy to %q: %w", dest, err)
 			}
+		}
+		return nil
+	}), nil
+}
+
+// gmailLabels adds and removes Gmail labels. Inbox, Starred, Important,
+// and the other system labels need no folder.
+func (s *session) gmailLabels(in LabelInput) (UpdateResult, error) {
+	var user []string
+	labels := func(names []string) []string {
+		out := make([]string, 0, len(names))
+		for _, n := range names {
+			raw, system := gmailLabel(strings.TrimSpace(n))
+			if !system {
+				user = append(user, raw)
+			}
+			out = append(out, raw)
+		}
+		return out
+	}
+	add, remove := labels(in.Add), labels(in.Remove)
+	if err := s.needFolders(user, in.Create); err != nil {
+		return UpdateResult{}, err
+	}
+	b, err := s.group(in.IDs)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+	g, err := s.gmail()
+	if err != nil {
+		return UpdateResult{}, err
+	}
+	return s.each(b, func(f string, uids []imap.UID) error {
+		if err := g.selectFolder(f, true); err != nil {
+			return err
+		}
+		if len(add) > 0 {
+			if err := g.storeLabels(uids, true, add); err != nil {
+				return err
+			}
+		}
+		if len(remove) > 0 {
+			return g.storeLabels(uids, false, remove)
 		}
 		return nil
 	}), nil
@@ -239,6 +285,9 @@ func (m *Mailbox) Archive(ctx context.Context, ids []string) (UpdateResult, erro
 		return UpdateResult{}, err
 	}
 	defer s.close()
+	if s.isGmail() {
+		return s.gmailLabels(LabelInput{IDs: ids, Remove: []string{"Inbox"}})
+	}
 	dest := s.special(imap.MailboxAttrArchive)
 	if dest == "" {
 		return UpdateResult{}, errors.New("this mail server has no archive folder: use label to move the messages to a folder")

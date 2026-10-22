@@ -49,6 +49,8 @@ type Attachment struct {
 // Message is the output of the read operation.
 type Message struct {
 	ID          string       `json:"id"`
+	ThreadID    string       `json:"thread_id,omitempty"`
+	Labels      []string     `json:"labels,omitempty"`
 	Headers     Headers      `json:"headers"`
 	Text        string       `json:"text"`
 	HTML        string       `json:"html,omitempty"`

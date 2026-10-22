@@ -12,6 +12,7 @@ package mail_test
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +88,35 @@ func TestLiveRead(t *testing.T) {
 	}
 }
 
+func TestLiveGmail(t *testing.T) {
+	mb, s, ctx := live(t)
+	if !strings.HasPrefix(s.IMAPHost, "imap.gmail.com") {
+		t.Skip("set MAILBOX_PROVIDER=gmail")
+	}
+	page, err := mb.Search(ctx, mail.SearchQuery{Gmail: "in:inbox", Limit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) == 0 {
+		t.Skip("the inbox is empty")
+	}
+	sum := page.Messages[0]
+	if !strings.HasPrefix(sum.ID, mail.GmailPrefix) || sum.ThreadID == "" || !slices.Contains(sum.Labels, "Inbox") {
+		t.Fatalf("summary %+v", sum)
+	}
+	msg, err := mb.Read(ctx, sum.ID, false)
+	if err != nil || msg.ID != sum.ID || msg.ThreadID != sum.ThreadID {
+		t.Fatalf("read %s: %+v %v", sum.ID, msg.ID, err)
+	}
+	th, err := mb.Thread(ctx, sum.ID, 10, false)
+	if err != nil || th.ThreadID != sum.ThreadID || !slices.ContainsFunc(th.Messages, func(m mail.Message) bool { return m.ID == sum.ID }) {
+		t.Fatalf("thread %+v err %v", th.ThreadID, err)
+	}
+	if _, err := mb.Search(ctx, mail.SearchQuery{Gmail: "in:inbox", Query: "the", Limit: 2}); err != nil {
+		t.Fatalf("gmail_query with query: %v", err)
+	}
+}
+
 func TestLiveWatchConnects(t *testing.T) {
 	mb, _, ctx := live(t)
 	conn, err := mb.Watch(ctx, "INBOX")
@@ -111,6 +141,15 @@ func TestLiveSendAndSort(t *testing.T) {
 		t.Skip("set MAILBOX_LIVE_SEND=1")
 	}
 	mb, s, ctx := live(t)
+	conn, err := mb.Watch(ctx, "INBOX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	last, err := conn.LastUID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	subject := "mailbox live test " + time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := mb.Send(ctx, mail.Compose{To: []string{s.Address}, Subject: subject, HTML: "<p>Live test. <b>Delete me.</b></p>"}); err != nil {
 		t.Fatal(err)
@@ -128,6 +167,16 @@ func TestLiveSendAndSort(t *testing.T) {
 	if id == "" {
 		t.Fatal("the sent message did not arrive")
 	}
+	if err := conn.Noop(30 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	news, err := conn.Fetch(last)
+	if err != nil || !slices.ContainsFunc(news, func(n mail.NewMail) bool { return n.ID == id || n.Subject == subject }) {
+		t.Fatalf("new mail %+v err %v", news, err)
+	}
+	if strings.HasPrefix(s.IMAPHost, "imap.gmail.com") && !slices.ContainsFunc(news, func(n mail.NewMail) bool { return n.ID == id && slices.Contains(n.Labels, "Inbox") }) {
+		t.Fatalf("new mail has no Gmail id %s: %+v", id, news)
+	}
 	read, starred := true, true
 	for _, step := range []func() (mail.UpdateResult, error){
 		func() (mail.UpdateResult, error) {
@@ -139,5 +188,16 @@ func TestLiveSendAndSort(t *testing.T) {
 		if err != nil || len(res.Failed) > 0 {
 			t.Fatalf("result %+v err %v", res, err)
 		}
+	}
+	if !strings.HasPrefix(s.IMAPHost, "imap.gmail.com") {
+		return
+	}
+	msg, err := mb.Read(ctx, id, false)
+	if err != nil || slices.Contains(msg.Labels, "Inbox") || !slices.Contains(msg.Labels, "Starred") {
+		t.Fatalf("after archive %v err %v", msg.Labels, err)
+	}
+	res, err := mb.Label(ctx, mail.LabelInput{IDs: []string{id}, Remove: []string{"Starred"}})
+	if err != nil || len(res.Failed) > 0 {
+		t.Fatalf("label %+v err %v", res, err)
 	}
 }

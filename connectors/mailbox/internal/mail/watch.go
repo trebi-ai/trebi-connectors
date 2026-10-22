@@ -59,7 +59,7 @@ func (m *Mailbox) Watch(ctx context.Context, folder string) (*WatchConn, error) 
 	if err != nil {
 		return nil, err
 	}
-	w.s = &session{c: c, m: m}
+	w.s = &session{c: c, m: m, ctx: ctx}
 	sel, err := w.s.selectFolder(folder, false)
 	if err != nil {
 		w.Close()
@@ -161,7 +161,36 @@ func (w *WatchConn) Fetch(after imap.UID) ([]NewMail, error) {
 		out = append(out, nm)
 	}
 	slices.SortFunc(out, func(a, b NewMail) int { return cmp.Compare(a.UID, b.UID) })
+	if err := w.addGmail(out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// addGmail sets the Gmail id, thread, and labels. It uses a short
+// connection, because the IDLE connection cannot send the Gmail commands.
+func (w *WatchConn) addGmail(out []NewMail) error {
+	if len(out) == 0 || !w.s.isGmail() {
+		return nil
+	}
+	defer func() {
+		w.s.gm.close()
+		w.s.gm = nil
+	}()
+	uids := make([]imap.UID, len(out))
+	for i, nm := range out {
+		uids[i] = nm.UID
+	}
+	meta, err := w.s.gmailMeta(w.folder, uids)
+	if err != nil {
+		return fmt.Errorf("gmail data of new mail: %w", err)
+	}
+	for i, nm := range out {
+		if g, ok := meta[nm.UID]; ok {
+			out[i].ID, out[i].ThreadID, out[i].Labels = g.GmailID(), g.ThreadID(), g.Labels
+		}
+	}
+	return nil
 }
 
 // attachmentsOf lists the parts that are attachments.
