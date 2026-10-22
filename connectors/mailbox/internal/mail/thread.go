@@ -110,14 +110,22 @@ func (s *session) threadByGmail(first Message, limit int) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.selectFolder(all, false); err != nil {
+		return nil, err
+	}
+	part := &imap.FetchItemBodySection{Peek: true}
+	bufs, err := s.c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{part}}).Collect()
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
 	msgs := []Message{}
-	for _, u := range uids {
-		ref := MessageRef{Folder: all, UID: u}
-		msg, err := s.readAt(ref, ref.String())
+	for _, b := range bufs {
+		msg, err := Parse(b.FindBodySection(part))
 		if err != nil {
 			continue
 		}
-		if m, ok := meta[u]; ok {
+		msg.ID = MessageRef{Folder: all, UID: b.UID}.String()
+		if m, ok := meta[b.UID]; ok {
 			msg.ID, msg.ThreadID, msg.Labels = m.GmailID(), m.ThreadID(), m.Labels
 		}
 		msgs = append(msgs, msg)

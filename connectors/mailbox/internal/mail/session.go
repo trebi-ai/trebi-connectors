@@ -21,6 +21,8 @@ type session struct {
 	m        *Mailbox
 	ctx      context.Context //nolint:containedctx // the Gmail connection dials later in the same call
 	gm       *gmailConn
+	gmErr    error
+	gmReady  chan struct{} // closed when the early Gmail dial ends
 	selected string
 	writable bool
 	sel      *imap.SelectData
@@ -33,10 +35,21 @@ func (m *Mailbox) open(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &session{c: c, m: m, ctx: ctx}, nil
+	s := &session{c: c, m: m, ctx: ctx}
+	if s.isGmail() { // the second login runs while the first connection works
+		s.gmReady = make(chan struct{})
+		go func() {
+			s.gm, s.gmErr = m.dialGmail(ctx)
+			close(s.gmReady)
+		}()
+	}
+	return s, nil
 }
 
 func (s *session) close() {
+	if s.gmReady != nil {
+		<-s.gmReady
+	}
 	s.gm.close()
 	_ = s.c.Logout().Wait() // the session ends either way
 	_ = s.c.Close()
@@ -47,6 +60,10 @@ func (s *session) isGmail() bool { return s.c.Caps().Has(capGmail) }
 
 // gmail returns the Gmail connection. It dials on the first call.
 func (s *session) gmail() (*gmailConn, error) {
+	if s.gmReady != nil {
+		<-s.gmReady
+		return s.gm, s.gmErr
+	}
 	if s.gm != nil {
 		return s.gm, nil
 	}
