@@ -148,9 +148,8 @@ func (w *WatchConn) Fetch(after imap.UID) ([]NewMail, error) {
 		}
 		if raw := msg.FindBodySection(part); raw != nil {
 			nm.Snippet = snippet(raw, eventSnippetLen)
-			if h, _ := parse(raw); len(h.Headers.References) > 0 {
-				nm.ThreadID = h.Headers.References[0]
-			}
+			h, _ := parse(raw) //nolint:errcheck // a cut body still has its headers
+			nm.ThreadID = threadRoot(h.Headers)
 		}
 		if bs := msg.BodyStructure; bs != nil {
 			nm.Attachments = attachmentsOf(bs)
