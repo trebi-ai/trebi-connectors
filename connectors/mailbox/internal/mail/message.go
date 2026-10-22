@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"mime/quotedprintable"
 	netmail "net/mail"
+	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,6 +28,7 @@ const maxTextPart = 1 << 20
 // Headers are the main headers of a message.
 type Headers struct {
 	From       string   `json:"from"`
+	ReplyTo    []string `json:"reply_to,omitempty"`
 	To         []string `json:"to"`
 	Cc         []string `json:"cc,omitempty"`
 	Subject    string   `json:"subject"`
@@ -117,6 +118,9 @@ func textOf(plain, html string) string {
 
 func readHeaders(h mail.Header) Headers {
 	out := Headers{To: addrs(h, "To"), Cc: addrs(h, "Cc")}
+	if rt := addrs(h, "Reply-To"); len(rt) > 0 {
+		out.ReplyTo = rt
+	}
 	if from := addrs(h, "From"); len(from) > 0 {
 		out.From = from[0]
 	}
@@ -160,16 +164,32 @@ func snippet(raw []byte) string {
 	return string(r[:snippetLen]) + "…"
 }
 
+// maxMessage caps a built message. Gmail refuses a message larger than
+// 25 MB.
+const maxMessage = 25 << 20
+
 // Compose is the input of the draft and send operations: a full MIME
-// message, or the fields of a plain text message.
+// message, or the fields of a message.
 type Compose struct {
-	MIMEBase64 string   `json:"mime_base64,omitempty"`
-	To         []string `json:"to,omitempty"`
-	Cc         []string `json:"cc,omitempty"`
-	Bcc        []string `json:"bcc,omitempty"`
-	Subject    string   `json:"subject,omitempty"`
-	Text       string   `json:"text,omitempty"`
-	InReplyTo  string   `json:"in_reply_to,omitempty"`
+	MIMEBase64  string      `json:"mime_base64,omitempty"`
+	To          []string    `json:"to,omitempty"`
+	Cc          []string    `json:"cc,omitempty"`
+	Bcc         []string    `json:"bcc,omitempty"`
+	Subject     string      `json:"subject,omitempty"`
+	Text        string      `json:"text,omitempty"`
+	HTML        string      `json:"html,omitempty"`
+	InReplyTo   string      `json:"in_reply_to,omitempty"`
+	Attachments []NewAttach `json:"attachments,omitempty"`
+
+	// references is the References chain that Reply sets.
+	references []string
+}
+
+// NewAttach is one attachment of a new message.
+type NewAttach struct {
+	Name          string `json:"name"`
+	MIME          string `json:"mime,omitempty"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 // Built is a message ready to save or send.
@@ -183,28 +203,38 @@ type Built struct {
 // Build makes the message. from is the account address; it is the From of
 // a message with no From.
 func (c Compose) Build(from string, now time.Time) (Built, error) {
-	var h textproto.Header
-	var body []byte
+	var raw []byte
 	if c.MIMEBase64 != "" {
-		if len(c.To)+len(c.Cc)+len(c.Bcc) > 0 || c.Subject != "" || c.Text != "" || c.InReplyTo != "" {
+		if len(c.To)+len(c.Cc)+len(c.Bcc)+len(c.Attachments) > 0 || c.Subject != "" || c.Text != "" || c.HTML != "" || c.InReplyTo != "" {
 			return Built{}, errors.New("give mime_base64 or the message fields, not both")
 		}
-		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(c.MIMEBase64))
-		if err != nil {
+		var err error
+		if raw, err = base64.StdEncoding.DecodeString(strings.TrimSpace(c.MIMEBase64)); err != nil {
 			return Built{}, fmt.Errorf("mime_base64: %w", err)
-		}
-		br := bufio.NewReader(bytes.NewReader(raw))
-		if h, err = textproto.ReadHeader(br); err != nil {
-			return Built{}, fmt.Errorf("mime_base64: %w", err)
-		}
-		if body, err = io.ReadAll(br); err != nil {
-			return Built{}, err
 		}
 	} else {
 		var err error
-		if h, body, err = c.plain(); err != nil {
+		if raw, err = c.fields(); err != nil {
 			return Built{}, err
 		}
+	}
+	return finish(raw, from, now)
+}
+
+// finish adds the missing From, Date, and Message-ID to a message and
+// makes the copy without Bcc.
+func finish(raw []byte, from string, now time.Time) (Built, error) {
+	if len(raw) > maxMessage {
+		return Built{}, fmt.Errorf("the message is %d MB; the limit is 25 MB", len(raw)>>20)
+	}
+	br := bufio.NewReader(bytes.NewReader(raw))
+	h, err := textproto.ReadHeader(br)
+	if err != nil {
+		return Built{}, fmt.Errorf("message header: %w", err)
+	}
+	body, err := io.ReadAll(br)
+	if err != nil {
+		return Built{}, err
 	}
 	mh := mail.Header{Header: message.Header{Header: h}}
 	if !mh.Has("From") {
@@ -229,7 +259,6 @@ func (c Compose) Build(from string, now time.Time) (Built, error) {
 		}
 	}
 	out := Built{MessageID: "<" + id + ">", Recipients: rcpts}
-	var err error
 	if out.Raw, err = render(mh.Header.Header, body); err != nil {
 		return Built{}, err
 	}
@@ -241,13 +270,15 @@ func (c Compose) Build(from string, now time.Time) (Built, error) {
 	return out, nil
 }
 
-// plain builds the header and body of a text message from the fields.
-func (c Compose) plain() (textproto.Header, []byte, error) {
+// fields builds a message from the fields. A message with HTML has a text
+// part too; a message with attachments is multipart/mixed.
+func (c Compose) fields() ([]byte, error) {
 	var h mail.Header
 	if len(c.To) == 0 {
-		return h.Header.Header, nil, errors.New("to: give at least one address")
+		return nil, errors.New("to: give at least one address")
 	}
-	for k, list := range map[string][]string{"To": c.To, "Cc": c.Cc, "Bcc": c.Bcc} {
+	for _, k := range []string{"To", "Cc", "Bcc"} {
+		list := map[string][]string{"To": c.To, "Cc": c.Cc, "Bcc": c.Bcc}[k]
 		if len(list) == 0 {
 			continue
 		}
@@ -255,7 +286,7 @@ func (c Compose) plain() (textproto.Header, []byte, error) {
 		for _, s := range list {
 			a, err := netmail.ParseAddress(s)
 			if err != nil {
-				return h.Header.Header, nil, fmt.Errorf("%s: %q is not an email address", strings.ToLower(k), s)
+				return nil, fmt.Errorf("%s: %q is not an email address", strings.ToLower(k), s)
 			}
 			as = append(as, (*mail.Address)(a))
 		}
@@ -263,27 +294,149 @@ func (c Compose) plain() (textproto.Header, []byte, error) {
 	}
 	h.SetSubject(c.Subject)
 	if r := strings.TrimSpace(c.InReplyTo); r != "" {
-		id := strings.TrimSuffix(strings.TrimPrefix(r, "<"), ">")
-		if id == "" || strings.ContainsAny(id, "<>\r\n\t ") {
-			return h.Header.Header, nil, fmt.Errorf("in_reply_to: %q is not a message id", c.InReplyTo)
+		id, err := msgID(r)
+		if err != nil {
+			return nil, fmt.Errorf("in_reply_to: %q is not a message id", c.InReplyTo)
 		}
-		r = "<" + id + ">"
-		h.Set("In-Reply-To", r)
-		h.Set("References", r)
+		h.Set("In-Reply-To", id)
+		refs := c.references
+		if len(refs) == 0 {
+			refs = []string{id}
+		}
+		h.Set("References", strings.Join(refs, " "))
 	}
 	h.Set("MIME-Version", "1.0")
-	h.Set("Content-Type", mime.FormatMediaType("text/plain", map[string]string{"charset": "utf-8"}))
-	h.Set("Content-Transfer-Encoding", "quoted-printable")
-	var body bytes.Buffer
-	w := quotedprintable.NewWriter(&body)
-	text := strings.ReplaceAll(strings.ReplaceAll(c.Text, "\r\n", "\n"), "\n", "\r\n")
-	if _, err := io.WriteString(w, text); err != nil {
-		return h.Header.Header, nil, err
+	files, err := c.decodeAttachments()
+	if err != nil {
+		return nil, err
+	}
+	text := c.Text
+	if text == "" && c.HTML != "" {
+		text = HTMLText(c.HTML)
+	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	var b bytes.Buffer
+	if c.HTML == "" && len(files) == 0 {
+		h.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		w, err := mail.CreateSingleInlineWriter(&b, h)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(w, text); err != nil {
+			return nil, err
+		}
+		if err := w.Close(); err != nil {
+			return nil, err
+		}
+		return b.Bytes(), nil
+	}
+	w, err := mail.CreateWriter(&b, h)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.writeBody(w, text); err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		var ah mail.AttachmentHeader
+		ah.SetContentType(f.mime, map[string]string{"name": f.name})
+		ah.SetFilename(f.name)
+		aw, err := w.CreateAttachment(ah)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := aw.Write(f.data); err != nil {
+			return nil, err
+		}
+		if err := aw.Close(); err != nil {
+			return nil, err
+		}
 	}
 	if err := w.Close(); err != nil {
-		return h.Header.Header, nil, err
+		return nil, err
 	}
-	return h.Header.Header, body.Bytes(), nil
+	return b.Bytes(), nil
+}
+
+// writeBody writes the text part, or the text and HTML parts as
+// multipart/alternative.
+func (c Compose) writeBody(w *mail.Writer, text string) error {
+	textHeader := func() mail.InlineHeader {
+		var ih mail.InlineHeader
+		ih.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		return ih
+	}
+	if c.HTML == "" {
+		tw, err := w.CreateSingleInline(textHeader())
+		if err != nil {
+			return err
+		}
+		if _, err := io.WriteString(tw, text); err != nil {
+			return err
+		}
+		return tw.Close()
+	}
+	iw, err := w.CreateInline()
+	if err != nil {
+		return err
+	}
+	var hh mail.InlineHeader
+	hh.SetContentType("text/html", map[string]string{"charset": "utf-8"})
+	for _, p := range []struct {
+		h    mail.InlineHeader
+		body string
+	}{{textHeader(), text}, {hh, c.HTML}} {
+		pw, err := iw.CreatePart(p.h)
+		if err != nil {
+			return err
+		}
+		if _, err := io.WriteString(pw, p.body); err != nil {
+			return err
+		}
+		if err := pw.Close(); err != nil {
+			return err
+		}
+	}
+	return iw.Close()
+}
+
+type attachFile struct {
+	name, mime string
+	data       []byte
+}
+
+func (c Compose) decodeAttachments() ([]attachFile, error) {
+	var out []attachFile
+	for i, a := range c.Attachments {
+		name := strings.TrimSpace(a.Name)
+		if name == "" || strings.ContainsAny(name, "\r\n") {
+			return nil, fmt.Errorf("attachments[%d]: give a file name", i)
+		}
+		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(a.ContentBase64))
+		if err != nil {
+			return nil, fmt.Errorf("attachments[%d] %q: content_base64 is not valid base64", i, name)
+		}
+		typ := strings.TrimSpace(a.MIME)
+		if typ == "" {
+			typ = mime.TypeByExtension(path.Ext(name))
+		}
+		if mt, _, err := mime.ParseMediaType(typ); err != nil || !strings.Contains(mt, "/") {
+			typ = "application/octet-stream"
+		} else {
+			typ = mt
+		}
+		out = append(out, attachFile{name: name, mime: typ, data: data})
+	}
+	return out, nil
+}
+
+// msgID checks one message id and puts it in angle brackets.
+func msgID(s string) (string, error) {
+	id := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(s), "<"), ">")
+	if id == "" || strings.ContainsAny(id, "<>\r\n\t ") {
+		return "", fmt.Errorf("%q is not a message id", s)
+	}
+	return "<" + id + ">", nil
 }
 
 // render writes the header and the body. A header value with CR or LF

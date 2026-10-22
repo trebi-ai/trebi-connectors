@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,13 +34,12 @@ func OpCommand() *cli.Command {
 		Name:  "op",
 		Usage: "Run one operation: JSON input on stdin, JSON output on stdout",
 		Subcommands: []*cli.Command{
-			opCommand("search", "Find messages (input: query, from, since, unread, folder, limit)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+			opCommand("search", "Find messages (input: query, from, to, since, before, unread, folder, limit, cursor)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
 				var q mail.SearchQuery
 				if err := decode(in, &q); err != nil {
 					return nil, err
 				}
-				msgs, err := mb.Search(c.Context, q)
-				return map[string]any{"messages": msgs}, err
+				return mb.Search(c.Context, q)
 			}),
 			opCommand("read", "Read one message as text (input: id, html)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
 				var q struct {
@@ -50,27 +50,114 @@ func OpCommand() *cli.Command {
 					return nil, err
 				}
 				if q.ID == "" {
-					return nil, errors.New("id: give the id of a message from search")
+					return nil, errNoID
 				}
 				msg, err := mb.Read(c.Context, q.ID, q.HTML)
 				return map[string]any{"message": msg}, err
 			}),
-			opCommand("draft", "Save a draft (input: to, cc, bcc, subject, text, in_reply_to, or mime_base64)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+			opCommand("thread", "Read the conversation of a message, oldest first (input: id, limit, html)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+				var q struct {
+					ID    string `json:"id"`
+					Limit int    `json:"limit"`
+					HTML  bool   `json:"html"`
+				}
+				if err := decode(in, &q); err != nil {
+					return nil, err
+				}
+				if q.ID == "" {
+					return nil, errNoID
+				}
+				return mb.Thread(c.Context, q.ID, q.Limit, q.HTML)
+			}),
+			opCommand("draft", "Save a draft (input: to, cc, bcc, subject, text, html, attachments, in_reply_to, or mime_base64)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
 				var d mail.Compose
 				if err := decode(in, &d); err != nil {
 					return nil, err
 				}
 				return mb.Draft(c.Context, d)
 			}),
-			opCommand("send", "Send a message (input: to, cc, bcc, subject, text, in_reply_to, or mime_base64)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+			opCommand("send", "Send a message (input: to, cc, bcc, subject, text, html, attachments, in_reply_to, or mime_base64)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
 				var d mail.Compose
 				if err := decode(in, &d); err != nil {
 					return nil, err
 				}
 				return mb.Send(c.Context, d)
 			}),
+			replyCommand("reply", "Answer a message and save the answer as a draft (input: id, text, html, all, cc, bcc, attachments)", false),
+			replyCommand("reply_send", "Answer a message and send the answer (input: id, text, html, all, cc, bcc, attachments)", true),
+			idCommand("send_draft", "Send a saved draft and delete the draft (input: id)", func(c *cli.Context, mb *mail.Mailbox, id string) (any, error) {
+				return mb.SendDraft(c.Context, id)
+			}),
+			idCommand("draft_delete", "Delete a saved draft (input: id)", func(c *cli.Context, mb *mail.Mailbox, id string) (any, error) {
+				if err := mb.DeleteDraft(c.Context, id); err != nil {
+					return nil, err
+				}
+				return map[string]any{"deleted": id}, nil
+			}),
+			opCommand("mark", "Mark messages as read or unread, starred or not (input: ids, read, starred)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+				var q mail.MarkInput
+				if err := decode(in, &q); err != nil {
+					return nil, err
+				}
+				return mb.Mark(c.Context, q)
+			}),
+			opCommand("label", "Add or remove labels (input: ids, add, remove, create)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+				var q mail.LabelInput
+				if err := decode(in, &q); err != nil {
+					return nil, err
+				}
+				return mb.Label(c.Context, q)
+			}),
+			idsCommand("archive", "Take messages out of the inbox (input: ids)", (*mail.Mailbox).Archive),
+			idsCommand("trash", "Move messages to the trash (input: ids)", (*mail.Mailbox).Trash),
+			opCommand("folders", "List the folders and labels with their counts (no input)", func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+				if err := decode(in, &struct{}{}); err != nil {
+					return nil, err
+				}
+				f, err := mb.Folders(c.Context)
+				return map[string]any{"folders": f}, err
+			}),
 		},
 	}
+}
+
+var errNoID = errors.New("id: give the id of a message from search")
+
+func replyCommand(name, usage string, send bool) *cli.Command {
+	return opCommand(name, usage, func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+		var q mail.ReplyInput
+		if err := decode(in, &q); err != nil {
+			return nil, err
+		}
+		return mb.Reply(c.Context, q, send)
+	})
+}
+
+func idCommand(name, usage string, run func(c *cli.Context, mb *mail.Mailbox, id string) (any, error)) *cli.Command {
+	return opCommand(name, usage, func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+		var q struct {
+			ID string `json:"id"`
+		}
+		if err := decode(in, &q); err != nil {
+			return nil, err
+		}
+		if q.ID == "" {
+			return nil, errors.New("id: give the draft_id from draft or reply")
+		}
+		return run(c, mb, q.ID)
+	})
+}
+
+func idsCommand(name, usage string, run func(mb *mail.Mailbox, ctx context.Context, ids []string) (mail.UpdateResult, error)) *cli.Command {
+	return opCommand(name, usage, func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error) {
+		var q struct {
+			IDs []string `json:"ids"`
+		}
+		if err := decode(in, &q); err != nil {
+			return nil, err
+		}
+		return run(mb, c.Context, q.IDs)
+	})
 }
 
 type opFunc func(c *cli.Context, mb *mail.Mailbox, in []byte) (any, error)

@@ -49,10 +49,11 @@ func ctx(t *testing.T) context.Context {
 
 func TestSearch(t *testing.T) {
 	_, mb := setup(t, "")
-	all, err := mb.Search(ctx(t), mail.SearchQuery{})
+	res, err := mb.Search(ctx(t), mail.SearchQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	all := res.Messages
 	if len(all) != 2 || all[0].Subject != "Invoice 42" || all[1].Subject != "Lunch on Friday" {
 		t.Fatalf("want newest first, got %+v", all)
 	}
@@ -62,21 +63,27 @@ func TestSearch(t *testing.T) {
 	if !strings.Contains(all[1].Snippet, "meet at noon") || !strings.Contains(all[0].Snippet, "invoice is ready") {
 		t.Fatalf("snippets: %q / %q", all[1].Snippet, all[0].Snippet)
 	}
-	got, err := mb.Search(ctx(t), mail.SearchQuery{Query: "Friday", Limit: 5})
+	got, err := search(t, mb, mail.SearchQuery{Query: "Friday", Limit: 5})
 	if err != nil || len(got) != 1 || got[0].Subject != "Lunch on Friday" {
 		t.Fatalf("text search: %+v %v", got, err)
 	}
-	got, err = mb.Search(ctx(t), mail.SearchQuery{From: "bob@example.com"})
+	got, err = search(t, mb, mail.SearchQuery{From: "bob@example.com"})
 	if err != nil || len(got) != 1 || got[0].Subject != "Invoice 42" {
 		t.Fatalf("from search: %+v %v", got, err)
 	}
-	got, err = mb.Search(ctx(t), mail.SearchQuery{Limit: 1})
+	got, err = search(t, mb, mail.SearchQuery{Limit: 1})
 	if err != nil || len(got) != 1 || got[0].Subject != "Invoice 42" {
 		t.Fatalf("limit: %+v %v", got, err)
 	}
 	if _, err := mb.Search(ctx(t), mail.SearchQuery{Since: "last week"}); err == nil {
 		t.Fatal("want an error for a bad date")
 	}
+}
+
+func search(t *testing.T, mb *mail.Mailbox, q mail.SearchQuery) ([]mail.Summary, error) {
+	t.Helper()
+	res, err := mb.Search(ctx(t), q)
+	return res.Messages, err
 }
 
 func TestReadHTMLAsText(t *testing.T) {

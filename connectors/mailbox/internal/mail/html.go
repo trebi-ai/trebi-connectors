@@ -86,3 +86,87 @@ func tidy(s string) string {
 	}
 	return strings.TrimSpace(blankLines.ReplaceAllString(strings.Join(lines, "\n"), "\n\n"))
 }
+
+// attribution is the line before a quote, for example "On Mon, Ann
+// <ann@example.com> wrote:".
+var attribution = regexp.MustCompile(`(?i)^(on\b.*|.*\bwrote|.*\bescreveu|.*\bschrieb|.*\ba écrit)\s*:?\s*$`)
+
+// StripQuotes removes the quoted lines (">") and the attribution line
+// before them. It keeps the text when all lines are quoted.
+func StripQuotes(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	var out []string
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimLeft(l, " "), ">") {
+			for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+				out = out[:len(out)-1]
+			}
+			if n := len(out); n > 0 && attribution.MatchString(strings.TrimSpace(out[n-1])) {
+				out = out[:n-1]
+				// Gmail wraps a long attribution over two lines.
+				if n := len(out); n > 0 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(out[n-1])), "on ") && !strings.HasSuffix(strings.TrimSpace(out[n-1]), ".") {
+					out = out[:n-1]
+				}
+			}
+			continue
+		}
+		out = append(out, l)
+	}
+	s := strings.TrimSpace(strings.Join(out, "\n"))
+	if s == "" {
+		return strings.TrimSpace(text)
+	}
+	return s
+}
+
+// StripHTMLQuotes removes the Gmail quote blocks (class gmail_quote) and
+// <blockquote type="cite"> from HTML.
+func StripHTMLQuotes(src string) string {
+	z := html.NewTokenizer(strings.NewReader(src))
+	var b strings.Builder
+	depth := 0 // > 0 inside a quote
+	for {
+		tt := z.Next()
+		if tt == html.ErrorToken {
+			return b.String()
+		}
+		raw := string(z.Raw())
+		switch tt {
+		case html.StartTagToken:
+			name, hasAttr := z.TagName()
+			if depth > 0 {
+				if !voidTags[string(name)] {
+					depth++
+				}
+				continue
+			}
+			quote := false
+			for hasAttr {
+				var k, v []byte
+				k, v, hasAttr = z.TagAttr()
+				switch {
+				case string(k) == "class" && strings.Contains(string(v), "gmail_quote"):
+					quote = true
+				case string(name) == "blockquote" && string(k) == "type" && string(v) == "cite":
+					quote = true
+				}
+			}
+			if quote {
+				depth = 1
+				continue
+			}
+		case html.EndTagToken:
+			if depth > 0 {
+				depth--
+				continue
+			}
+		default:
+			if depth > 0 {
+				continue
+			}
+		}
+		b.WriteString(raw)
+	}
+}
+
+var voidTags = map[string]bool{"br": true, "img": true, "hr": true, "meta": true, "input": true, "link": true, "wbr": true, "col": true, "area": true, "base": true, "source": true}

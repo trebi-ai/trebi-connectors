@@ -2,15 +2,16 @@
 package mail
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -97,18 +98,13 @@ func (m *Mailbox) dial(ctx context.Context) (*imapclient.Client, error) {
 	return c, nil
 }
 
-func logout(c *imapclient.Client) {
-	_ = c.Logout().Wait() // the session ends either way
-	_ = c.Close()
-}
-
 // Check logs in and out.
 func (m *Mailbox) Check(ctx context.Context) error {
-	c, err := m.dial(ctx)
+	s, err := m.open(ctx)
 	if err != nil {
 		return err
 	}
-	logout(c)
+	s.close()
 	return nil
 }
 
@@ -116,15 +112,25 @@ func (m *Mailbox) Check(ctx context.Context) error {
 type SearchQuery struct {
 	Query  string `json:"query"`
 	From   string `json:"from,omitempty"`
-	Since  string `json:"since,omitempty"` // YYYY-MM-DD
+	To     string `json:"to,omitempty"`
+	Since  string `json:"since,omitempty"`  // YYYY-MM-DD
+	Before string `json:"before,omitempty"` // YYYY-MM-DD
 	Unread bool   `json:"unread,omitempty"`
 	Folder string `json:"folder,omitempty"`
 	Limit  int    `json:"limit,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
+// SearchResult is the output of the search operation.
+type SearchResult struct {
+	Messages   []Summary `json:"messages"`
+	NextCursor string    `json:"next_cursor"`
 }
 
 // Summary is one message in a search result.
 type Summary struct {
 	ID        string   `json:"id"`
+	ThreadID  string   `json:"thread_id,omitempty"`
 	From      string   `json:"from"`
 	To        []string `json:"to"`
 	Subject   string   `json:"subject"`
@@ -132,6 +138,7 @@ type Summary struct {
 	Snippet   string   `json:"snippet"`
 	MessageID string   `json:"message_id"`
 	Unread    bool     `json:"unread"`
+	Labels    []string `json:"labels,omitempty"`
 }
 
 func (q SearchQuery) criteria() (*imap.SearchCriteria, error) {
@@ -139,9 +146,12 @@ func (q SearchQuery) criteria() (*imap.SearchCriteria, error) {
 	if s := strings.TrimSpace(q.Query); s != "" {
 		c.Text = []string{s}
 	}
-	if s := strings.TrimSpace(q.From); s != "" {
-		c.Header = append(c.Header, imap.SearchCriteriaHeaderField{Key: "From", Value: s})
+	for k, v := range map[string]string{"From": q.From, "To": q.To} {
+		if s := strings.TrimSpace(v); s != "" {
+			c.Header = append(c.Header, imap.SearchCriteriaHeaderField{Key: k, Value: s})
+		}
 	}
+	slices.SortFunc(c.Header, func(a, b imap.SearchCriteriaHeaderField) int { return strings.Compare(a.Key, b.Key) })
 	if q.Since != "" {
 		t, err := time.Parse(time.DateOnly, q.Since)
 		if err != nil {
@@ -149,71 +159,130 @@ func (q SearchQuery) criteria() (*imap.SearchCriteria, error) {
 		}
 		c.Since = t
 	}
+	if q.Before != "" {
+		t, err := time.Parse(time.DateOnly, q.Before)
+		if err != nil {
+			return nil, fmt.Errorf("before: use the form YYYY-MM-DD")
+		}
+		c.Before = t
+	}
 	if q.Unread {
 		c.NotFlag = []imap.Flag{imap.FlagSeen}
 	}
 	return c, nil
 }
 
-// Search finds messages in one folder, newest first.
-func (m *Mailbox) Search(ctx context.Context, q SearchQuery) ([]Summary, error) {
+// pageCursor is where the next page of a search starts: the UIDs below
+// UID in the folder.
+type pageCursor struct {
+	Folder      string   `json:"f"`
+	UIDValidity uint32   `json:"v"`
+	UID         imap.UID `json:"u"`
+}
+
+func (p pageCursor) String() string {
+	b, _ := json.Marshal(p) //nolint:errchkjson // plain fields
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func parseCursor(s string) (pageCursor, error) {
+	var p pageCursor
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil || json.Unmarshal(b, &p) != nil || p.Folder == "" || p.UID == 0 {
+		return p, errors.New("cursor: use the next_cursor of the last page")
+	}
+	return p, nil
+}
+
+// Search finds messages in one folder, newest first, one page at a time.
+func (m *Mailbox) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
+	res := SearchResult{Messages: []Summary{}}
 	crit, err := q.criteria()
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	folder := cmp.Or(q.Folder, "INBOX")
+	folder := q.Folder
+	var cur pageCursor
+	if q.Cursor != "" {
+		if cur, err = parseCursor(q.Cursor); err != nil {
+			return res, err
+		}
+		if folder != "" && folder != cur.Folder {
+			return res, fmt.Errorf("cursor: it is for the folder %q, not %q", cur.Folder, folder)
+		}
+		folder = cur.Folder
+	}
 	limit := q.Limit
 	if limit <= 0 {
 		limit = DefaultLimit
 	}
 	limit = min(limit, MaxLimit)
-	c, err := m.dial(ctx)
+	s, err := m.open(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	defer logout(c)
-	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-		return nil, fmt.Errorf("open folder %q: %w", folder, err)
+	defer s.close()
+	if folder == "" {
+		folder = "INBOX"
 	}
-	data, err := c.UIDSearch(crit, nil).Wait()
+	sel, err := s.selectFolder(folder, false)
 	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
+		return res, err
+	}
+	if cur.UID != 0 && cur.UIDValidity != sel.UIDValidity {
+		return res, errors.New("cursor: the folder changed since the last page; search again with no cursor")
+	}
+	data, err := s.c.UIDSearch(crit, nil).Wait()
+	if err != nil {
+		return res, fmt.Errorf("search: %w", err)
 	}
 	uids := data.AllUIDs()
 	slices.Sort(uids)
+	if cur.UID != 0 {
+		uids = uids[:sort.Search(len(uids), func(i int) bool { return uids[i] >= cur.UID })]
+	}
 	if len(uids) > limit {
 		uids = uids[len(uids)-limit:]
+		res.NextCursor = pageCursor{Folder: folder, UIDValidity: sel.UIDValidity, UID: uids[0]}.String()
 	}
+	if res.Messages, err = s.summaries(folder, uids); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// summaries fetches the messages in the selected folder, newest first.
+func (s *session) summaries(folder string, uids []imap.UID) ([]Summary, error) {
 	out := []Summary{}
 	if len(uids) == 0 {
 		return out, nil
 	}
 	part := &imap.FetchItemBodySection{Peek: true, Partial: &imap.SectionPartial{Size: snippetBytes}}
-	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{
+	msgs, err := s.c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{
 		UID: true, Envelope: true, Flags: true, BodySection: []*imap.FetchItemBodySection{part},
 	}).Collect()
 	if err != nil {
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
-	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return int(b.UID) - int(a.UID) })
+	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(b.UID, a.UID) })
 	for _, msg := range msgs {
-		s := Summary{ID: MessageRef{Folder: folder, UID: msg.UID}.String(), To: []string{}, Unread: !slices.Contains(msg.Flags, imap.FlagSeen)}
+		sum := Summary{ID: MessageRef{Folder: folder, UID: msg.UID}.String(), To: []string{}, Unread: !slices.Contains(msg.Flags, imap.FlagSeen)}
 		if env := msg.Envelope; env != nil {
-			s.Subject, s.MessageID = env.Subject, angle(env.MessageID)
+			sum.Subject, sum.MessageID = env.Subject, angle(env.MessageID)
 			if len(env.From) > 0 {
-				s.From = formatAddr(env.From[0])
+				sum.From = formatAddr(env.From[0])
 			}
 			for _, a := range env.To {
-				s.To = append(s.To, formatAddr(a))
+				sum.To = append(sum.To, formatAddr(a))
 			}
 			if !env.Date.IsZero() {
-				s.Date = env.Date.UTC().Format(time.RFC3339)
+				sum.Date = env.Date.UTC().Format(time.RFC3339)
 			}
 		}
 		if raw := msg.FindBodySection(part); raw != nil {
-			s.Snippet = snippet(raw)
+			sum.Snippet = snippet(raw)
 		}
-		out = append(out, s)
+		out = append(out, sum)
 	}
 	return out, nil
 }
@@ -239,33 +308,41 @@ func ParseRef(id string) (MessageRef, error) {
 	return MessageRef{Folder: folder, UID: imap.UID(n)}, nil
 }
 
+// locate finds the folder and UID of a message id.
+func (s *session) locate(id string) (MessageRef, error) {
+	return ParseRef(id)
+}
+
 // Read fetches one message and parses it.
 func (m *Mailbox) Read(ctx context.Context, id string, withHTML bool) (Message, error) {
-	ref, err := ParseRef(id)
+	s, err := m.open(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	c, err := m.dial(ctx)
+	defer s.close()
+	return s.read(id, withHTML)
+}
+
+func (s *session) read(id string, withHTML bool) (Message, error) {
+	ref, err := s.locate(id)
 	if err != nil {
 		return Message{}, err
 	}
-	defer logout(c)
-	if _, err := c.Select(ref.Folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-		return Message{}, fmt.Errorf("open folder %q: %w", ref.Folder, err)
+	if _, err := s.selectFolder(ref.Folder, false); err != nil {
+		return Message{}, err
 	}
-	part := &imap.FetchItemBodySection{Peek: true}
-	msgs, err := c.Fetch(imap.UIDSetNum(ref.UID), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{part}}).Collect()
-	if err != nil {
-		return Message{}, fmt.Errorf("fetch: %w", err)
+	_, raw, err := s.fetchRaw(ref.UID)
+	if errors.Is(err, errNoMessage) {
+		return Message{}, fmt.Errorf("no message %s", id)
 	}
-	if len(msgs) == 0 {
-		return Message{}, fmt.Errorf("no message %s", ref)
-	}
-	msg, err := Parse(msgs[0].FindBodySection(part))
 	if err != nil {
 		return Message{}, err
 	}
-	msg.ID = ref.String()
+	msg, err := Parse(raw)
+	if err != nil {
+		return Message{}, err
+	}
+	msg.ID = id
 	if !withHTML {
 		msg.HTML = ""
 	}
@@ -278,16 +355,17 @@ func (m *Mailbox) Draft(ctx context.Context, d Compose) (DraftResult, error) {
 	if err != nil {
 		return DraftResult{}, err
 	}
-	c, err := m.dial(ctx)
+	s, err := m.open(ctx)
 	if err != nil {
 		return DraftResult{}, err
 	}
-	defer logout(c)
-	folder := m.cfg.Drafts
-	if folder == "" {
-		folder = specialFolder(c, imap.MailboxAttrDrafts, "Drafts")
-	}
-	uid, err := appendMsg(c, folder, out.Raw, []imap.Flag{imap.FlagDraft, imap.FlagSeen}, m.now())
+	defer s.close()
+	return s.saveDraft(out)
+}
+
+func (s *session) saveDraft(out Built) (DraftResult, error) {
+	folder := s.drafts()
+	uid, err := s.appendMsg(folder, out.Raw, []imap.Flag{imap.FlagDraft, imap.FlagSeen}, s.m.now())
 	if err != nil {
 		return DraftResult{}, err
 	}
@@ -319,6 +397,10 @@ func (m *Mailbox) Send(ctx context.Context, d Compose) (SendResult, error) {
 	if err != nil {
 		return SendResult{}, err
 	}
+	return m.sendBuilt(ctx, out)
+}
+
+func (m *Mailbox) sendBuilt(ctx context.Context, out Built) (SendResult, error) {
 	if len(out.Recipients) == 0 {
 		return SendResult{}, errors.New("the message has no recipient")
 	}
@@ -329,51 +411,82 @@ func (m *Mailbox) Send(ctx context.Context, d Compose) (SendResult, error) {
 	if m.cfg.Sent == "" {
 		return res, nil
 	}
-	c, err := m.dial(ctx)
+	s, err := m.open(ctx)
 	if err != nil {
 		return res, fmt.Errorf("the message is sent, but the sent copy failed: %w", err)
 	}
-	defer logout(c)
-	if _, err := appendMsg(c, m.cfg.Sent, out.Raw, []imap.Flag{imap.FlagSeen}, m.now()); err != nil {
+	defer s.close()
+	if _, err := s.appendMsg(m.cfg.Sent, out.Raw, []imap.Flag{imap.FlagSeen}, m.now()); err != nil {
 		return res, fmt.Errorf("the message is sent, but the sent copy failed: %w", err)
 	}
 	res.SentCopy = m.cfg.Sent
 	return res, nil
 }
 
-func appendMsg(c *imapclient.Client, folder string, raw []byte, flags []imap.Flag, t time.Time) (imap.UID, error) {
-	cmd := c.Append(folder, int64(len(raw)), &imap.AppendOptions{Flags: flags, Time: t})
-	if _, err := io.Copy(cmd, bytes.NewReader(raw)); err != nil {
-		_ = cmd.Close()
-		return 0, fmt.Errorf("save to %q: %w", folder, err)
-	}
-	if err := cmd.Close(); err != nil {
-		return 0, fmt.Errorf("save to %q: %w", folder, err)
-	}
-	data, err := cmd.Wait()
+// draft finds a saved draft and returns its bytes. A message that is not
+// in the Drafts folder or has no \Draft flag is an error.
+func (s *session) draft(id string) (MessageRef, []byte, error) {
+	ref, err := s.locate(id)
 	if err != nil {
-		return 0, fmt.Errorf("save to %q: %w", folder, err)
+		return ref, nil, err
 	}
-	return data.UID, nil
+	if ref.Folder != s.drafts() {
+		return ref, nil, fmt.Errorf("%s is not a draft: give the draft_id from draft or reply", id)
+	}
+	if _, err := s.selectFolder(ref.Folder, true); err != nil {
+		return ref, nil, err
+	}
+	flags, raw, err := s.fetchRaw(ref.UID)
+	if errors.Is(err, errNoMessage) {
+		return ref, nil, fmt.Errorf("no draft %s", id)
+	}
+	if err != nil {
+		return ref, nil, err
+	}
+	if !slices.Contains(flags, imap.FlagDraft) {
+		return ref, nil, fmt.Errorf("%s is not a draft: give the draft_id from draft or reply", id)
+	}
+	return ref, raw, nil
 }
 
-// specialFolder finds the folder with the special-use attribute, or
-// returns def.
-func specialFolder(c *imapclient.Client, attr imap.MailboxAttr, def string) string {
-	var opts *imap.ListOptions
-	if c.Caps().Has(imap.CapSpecialUse) {
-		opts = &imap.ListOptions{ReturnSpecialUse: true}
-	}
-	list, err := c.List("", "*", opts).Collect()
+// SendDraft sends a saved draft without its Bcc header, and then deletes
+// the draft.
+func (m *Mailbox) SendDraft(ctx context.Context, id string) (SendResult, error) {
+	s, err := m.open(ctx)
 	if err != nil {
-		return def
+		return SendResult{}, err
 	}
-	for _, l := range list {
-		if slices.Contains(l.Attrs, attr) {
-			return l.Mailbox
-		}
+	defer s.close()
+	ref, raw, err := s.draft(id)
+	if err != nil {
+		return SendResult{}, err
 	}
-	return def
+	out, err := finish(raw, m.cfg.Address, m.now())
+	if err != nil {
+		return SendResult{}, err
+	}
+	res, err := m.sendBuilt(ctx, out)
+	if err != nil {
+		return res, err
+	}
+	if err := s.remove([]imap.UID{ref.UID}); err != nil {
+		return res, fmt.Errorf("the message is sent, but the draft stays: %w", err)
+	}
+	return res, nil
+}
+
+// DeleteDraft deletes a saved draft.
+func (m *Mailbox) DeleteDraft(ctx context.Context, id string) error {
+	s, err := m.open(ctx)
+	if err != nil {
+		return err
+	}
+	defer s.close()
+	ref, _, err := s.draft(id)
+	if err != nil {
+		return err
+	}
+	return s.remove([]imap.UID{ref.UID})
 }
 
 func formatAddr(a imap.Address) string {

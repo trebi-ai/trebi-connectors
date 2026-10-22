@@ -14,8 +14,10 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"math/big"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,8 +27,15 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 )
 
-// Folders that the fake makes.
-var Folders = []string{"INBOX", "Drafts", "Sent"}
+// Folders that the fake makes, with their special-use attribute.
+var Folders = map[string]imap.MailboxAttr{
+	"INBOX":   "",
+	"Drafts":  imap.MailboxAttrDrafts,
+	"Sent":    imap.MailboxAttrSent,
+	"Trash":   imap.MailboxAttrTrash,
+	"Archive": imap.MailboxAttrArchive,
+	"Junk":    imap.MailboxAttrJunk,
+}
 
 // Mail is one message that the SMTP server got.
 type Mail struct {
@@ -39,16 +48,17 @@ type Mail struct {
 type Server struct {
 	user     *imapmemserver.User
 	imap     *imapserver.Server
-	imapLn   net.Listener
+	imapLn   *trackListener
 	smtpLn   net.Listener
 	cert     tls.Certificate
 	pool     *x509.CertPool
 	address  string
 	password string
 
-	mu   sync.Mutex
-	sent []Mail
-	wg   sync.WaitGroup
+	mu    sync.Mutex
+	sent  []Mail
+	roles map[string]imap.MailboxAttr // folder name to special use
+	wg    sync.WaitGroup
 }
 
 // Start starts both servers on 127.0.0.1 for one address and password.
@@ -57,27 +67,28 @@ func Start(address, password string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cert: cert, pool: pool, address: address, password: password}
+	s := &Server{cert: cert, pool: pool, address: address, password: password, roles: map[string]imap.MailboxAttr{}}
 	s.user = imapmemserver.NewUser(address, password)
-	for _, f := range Folders {
+	for f, role := range Folders {
 		if err := s.user.Create(f, nil); err != nil {
 			return nil, err
 		}
+		s.roles[f] = role
 	}
-	mem := imapmemserver.New()
-	mem.AddUser(s.user)
 	s.imap = imapserver.New(&imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
+			return &session{srv: s}, nil, nil
 		},
-		Caps:         imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}},
+		Caps:         imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}, imap.CapSpecialUse: {}},
 		Logger:       quiet{},
 		InsecureAuth: true,
 	})
 	srvTLS := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
-	if s.imapLn, err = tls.Listen("tcp", "127.0.0.1:0", srvTLS); err != nil {
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", srvTLS)
+	if err != nil {
 		return nil, err
 	}
+	s.imapLn = &trackListener{Listener: ln, conns: map[net.Conn]bool{}}
 	if s.smtpLn, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
 		_ = s.imapLn.Close()
 		return nil, err
@@ -105,6 +116,36 @@ func (s *Server) Deliver(folder string, raw []byte, flags ...imap.Flag) error {
 	return err
 }
 
+// DeleteFolder removes a folder and its messages.
+func (s *Server) DeleteFolder(name string) error {
+	s.mu.Lock()
+	delete(s.roles, name)
+	s.mu.Unlock()
+	return s.user.Delete(name)
+}
+
+// ResetFolder deletes a folder and makes it again. The new folder has a
+// new UIDVALIDITY and no messages.
+func (s *Server) ResetFolder(name string) error {
+	s.mu.Lock()
+	role := s.roles[name]
+	s.mu.Unlock()
+	if err := s.DeleteFolder(name); err != nil {
+		return err
+	}
+	if err := s.user.Create(name, nil); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.roles[name] = role
+	s.mu.Unlock()
+	return nil
+}
+
+// DropConnections closes all open IMAP connections, as a network fault
+// does.
+func (s *Server) DropConnections() { s.imapLn.closeAll() }
+
 // Sent returns the messages that the SMTP server got.
 func (s *Server) Sent() []Mail {
 	s.mu.Lock()
@@ -117,6 +158,104 @@ func (s *Server) Close() {
 	_ = s.imap.Close()
 	_ = s.smtpLn.Close()
 	s.wg.Wait()
+}
+
+// session adds the special-use attributes to LIST, because
+// imapmemserver cannot set them.
+type session struct {
+	*imapmemserver.UserSession // nil before login
+	srv                        *Server
+}
+
+func (ss *session) Login(username, password string) error {
+	if username != ss.srv.address || password != ss.srv.password {
+		return imapserver.ErrAuthFailed
+	}
+	ss.UserSession = imapmemserver.NewUserSession(ss.srv.user)
+	return nil
+}
+
+func (ss *session) Close() error {
+	if ss.UserSession == nil {
+		return nil
+	}
+	return ss.UserSession.Close()
+}
+
+func (ss *session) Create(name string, options *imap.CreateOptions) error {
+	if err := ss.UserSession.Create(name, options); err != nil {
+		return err
+	}
+	ss.srv.mu.Lock()
+	ss.srv.roles[name] = ""
+	ss.srv.mu.Unlock()
+	return nil
+}
+
+func (ss *session) Delete(name string) error {
+	if err := ss.UserSession.Delete(name); err != nil {
+		return err
+	}
+	ss.srv.mu.Lock()
+	delete(ss.srv.roles, name)
+	ss.srv.mu.Unlock()
+	return nil
+}
+
+func (ss *session) List(w *imapserver.ListWriter, ref string, patterns []string, options *imap.ListOptions) error {
+	if len(patterns) == 0 {
+		return w.WriteList(&imap.ListData{Attrs: []imap.MailboxAttr{imap.MailboxAttrNoSelect}, Delim: '/'})
+	}
+	ss.srv.mu.Lock()
+	var names []string
+	for name := range ss.srv.roles {
+		for _, p := range patterns {
+			if imapserver.MatchList(name, '/', ref, p) {
+				names = append(names, name)
+				break
+			}
+		}
+	}
+	roles := maps.Clone(ss.srv.roles)
+	ss.srv.mu.Unlock()
+	slices.Sort(names)
+	for _, name := range names {
+		d := &imap.ListData{Mailbox: name, Delim: '/'}
+		if role := roles[name]; role != "" && options != nil && options.ReturnSpecialUse {
+			d.Attrs = append(d.Attrs, role)
+		}
+		if err := w.WriteList(d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// trackListener keeps the open connections so that a test can close them.
+type trackListener struct {
+	net.Listener
+	mu    sync.Mutex
+	conns map[net.Conn]bool
+}
+
+func (l *trackListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	l.mu.Lock()
+	l.conns[c] = true
+	l.mu.Unlock()
+	return c, nil
+}
+
+func (l *trackListener) closeAll() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for c := range l.conns {
+		_ = c.Close()
+		delete(l.conns, c)
+	}
 }
 
 type literal struct {
