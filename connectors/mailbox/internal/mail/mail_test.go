@@ -211,9 +211,9 @@ func TestBadPassword(t *testing.T) {
 
 func TestHTMLText(t *testing.T) {
 	for in, want := range map[string]string{
-		"<ul><li>one</li><li>two</li></ul><p>a&amp;b</p>": "- one\n- two\n\na&b",
+		"<ul><li>one</li><li>two</li></ul><p>a&amp;b</p>":                                                                    "- one\n- two\n\na&b",
 		"<h1>Report</h1><table><tr><th>Name</th><th>Score</th></tr><tr><td>Ann</td><td><b>9</b></td></tr></table><p>End</p>": "Report\n\nName | Score\nAnn | 9\n\nEnd",
-		`<p>See <a href="https://example.com/r">the report</a>.</p>`: "See the report (https://example.com/r).",
+		`<p>See <a href="https://example.com/r">the report</a>.</p>`:                                                         "See the report (https://example.com/r).",
 	} {
 		if got := mail.HTMLText(in); got != want {
 			t.Errorf("%s\n got %q\nwant %q", in, got, want)
