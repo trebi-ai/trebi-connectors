@@ -26,7 +26,7 @@ type session struct {
 
 // open logs in. The caller closes the session.
 func (m *Mailbox) open(ctx context.Context) (*session, error) {
-	c, err := m.dial(ctx)
+	c, err := m.dial(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

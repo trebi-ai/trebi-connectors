@@ -25,6 +25,10 @@ import (
 // ErrAuth is a login that the server refused.
 var ErrAuth = errors.New("the server refused the address or the app password")
 
+// GmailPrefix starts the id of a message on a server with the Gmail
+// extensions.
+const GmailPrefix = "gm:"
+
 // Search limits.
 const (
 	DefaultLimit = 20
@@ -71,10 +75,10 @@ func (m *Mailbox) tlsFor(addr string) *tls.Config {
 }
 
 // dial opens a logged-in IMAP session. The caller closes it.
-func (m *Mailbox) dial(ctx context.Context) (*imapclient.Client, error) {
+func (m *Mailbox) dial(ctx context.Context, h *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
 	addr := m.cfg.IMAPHost
 	d := &net.Dialer{Timeout: dialTimeout}
-	opts := &imapclient.Options{TLSConfig: m.tlsFor(addr), Dialer: d}
+	opts := &imapclient.Options{TLSConfig: m.tlsFor(addr), Dialer: d, UnilateralDataHandler: h}
 	var c *imapclient.Client
 	var err error
 	if strings.HasSuffix(addr, ":143") {
@@ -280,7 +284,7 @@ func (s *session) summaries(folder string, uids []imap.UID) ([]Summary, error) {
 			}
 		}
 		if raw := msg.FindBodySection(part); raw != nil {
-			sum.Snippet = snippet(raw)
+			sum.Snippet = snippet(raw, snippetLen)
 		}
 		out = append(out, sum)
 	}

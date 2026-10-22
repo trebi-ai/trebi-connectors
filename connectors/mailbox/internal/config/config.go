@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
@@ -56,17 +57,25 @@ type Settings struct {
 	Drafts   string // "" finds the \Drafts folder
 	Sent     string // "" keeps no sent copy
 	Trebi    bool
+	// StateDir holds the cursor of watch: TREBI_STATE_DIR in Trebi mode,
+	// else ~/.cli-tools/mailbox.
+	StateDir string
 }
 
 // Resolve reads the settings from the env. provider is the --provider
 // flag; it wins over MAILBOX_PROVIDER. An explicit host or folder env wins
 // over the preset.
 func Resolve(provider string) (Settings, error) {
-	_, trebi := sdk.FromEnv()
+	t, trebi := sdk.FromEnv()
 	if provider == "" {
 		provider = os.Getenv(EnvProvider)
 	}
-	s := Settings{Trebi: trebi}
+	s := Settings{Trebi: trebi, StateDir: t.StateDir}
+	if !trebi {
+		if home, err := os.UserHomeDir(); err == nil {
+			s.StateDir = filepath.Join(home, ".cli-tools", "mailbox")
+		}
+	}
 	if provider != "" {
 		p, ok := Providers[strings.ToLower(provider)]
 		if !ok {

@@ -231,7 +231,7 @@ func fetchAll(t *testing.T, fake *fakemail.Server, folder string) ([][]imap.Flag
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck // test cleanup
 	if err := c.Login(addr, pass).Wait(); err != nil {
 		t.Fatal(err)
 	}

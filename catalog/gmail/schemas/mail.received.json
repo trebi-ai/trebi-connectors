@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a new message in the inbox. The event text has the subject and the start of the body.",
+  "properties": {
+    "id": {"type": "string", "description": "The id of the message. Give it to read, thread, reply, or the inbox actions."},
+    "from": {"type": "string", "description": "The sender, with the name and the address."},
+    "to": {"type": "array", "items": {"type": "string"}, "description": "The recipients."},
+    "cc": {"type": "array", "items": {"type": "string"}, "description": "The copy recipients."},
+    "subject": {"type": "string", "description": "The subject."},
+    "date": {"type": "string", "description": "When the message was sent, as RFC 3339."},
+    "message_id": {"type": "string", "description": "The Message-ID header of the message."},
+    "thread_id": {"type": "string", "description": "The conversation of the message. Give it to thread."},
+    "labels": {"type": "array", "items": {"type": "string"}, "description": "The labels of the message."},
+    "snippet": {"type": "string", "description": "The start of the body as text, at most 500 characters."},
+    "has_attachments": {"type": "boolean", "description": "True when the message has attachments."},
+    "size": {"type": "integer", "description": "The size of the message in bytes."}
+  },
+  "required": ["id", "from", "to", "subject", "snippet", "has_attachments", "size"]
+}

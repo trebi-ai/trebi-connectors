@@ -71,7 +71,7 @@ func parse(raw []byte) (Message, error) {
 	if r == nil {
 		return msg, err
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck // a read-only reader
 	msg.Headers = readHeaders(r.Header)
 	var plain, html string
 	for {
@@ -154,14 +154,14 @@ func addrs(h mail.Header, key string) []string {
 }
 
 // snippet reads the start of a message and returns a short text.
-func snippet(raw []byte) string {
+func snippet(raw []byte, n int) string {
 	msg, _ := parse(raw) // a partial body often ends inside a part
 	s := strings.Join(strings.Fields(msg.Text), " ")
-	if utf8.RuneCountInString(s) <= snippetLen {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
 	r := []rune(s)
-	return string(r[:snippetLen]) + "…"
+	return string(r[:n]) + "…"
 }
 
 // maxMessage caps a built message. Gmail refuses a message larger than

@@ -39,7 +39,7 @@ func newApp() *cli.App {
 			c.App.Metadata["settings"] = s
 			return nil
 		},
-		Commands: []*cli.Command{cmd.OpCommand(), cmd.ServeCommand(version)},
+		Commands: []*cli.Command{cmd.OpCommand(), cmd.ServeCommand(version), cmd.WatchCommand()},
 		Metadata: map[string]any{},
 	}
 }

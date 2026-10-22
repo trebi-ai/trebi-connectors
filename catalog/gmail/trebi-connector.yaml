@@ -30,7 +30,9 @@ setup:
 events:
   protocol: trebi-connector/1
   command: mailbox --provider gmail serve
-  restart: on-failure
+  restart: always
+  types:
+    - {type: mail.received, description: A new message in the inbox, schema: schemas/mail.received.json}
 actions:
   operations:
     - name: search

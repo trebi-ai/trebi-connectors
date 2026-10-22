@@ -388,11 +388,11 @@ func TestThreadOverInboxAndSent(t *testing.T) {
 
 func TestStripQuotes(t *testing.T) {
 	cases := map[string]string{
-		"Yes.\n\nOn Mon, Oct 6, 2026 at 10:00 AM Ann <ann@example.com> wrote:\n> Can we?\n> Sure?": "Yes.",
-		"Yes.\nOn Mon, Oct 6, 2026 at 10:00 AM Ann Long Name\n<ann@example.com> wrote:\n\n> Can we?":  "Yes.",
+		"Yes.\n\nOn Mon, Oct 6, 2026 at 10:00 AM Ann <ann@example.com> wrote:\n> Can we?\n> Sure?":   "Yes.",
+		"Yes.\nOn Mon, Oct 6, 2026 at 10:00 AM Ann Long Name\n<ann@example.com> wrote:\n\n> Can we?": "Yes.",
 		"No quote here.\nTwo lines.": "No quote here.\nTwo lines.",
 		"> only a quote":             "> only a quote",
-		"Top\n> mid quote\nBottom":    "Top\nBottom",
+		"Top\n> mid quote\nBottom":   "Top\nBottom",
 	}
 	for in, want := range cases {
 		if got := mail.StripQuotes(in); got != want {
