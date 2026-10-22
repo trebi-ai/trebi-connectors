@@ -1,8 +1,8 @@
 schema: trebi-connector/1
 name: gmail
 title: Gmail
-description: "Search and read your Gmail, and save replies as drafts. Sending is off until you turn it on."
-version: 0.2.0
+description: "Search, read, and sort your Gmail, save replies as drafts, and start jobs when new mail comes in. Sending is off until you turn it on."
+version: 0.3.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -37,7 +37,7 @@ actions:
   operations:
     - name: search
       label: Search mail
-      description: Find messages by text, sender, or date. The newest message comes first.
+      description: Find messages by text, sender, recipient, or date. The newest message comes first. Give next_cursor back as cursor to get the next page.
       readonly: true
       default: on
       command: [mailbox, --provider, gmail, op, search]
@@ -49,10 +49,13 @@ actions:
         properties:
           query: {type: string, maxLength: 500, description: Text to find in the headers and the body. Empty finds all messages.}
           from: {type: string, maxLength: 200, description: A sender address or name.}
+          to: {type: string, maxLength: 200, description: A recipient address or name.}
           since: {type: string, maxLength: 10, description: "The first date, as YYYY-MM-DD."}
+          before: {type: string, maxLength: 10, description: "Find messages before this date, as YYYY-MM-DD."}
           unread: {type: boolean, description: Find only unread messages.}
           folder: {type: string, maxLength: 200, description: "The folder. The default is INBOX. All mail is [Gmail]/All Mail."}
           limit: {type: integer, minimum: 1, maximum: 100, description: The maximum number of messages. The default is 20.}
+          cursor: {type: string, maxLength: 500, description: The next_cursor of the previous page.}
     - name: read
       label: Read a message
       description: Read one message as text. Attachments show only their name, type, and size.
@@ -65,9 +68,37 @@ actions:
       input:
         type: object
         properties:
-          id: {type: string, maxLength: 300, description: "The id from search, for example INBOX:42."}
+          id: {type: string, maxLength: 300, description: "The id from search, read, or an event, for example INBOX:42."}
           html: {type: boolean, description: Also return the HTML part.}
         required: [id]
+    - name: thread
+      label: Read a conversation
+      description: Read all messages of the conversation of one message, oldest first. Quoted text of earlier messages is removed.
+      readonly: true
+      default: on
+      command: [mailbox, --provider, gmail, op, thread]
+      stdin: json
+      output: json
+      timeout: 60s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: "The id from search, read, or an event, for example INBOX:42."}
+          limit: {type: integer, minimum: 1, maximum: 50, description: The maximum number of messages. The default is 20.}
+          html: {type: boolean, description: Also return the HTML parts.}
+        required: [id]
+    - name: folders
+      label: List folders
+      description: List the folders and labels with the count of messages and of unread messages.
+      readonly: true
+      default: on
+      command: [mailbox, --provider, gmail, op, folders]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties: {}
     - name: draft
       label: Save a draft
       description: Save a message in Gmail Drafts. It does not send the message.
@@ -85,8 +116,105 @@ actions:
           bcc: {type: array, items: {type: string}}
           subject: {type: string, maxLength: 998}
           text: {type: string, description: The plain text body.}
-          in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this draft replies to.}
-          mime_base64: {type: string, description: A full MIME message in base64. Give this or the other fields.}
+          html: {type: string, description: "The HTML body. With no text, the program makes the text from it."}
+          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+          in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this message replies to. Use reply to fill all reply fields.}
+          mime_base64: {type: string, description: A full message in base64. Give this or the other fields.}
+    - name: reply
+      label: Save a reply as a draft
+      description: Save a reply to a message in Gmail Drafts. The program sets the recipients, the subject, and the conversation. It does not send the reply.
+      readonly: false
+      default: on
+      command: [mailbox, --provider, gmail, op, reply]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: "The id from search, read, or an event, for example INBOX:42."}
+          text: {type: string, description: The plain text body of the reply.}
+          html: {type: string, description: The HTML body of the reply.}
+          all: {type: boolean, description: Reply to all recipients. The default replies only to the sender.}
+          cc: {type: array, items: {type: string}}
+          bcc: {type: array, items: {type: string}}
+          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+        required: [id]
+    - name: draft_delete
+      label: Delete a draft
+      description: Delete one message from Gmail Drafts. It deletes only drafts.
+      readonly: false
+      default: on
+      command: [mailbox, --provider, gmail, op, draft_delete]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: The draft_id from draft or reply.}
+        required: [id]
+    - name: mark
+      label: Mark as read or starred
+      description: Mark messages as read or unread, and starred or not starred.
+      readonly: false
+      default: on
+      command: [mailbox, --provider, gmail, op, mark]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          ids: {type: array, items: {type: string, maxLength: 300}, description: The ids from search or an event. At most 100.}
+          read: {type: boolean, description: True marks as read. False marks as unread.}
+          starred: {type: boolean, description: True adds a star. False removes the star.}
+        required: [ids]
+    - name: label
+      label: Change labels
+      description: Add labels to messages or remove labels from messages.
+      readonly: false
+      default: on
+      command: [mailbox, --provider, gmail, op, label]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          ids: {type: array, items: {type: string, maxLength: 300}, description: The ids from search or an event. At most 100.}
+          add: {type: array, items: {type: string, maxLength: 200}, description: The labels to add.}
+          remove: {type: array, items: {type: string, maxLength: 200}, description: The labels to remove.}
+          create: {type: boolean, description: Make a label that does not exist yet. The default gives an error.}
+        required: [ids]
+    - name: archive
+      label: Archive
+      description: Take messages out of the inbox. They stay in All Mail.
+      readonly: false
+      default: on
+      command: [mailbox, --provider, gmail, op, archive]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          ids: {type: array, items: {type: string, maxLength: 300}, description: The ids from search or an event. At most 100.}
+        required: [ids]
+    - name: trash
+      label: Move to trash
+      description: Move messages to the trash. Gmail deletes them after 30 days.
+      readonly: false
+      default: off
+      command: [mailbox, --provider, gmail, op, trash]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          ids: {type: array, items: {type: string, maxLength: 300}, description: The ids from search or an event. At most 100.}
+        required: [ids]
     - name: send
       label: Send mail
       description: Send a message from this account.
@@ -104,5 +232,41 @@ actions:
           bcc: {type: array, items: {type: string}}
           subject: {type: string, maxLength: 998}
           text: {type: string, description: The plain text body.}
-          in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this message replies to.}
-          mime_base64: {type: string, description: A full MIME message in base64. Give this or the other fields.}
+          html: {type: string, description: "The HTML body. With no text, the program makes the text from it."}
+          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+          in_reply_to: {type: string, maxLength: 998, description: The message_id of the message that this message replies to. Use reply to fill all reply fields.}
+          mime_base64: {type: string, description: A full message in base64. Give this or the other fields.}
+    - name: reply_send
+      label: Send a reply
+      description: Send a reply to a message. The program sets the recipients, the subject, and the conversation.
+      readonly: false
+      default: off
+      command: [mailbox, --provider, gmail, op, reply_send]
+      stdin: json
+      output: json
+      timeout: 60s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: "The id from search, read, or an event, for example INBOX:42."}
+          text: {type: string, description: The plain text body of the reply.}
+          html: {type: string, description: The HTML body of the reply.}
+          all: {type: boolean, description: Reply to all recipients. The default replies only to the sender.}
+          cc: {type: array, items: {type: string}}
+          bcc: {type: array, items: {type: string}}
+          attachments: {type: array, description: "Files to attach. Each file is an object with name, content_base64 (the content in base64), and an optional mime (the file type). All files together are at most 25 MiB."}
+        required: [id]
+    - name: send_draft
+      label: Send a draft
+      description: Send a message from Gmail Drafts, and then delete the draft.
+      readonly: false
+      default: off
+      command: [mailbox, --provider, gmail, op, send_draft]
+      stdin: json
+      output: json
+      timeout: 60s
+      input:
+        type: object
+        properties:
+          id: {type: string, maxLength: 300, description: The draft_id from draft or reply.}
+        required: [id]
