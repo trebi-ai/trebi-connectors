@@ -1,6 +1,6 @@
 # mailbox
 
-A small Go CLI that reads and writes one mail account over IMAP and SMTP. It searches and reads mail, saves drafts, and sends mail. Its `serve` command is the Trebi adapter that reports the health of the account. The catalog entry `catalog/gmail` uses it.
+A small Go CLI that reads and writes one mail account over IMAP and SMTP. It searches and reads mail and conversations, saves drafts and replies, sends mail, and sorts the inbox. Its `watch` command prints one event for each new message. Its `serve` command is the Trebi adapter that sends the same events and reports the health of the account. The catalog entry `catalog/gmail` uses it.
 
 ## Build
 
@@ -34,17 +34,32 @@ echo '{"to": ["ann@example.com"], "subject": "Re: Lunch", "text": "Yes.", "in_re
 echo '{"to": ["ann@example.com"], "subject": "Hello", "text": "Hi Ann"}' | mailbox --provider gmail op send
 ```
 
-- `search` takes `query`, `from`, `since` (`YYYY-MM-DD`), `unread`, `folder` (default `INBOX`), and `limit` (default 20, max 100). It returns `messages`, newest first. An `id` is `<folder>:<uid>`.
+- `search` takes `query`, `from`, `to`, `since` and `before` (`YYYY-MM-DD`), `unread`, `folder` (default `INBOX`), `limit` (default 20, max 100), and `cursor`. It returns `messages`, newest first, and `next_cursor`. Give `next_cursor` back as `cursor` to get the next page. An empty `next_cursor` is the last page. An `id` is `<folder>:<uid>`.
 - `read` takes `id` and `html`. It returns `message` with `headers`, `text`, and `attachments`. The text is the plain part, or the HTML part as text. It never returns attachment bytes. `html: true` also returns the HTML part.
-- `draft` and `send` take `to`, `cc`, `bcc`, `subject`, `text`, and `in_reply_to`, or one `mime_base64` with a full MIME message. `draft` saves the message in the Drafts folder with the `\Draft` flag. `send` sends it over SMTP and then saves a copy in the Sent folder, when there is one.
-- Search and read do not mark a message as read. An unknown input field is an error.
+- `thread` takes `id`, `limit` (default 20, max 50), and `html`. It returns `thread_id` and `messages` of the conversation, oldest first, from the folder of the message and the Sent folder. It removes the quoted text of earlier messages.
+- `draft` and `send` take `to`, `cc`, `bcc`, `subject`, `text`, `html`, `attachments`, and `in_reply_to`, or one `mime_base64` with a full MIME message. An attachment is `{"name", "content_base64", "mime"}`; the whole message is at most 25 MiB. With only `html`, the program makes the text part. `draft` saves the message in the Drafts folder with the `\Draft` flag. `send` sends it over SMTP and then saves a copy in the Sent folder, when there is one.
+- `reply` and `reply_send` take `id`, `text` or `html`, `all`, `cc`, `bcc`, and `attachments`. The program sets the recipients (Reply-To wins over From; `all` adds the other recipients but not this account), the subject, `In-Reply-To`, and `References`. `reply` saves a draft. `reply_send` sends.
+- `send_draft` takes the `id` of a draft. It sends the draft as saved, then deletes it. `draft_delete` deletes a draft. Both refuse a message that is not a draft in the Drafts folder.
+- `mark` takes `ids` (at most 100), `read`, and `starred`. `label` takes `ids`, `add`, `remove`, and `create`. `archive` and `trash` take `ids`. Each returns `changed` and `failed` (an `id` and a `reason`). On a server with no labels, `label` copies to the folder for `add` and refuses `remove`.
+- `folders` returns each folder with its `role` (inbox, drafts, sent, trash, archive, junk, all), `total`, and `unread`.
+- Search, read, and thread do not mark a message as read. An unknown input field is an error.
+
+### Watch for new mail
+
+`mailbox watch` prints one JSON line on stdout for each new message in INBOX. Each line is a `mail.received` event, the same as `serve` sends. The cursor is in `~/.cli-tools/mailbox/cursor.json`.
+
+- The first start sends no events for old mail. It saves the newest message as the start point.
+- After a restart, it sends each message that came in while it was stopped, in order, once.
+- When the server makes the folder again (a new UIDVALIDITY), it saves a new start point and logs a warning.
+- Mail from the address of the account sends no event.
 
 ## Use with Trebi
 
 Trebi runs `mailbox --provider gmail serve` with `TREBI_STATE_DIR` set. This is Trebi mode. The values come only from the inputs of the connection. The program writes no file.
 
 - With no address or no password, `serve` sends `status` `auth_required` with reason `missing_input`.
-- `serve` logs in at start and every 5 minutes. A refused password gives `auth_required` with reason `revoked`. A network fault gives `error`.
+- `serve` logs in at start, then waits in IDLE and sends a `mail.received` event for each new message in INBOX. A catch-up sync runs after each wake-up, each reconnect, and every 5 minutes. The cursor is `cursor.json` in the state folder. A cursor from a newer version gives `error` and stays on disk.
+- A refused password gives `auth_required` with reason `revoked` and a message that says what to do. A network fault gives `connecting`, with a backoff of 1 s to 2 min. After 10 faults in sequence, the status is `error`.
 - The daemon runs each operation as `mailbox --provider gmail op <name>` with the inputs in the env. A run never gets the program or the password.
 - `serve --sandbox` runs the same adapter over a fake IMAP and SMTP server in the same process. Outside Trebi it uses fixed fake credentials.
 
