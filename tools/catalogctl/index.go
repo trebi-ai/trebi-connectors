@@ -26,6 +26,12 @@ type Index struct {
 	Entries     []IndexEntry `json:"entries"`
 }
 
+// Where a connector runs.
+const (
+	RunsLocal  = "local"
+	RunsOnline = "online"
+)
+
 // IndexEntry is one connector in the index.
 type IndexEntry struct {
 	Name         string         `json:"name"`
@@ -33,6 +39,8 @@ type IndexEntry struct {
 	Description  string         `json:"description"`
 	Publisher    string         `json:"publisher"`
 	Capabilities []string       `json:"capabilities"`
+	Runs         string         `json:"runs"`            // local | online
+	Login        string         `json:"login,omitempty"` // the label of the first login method
 	IconURL      string         `json:"icon_url,omitempty"`
 	Latest       string         `json:"latest"`
 	Versions     []IndexVersion `json:"versions"`
@@ -112,6 +120,7 @@ func (b *Builder) Build(ctx context.Context, entries []*Entry) (*Output, error) 
 		ie.Name, ie.Title, ie.Description = m.Name, m.Title, m.Description
 		ie.Publisher = cmpOr(m.Publisher, "community")
 		ie.Capabilities = m.Capabilities()
+		ie.Runs, ie.Login = m.Runs(), m.LoginLabel()
 		ie.IconURL = ""
 		if m.Icon != "" && strings.HasSuffix(m.Icon, ".svg") {
 			icon, err := os.ReadFile(filepath.Join(e.Dir, m.Icon))

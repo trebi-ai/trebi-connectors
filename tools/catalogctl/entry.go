@@ -51,8 +51,12 @@ type Manifest struct {
 	Skill *struct {
 		Path string `yaml:"path"`
 	} `yaml:"skill"`
-	Actions *yaml.Node `yaml:"actions"`
-	Events  *struct {
+	Actions *struct {
+		MCP *struct {
+			URL string `yaml:"url"`
+		} `yaml:"mcp"`
+	} `yaml:"actions"`
+	Events *struct {
 		Protocol string `yaml:"protocol"`
 		Command  string `yaml:"command"`
 		Types    []struct {
@@ -95,10 +99,12 @@ type Input struct {
 // LoginMethod is one setup.login entry. A method with an input belongs to
 // the daemon; the adapter owns the others.
 type LoginMethod struct {
-	ID    string `yaml:"id"`
-	Type  string `yaml:"type"`
-	Input string `yaml:"input"`
-	Test  string `yaml:"test"`
+	ID    string     `yaml:"id"`
+	Type  string     `yaml:"type"`
+	Label string     `yaml:"label"`
+	Input string     `yaml:"input"`
+	Test  string     `yaml:"test"`
+	OAuth *yaml.Node `yaml:"oauth"` // an OAuth login to actions.mcp.url; the daemon owns it
 }
 
 // Capabilities lists the blocks the manifest has.
@@ -114,6 +120,23 @@ func (m Manifest) Capabilities() []string {
 		out = append(out, "channel")
 	}
 	return out
+}
+
+// Runs is where the connector runs: "online" for an online MCP server with
+// nothing to install and no events, else "local".
+func (m Manifest) Runs() string {
+	if m.Install != nil || m.Events != nil || m.Actions == nil || m.Actions.MCP == nil || m.Actions.MCP.URL == "" {
+		return RunsLocal
+	}
+	return RunsOnline
+}
+
+// LoginLabel is the label of the first login method, or "".
+func (m Manifest) LoginLabel() string {
+	if m.Setup == nil || len(m.Setup.Login) == 0 {
+		return ""
+	}
+	return m.Setup.Login[0].Label
 }
 
 // Protocol returns the events protocol, or "" with no events block.
@@ -141,6 +164,9 @@ func (m Manifest) checkLogin(add func(string, ...any)) {
 			add("%s.id: duplicate %s", field, l.ID)
 		}
 		ids[l.ID] = true
+		if l.OAuth != nil {
+			continue // the daemon checks an OAuth method
+		}
 		if l.Input == "" {
 			if l.Test != "" {
 				add("%s.test: is allowed only with input", field)

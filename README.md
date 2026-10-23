@@ -37,6 +37,7 @@ A link with a branch follows the branch: Trebi checks for a new commit once a da
 - A change in `sdk/` or `connectors/` runs `.github/workflows/sdk.yml`. It tests the SDK and each CLI that the change touches. A change in `sdk/`, `go.work`, or the workflow tests the SDK and every CLI. `scripts/changed.sh` lists the changed files for both workflows.
 - A push to `main` runs the same workflow and publishes to the R2 bucket `trebi-catalog`, served at `https://catalog.trebi.ai/v1/`. The job runs in the environment `catalog-publish`.
 - The layout in the bucket is `v1/index.json`, `v1/index.json.sig`, `v1/snapshots/<name>/<version>.tar.gz`, `v1/bin/<name>/<version>/<bin>_<os>_<arch>.tar.gz`, and `v1/icons/<name>.svg`.
+- Each index entry has `runs`. The value is `online` for an entry with an `actions.mcp.url` and no install and no events, for example `granola`. Other entries have `local`. `login` is the label of the first login method, so the UI can show "Log in with Granola" before the install.
 - A snapshot is a deterministic tar.gz of the entry folder. `publish.sh` never writes a snapshot key again. If the key exists with other bytes, the run fails.
 - The signature is ed25519 over the bytes of `index.json`, in base64. The daemon embeds the public key.
 

@@ -93,8 +93,19 @@
               "label": {"type": "string"},
               "help": {"type": "string"},
               "input": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-              "test": {"type": "string", "minLength": 1}
-            }
+              "test": {"type": "string", "minLength": 1},
+              "oauth": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "scopes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                  "client_id": {"type": "string", "minLength": 1},
+                  "registration": {"enum": ["auto", "cimd", "dcr", "own_app"]}
+                }
+              }
+            },
+            "if": {"required": ["oauth"]},
+            "then": {"properties": {"type": {"const": "browser"}}}
           }
         }
       }

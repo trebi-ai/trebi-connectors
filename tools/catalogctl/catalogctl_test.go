@@ -62,6 +62,18 @@ actions:
   cli: {commands: [prog-cli]}
 `
 
+// onlineManifest is an online MCP server with an OAuth login.
+const onlineManifest = `schema: trebi-connector/1
+name: online
+title: Online
+description: An online MCP server.
+version: 1.0.0
+setup:
+  login: [{id: oauth, type: browser, label: Log in with Online, oauth: {registration: auto}}]
+actions:
+  mcp: {url: "https://mcp.example.com/mcp"}
+`
+
 func writeSource(t *testing.T, root, bin string) {
 	t.Helper()
 	p := filepath.Join(root, "connectors", bin, "scripts", "build.sh")
@@ -130,6 +142,7 @@ func TestValidate(t *testing.T) {
 		{"channel on lines", "demo", goodManifest + "events: {command: demo-cli listen}\nchannel: {features: [typing]}\n", goodSkill, "channel needs events.protocol"},
 		{"catalog without source", "demo", goodManifest + "install: {catalog: true, bin: demo-cli}\n", goodSkill, "connectors/demo-cli/scripts/build.sh is missing"},
 		{"install without bin", "demo", goodManifest + "install: {go: \"example.com/demo@v{version}\"}\n", goodSkill, "install.bin"},
+		{"oauth method", "online", onlineManifest, goodSkill, ""},
 		{"bad template", "demo", goodManifest + "install:\n  github_release: {repo: a/b, tag: \"v{ver}\", asset: x}\n  bin: demo\n", goodSkill, "unknown template {ver}"},
 	}
 	for _, tc := range cases {
@@ -258,6 +271,10 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("entry %+v", ie)
 	}
 
+	if ie.Runs != RunsLocal || ie.Login != "" {
+		t.Fatalf("local entry runs %q login %q", ie.Runs, ie.Login)
+	}
+
 	// The same version again keeps its record and uploads nothing.
 	b2 := &Builder{BaseURL: BaseURL, Previous: &idx, Now: now.Add(time.Hour), Log: io.Discard}
 	o2, err := b2.Build(context.Background(), []*Entry{demo})
@@ -292,6 +309,28 @@ func TestBuild(t *testing.T) {
 	b4 := &Builder{BaseURL: BaseURL, Previous: &idx, Fetch: mapFetch{ie.Versions[0].URL: snap}, Now: now, Log: io.Discard}
 	if _, err := b4.Build(context.Background(), []*Entry{demo}); err == nil || !strings.Contains(err.Error(), "bump the version") {
 		t.Fatalf("changed content: %v", err)
+	}
+}
+
+// TestBuildOnline: an online server runs online, names its login, and has
+// no program archive.
+func TestBuildOnline(t *testing.T) {
+	e, err := LoadEntry(writeEntry(t, t.TempDir(), "online", onlineManifest, goodSkill))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &Builder{BaseURL: BaseURL, Bin: t.TempDir(), Now: time.Now(), Log: io.Discard}
+	o, err := b.Build(context.Background(), []*Entry{e})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var idx Index
+	if err := json.Unmarshal(o.Index, &idx); err != nil {
+		t.Fatal(err)
+	}
+	ie := idx.Entries[0]
+	if ie.Runs != RunsOnline || ie.Login != "Log in with Online" || ie.Versions[0].Binaries != nil || len(o.Binaries) != 0 {
+		t.Fatalf("online entry %+v", ie)
 	}
 }
 

@@ -1,0 +1,14 @@
+schema: trebi-connector/1
+name: granola
+title: "Granola"
+description: "Search and read your Granola meeting notes and transcripts."
+version: 0.1.0
+publisher: trebi
+setup:
+  login:
+    - id: oauth
+      type: browser
+      label: Log in with Granola
+      oauth: {registration: auto}
+actions:
+  mcp: {url: "https://mcp.granola.ai/mcp"}
