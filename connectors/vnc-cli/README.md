@@ -155,5 +155,17 @@ When `TREBI_STATE_DIR` is set, the server, the user, and the password come only 
 ```bash
 go test -race ./...
 docker compose -f fleet/docker-compose.yml up -d --build --wait
-go test -p 1 -tags fleet ./...                       # TigerVNC in Docker
+go test -p 1 -tags fleet ./...                       # the Docker fleet
+docker compose -f fleet/docker-compose.yml down
 ```
+
+The fleet tests build vnc-cli and run each command in a child process against each server of `fleet/docker-compose.yml`. A server that is down fails its test. `SERVERS.md` has the ports and the result of each server. When the compose project is not `vnc-cli-fleet`, set `VNC_FLEET_PROJECT` to its name, because the vncev and clipboard tests read the containers. The CI workflow `vnc-fleet` runs the same steps on a Linux runner.
+
+The live test runs the same journey on real computers. It types a space, presses Backspace, clicks at 10,10, and pastes, so use a test account. Give each password as the name of an env variable, never as a value:
+
+```bash
+export LAB_PW=... LAB_USER=...
+VNC_LIVE_SERVERS='lab=host::5900,LAB_PW,LAB_USER;other=ws://host:6080/,OTHER_PW' go test -tags live -run TestLiveJourney ./fleet/
+```
+
+With an empty `VNC_LIVE_SERVERS`, the live test skips.

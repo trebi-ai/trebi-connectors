@@ -38,8 +38,14 @@ func Open(path string) (*Client, error) {
 	return &Client{nc: nc, r: bufio.NewReaderSize(nc, 64<<10), w: bufio.NewWriterSize(nc, 64<<10)}, nil
 }
 
-// Close closes the socket.
-func (c *Client) Close() error { return c.nc.Close() }
+// Close closes the socket. Watch closes it when its ctx ends, so a second
+// close is not an error.
+func (c *Client) Close() error {
+	if err := c.nc.Close(); !errors.Is(err, net.ErrClosed) {
+		return err
+	}
+	return nil
+}
 
 func (c *Client) call(ctx context.Context, req Request, pix []byte) (Reply, []byte, error) {
 	if dl, ok := ctx.Deadline(); ok {

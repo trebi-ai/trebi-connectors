@@ -44,6 +44,10 @@ func dialTCP(t *testing.T, addr string, o vnc.Options) (*vnc.Conn, error) {
 // checkScreen refreshes c and compares it with the screen of srv.
 func checkScreen(t *testing.T, c *vnc.Conn, srv *vnctest.Server) {
 	t.Helper()
+	// The first update can come from before the paint, so wait for it first.
+	if err := c.Refresh(testCtx(t), true); err != nil {
+		t.Fatal(err)
+	}
 	srv.Paint(image.Rect(3, 4, 20, 30), color.RGBA{10, 200, 30, 255})
 	if err := c.Refresh(testCtx(t), true); err != nil {
 		t.Fatal(err)
