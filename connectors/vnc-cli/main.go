@@ -1,26 +1,31 @@
+// Command vnc-cli controls a remote screen over VNC (RFB): capture, type,
+// click, wait for the screen, and watch it. It is a port of vncdotool.
 package main
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
+	"strings"
 
-	cli "github.com/urfave/cli/v3"
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/cmd"
 )
 
 var version = "dev"
 
-func main() {
-	if err := newApp().Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+// init takes the module version when the build did not set one, as with
+// go install.
+func init() {
+	if bi, ok := debug.ReadBuildInfo(); ok && version == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		version = strings.TrimPrefix(bi.Main.Version, "v")
 	}
 }
 
-func newApp() *cli.Command {
-	return &cli.Command{
-		Name:    "vnc-cli",
-		Usage:   "Control a remote computer over VNC: capture the screen, type, click, and watch for changes",
-		Version: version,
+func main() {
+	err := cmd.NewRunner(os.Stdin, os.Stdout, os.Stderr).App(version).Run(context.Background(), os.Args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	}
+	os.Exit(cmd.ExitCode(err))
 }
