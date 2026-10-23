@@ -3,6 +3,7 @@ package vnc
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -13,15 +14,30 @@ type Addr struct {
 	Address string // host:port, a socket path, or a URL
 }
 
-func (a Addr) String() string { return a.Address }
+// String is the address for messages. The query of a WebSocket URL is
+// hidden, because it can hold a password (Selenoid ?password=).
+func (a Addr) String() string {
+	if a.Network == "ws" || a.Network == "wss" {
+		if u, err := url.Parse(a.Address); err == nil && u.RawQuery != "" {
+			u.RawQuery = ""
+			return u.String() + "?<redacted>"
+		}
+	}
+	return a.Address
+}
 
 // Host is the host name for TLS checks, or "" for a unix socket.
 func (a Addr) Host() string {
-	if a.Network != "tcp" {
-		return ""
+	switch a.Network {
+	case "tcp":
+		h, _, _ := net.SplitHostPort(a.Address)
+		return h
+	case "ws", "wss":
+		if u, err := url.Parse(a.Address); err == nil {
+			return u.Hostname()
+		}
 	}
-	h, _, _ := net.SplitHostPort(a.Address)
-	return h
+	return ""
 }
 
 // ParseAddr reads the vncdotool address forms:
@@ -31,6 +47,7 @@ func (a Addr) Host() string {
 //	host::PORT       port PORT
 //	[v6], [v6]:N, [v6]::PORT
 //	/path, unix:/path  a unix socket
+//	ws://..., wss://...  RFB over a WebSocket
 func ParseAddr(s string) (Addr, error) {
 	s = strings.TrimSpace(s)
 	switch {

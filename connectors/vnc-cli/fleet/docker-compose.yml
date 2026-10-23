@@ -30,3 +30,50 @@ services:
       VNC_PASSWORD: vncdotool
     ports:
       - "127.0.0.1:5932:5900"
+
+  # VeNCrypt with a self-signed certificate. The entrypoint writes it to
+  # vencrypt-certs/cert.pem, and the tests use it as the CA.
+  tigervnc-vencrypt:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: tigervnc
+    image: vnc-cli-fleet-tigervnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+      VNC_PASSWORD: vncdotool
+      VNC_SECURITY_TYPES: X509Vnc,X509None,TLSVnc,TLSNone
+      VNC_X509_DIR: /certs
+    volumes:
+      - ./vencrypt-certs:/certs
+    ports:
+      - "127.0.0.1:5941:5900"
+
+  # The default security types of Xvnc. Go has no anonymous TLS, so the
+  # client connects again with VncAuth.
+  tigervnc-tlsvnc:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: tigervnc
+    image: vnc-cli-fleet-tigervnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+      VNC_PASSWORD: vncdotool
+      VNC_SECURITY_TYPES: TLSVnc,VncAuth
+    ports:
+      - "127.0.0.1:5942:5900"
+
+  # Anonymous TLS only: the client gives a clear error.
+  tigervnc-vencrypt-anon:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: tigervnc
+    image: vnc-cli-fleet-tigervnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+      VNC_PASSWORD: vncdotool
+      VNC_SECURITY_TYPES: TLSVnc,TLSNone
+    ports:
+      - "127.0.0.1:5951:5900"

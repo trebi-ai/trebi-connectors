@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -40,9 +41,13 @@ type Options struct {
 	// server when the client can read it, else asks for bgrx8888.
 	PixelFormat *PixelFormat
 
-	// Security is the order of security types to try. Nil prefers TLS.
+	// Security is the order of security types to try. Nil prefers
+	// VeNCrypt (TLS); when it has no usable subtype, Dial connects again
+	// without it.
 	Security []uint8
-	TLS      *tls.Config
+	// TLS is the VeNCrypt and wss setting (see NewTLSConfig). An empty
+	// ServerName gets the host of Addr.
+	TLS *tls.Config
 
 	// UpdateInterval is the shortest time between two automatic incremental
 	// update requests. Zero means 50ms.
@@ -127,6 +132,20 @@ func Dial(ctx context.Context, o Options) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	c, err := dialOnce(ctx, a, o)
+	if errors.Is(err, errVeNCryptUnusable) && o.Security == nil {
+		// Xvnc offers TLSVnc and VncAuth by default, and Go has no anonymous
+		// TLS. Connect again without VeNCrypt.
+		o.Security = slices.DeleteFunc(o.securityOrder(), func(t uint8) bool { return t == SecVeNCrypt })
+		c2, err2 := dialOnce(ctx, a, o)
+		if !errors.Is(err2, errNoCommonType) {
+			return c2, err2
+		}
+	}
+	return c, err
+}
+
+func dialOnce(ctx context.Context, a Addr, o Options) (*Conn, error) {
 	nc, err := dialAddr(ctx, a, &o)
 	if err != nil {
 		return nil, &DialError{Addr: a.String(), Err: err}
@@ -144,8 +163,10 @@ func dialAddr(ctx context.Context, a Addr, o *Options) (net.Conn, error) {
 	case "tcp", "unix":
 		var d net.Dialer
 		return d.DialContext(ctx, a.Network, a.Address)
+	case "ws", "wss":
+		return dialWebSocket(ctx, a.Address, o)
 	default:
-		return nil, fmt.Errorf("%s addresses are not supported yet", a.Network)
+		return nil, fmt.Errorf("%s addresses are not supported", a.Network)
 	}
 }
 
@@ -169,7 +190,8 @@ func NewConn(ctx context.Context, nc net.Conn, o Options) (*Conn, error) {
 	}
 	if err != nil {
 		if ctx.Err() != nil {
-			err = fmt.Errorf("log in to %s: %w", o.Addr, ctx.Err())
+			a, _ := ParseAddr(o.Addr)
+			err = fmt.Errorf("log in to %s: %w", a, ctx.Err())
 		}
 		return nil, err
 	}
@@ -186,7 +208,8 @@ func NewConn(ctx context.Context, nc net.Conn, o Options) (*Conn, error) {
 
 func (c *Conn) handshake() error {
 	br := bufio.NewReaderSize(c.nc, 64<<10)
-	h := &handshake{conn: c.nc, r: br, opts: &c.opts}
+	a, _ := ParseAddr(c.opts.Addr)
+	h := &handshake{conn: c.nc, r: br, opts: &c.opts, host: a.Host()}
 
 	ver, err := h.read(12)
 	if err != nil {

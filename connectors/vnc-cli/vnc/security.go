@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/des"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/bits"
@@ -42,8 +43,10 @@ type securityType interface {
 
 // securityTypes holds the types that this client implements.
 var securityTypes = map[uint8]func() securityType{
-	SecNone: func() securityType { return secNone{} },
-	SecVNC:  func() securityType { return secVNC{} },
+	SecNone:     func() securityType { return secNone{} },
+	SecVNC:      func() securityType { return secVNC{} },
+	SecVeNCrypt: func() securityType { return secVeNCrypt{} },
+	SecAppleARD: func() securityType { return secARD{} },
 }
 
 // handshake is the state of the connection before ServerInit. A security
@@ -53,6 +56,7 @@ type handshake struct {
 	r     *bufio.Reader
 	minor int // 3, 7, or 8
 	opts  *Options
+	host  string // the server name for TLS checks
 }
 
 func (h *handshake) read(n int) ([]byte, error) {
@@ -112,6 +116,9 @@ func (h *handshake) result() error {
 	}
 }
 
+// errNoCommonType is a security list with no type that the client can use.
+var errNoCommonType = errors.New("no security type in common")
+
 // chooseSecurity picks the first type in the preference order that the
 // server offers and that the client implements.
 func chooseSecurity(offered []uint8, o *Options) (uint8, error) {
@@ -124,7 +131,7 @@ func chooseSecurity(offered []uint8, o *Options) (uint8, error) {
 	for i, t := range offered {
 		names[i] = securityName(t)
 	}
-	return 0, protoErr("security", "no security type in common: the server offers %s", strings.Join(names, ", "))
+	return 0, protoErr("security", "%w: the server offers %s", errNoCommonType, strings.Join(names, ", "))
 }
 
 type secNone struct{}
