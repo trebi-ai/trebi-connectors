@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
 )
 
 // Client runs the commands in a holder through its socket. It has the same
@@ -118,6 +120,33 @@ func (c *Client) Expect(ctx context.Context, ref image.Image, at image.Point, m 
 func (c *Client) Stable(ctx context.Context, d time.Duration, r image.Rectangle, m Match) error {
 	_, _, err := c.call(ctx, Request{Op: OpStable, For: d, Rect: r, Match: m}, nil)
 	return err
+}
+
+// Watch streams the events of spec to emit until ctx ends, emit fails, or
+// the holder sends an error.
+func (c *Client) Watch(ctx context.Context, spec watch.Spec, emit func(watch.Event) error) error {
+	defer context.AfterFunc(ctx, func() { c.nc.Close() })()
+	req := Request{Op: OpWatch, Watch: &spec}
+	if err := writeMsg(c.w, req, nil); err != nil {
+		return err
+	}
+	for {
+		var rep Reply
+		if _, err := readMsg(c.r, &rep, func() *Frame { return nil }); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return &RemoteError{Kind: KindClosed, Message: fmt.Sprintf("the session closed: %v", err)}
+		}
+		if rep.Error != nil {
+			return rep.Error
+		}
+		if rep.Event != nil {
+			if err := emit(*rep.Event); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // Status describes the holder.

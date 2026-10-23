@@ -160,14 +160,7 @@ func (r *Runner) runHolder(ctx context.Context, report *os.File) (err error) {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(r.stderr, &slog.HandlerOptions{Level: level}))
-	o := r.opts
-	o.Password = r.settings.Password
-	h := session.NewHolder(func(ctx context.Context) (*vnc.Conn, error) {
-		ctx, cancel := context.WithTimeout(ctx, connectWait)
-		defer cancel()
-		c, err := vnc.Dial(ctx, o)
-		return c, session.Explain(err)
-	}, r.settings.Server, r.settings.User, r.settings.IdleTimeout, log)
+	h := session.NewHolder(r.dialer(r.settings.Password), r.settings.Server, r.settings.User, r.settings.IdleTimeout, log)
 	cctx, cancel := context.WithTimeout(ctx, connectWait)
 	err = h.Connect(cctx)
 	cancel()
@@ -186,6 +179,18 @@ func (r *Runner) runHolder(ctx context.Context, report *os.File) (err error) {
 	err = h.Serve(ctx, ln)
 	log.Info("the session stopped", "err", err)
 	return err
+}
+
+// dialer connects with the options of the runner and the password.
+func (r *Runner) dialer(password string) func(context.Context) (*vnc.Conn, error) {
+	o := r.opts
+	o.Password = password
+	return func(ctx context.Context) (*vnc.Conn, error) {
+		ctx, cancel := context.WithTimeout(ctx, connectWait)
+		defer cancel()
+		c, err := vnc.Dial(ctx, o)
+		return c, session.Explain(err)
+	}
 }
 
 // sessionKey names the holder: the server, the user, and the flags that

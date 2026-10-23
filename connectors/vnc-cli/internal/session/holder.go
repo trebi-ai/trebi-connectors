@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
 )
 
@@ -100,7 +101,7 @@ func (h *Holder) Serve(ctx context.Context, ln net.Listener) error {
 		ln.Close()
 	}()
 	var wg sync.WaitGroup
-	wg.Go(func() { h.keep(ctx, cancel) })
+	wg.Go(func() { h.Keep(ctx, cancel) })
 	for {
 		nc, err := ln.Accept()
 		if err != nil {
@@ -124,8 +125,9 @@ func (h *Holder) Serve(ctx context.Context, ln net.Listener) error {
 	return nil
 }
 
-// keep connects again each time the connection drops.
-func (h *Holder) keep(ctx context.Context, stop context.CancelCauseFunc) {
+// Keep connects again each time the connection drops, until ctx ends. A
+// failed login calls stop with the error.
+func (h *Holder) Keep(ctx context.Context, stop context.CancelCauseFunc) {
 	for {
 		h.mu.Lock()
 		l := h.local
@@ -202,6 +204,25 @@ func (h *Holder) remote(ctx context.Context) (*Local, error) {
 	}
 }
 
+// Conn waits for a connection with a current screen.
+func (h *Holder) Conn(ctx context.Context) (*vnc.Conn, error) {
+	l, err := h.remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return l.conn, nil
+}
+
+// Watch streams the events of spec to emit.
+func (h *Holder) Watch(ctx context.Context, spec watch.Spec, emit func(watch.Event) error) error {
+	if spec.Options.SaveDir != "" {
+		if err := os.MkdirAll(spec.Options.SaveDir, 0o755); err != nil {
+			return err
+		}
+	}
+	return watch.Run(ctx, h, spec, emit)
+}
+
 func (h *Holder) status() *Status {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -250,6 +271,15 @@ func (h *Holder) handle(ctx context.Context, nc net.Conn) {
 			rctx, cancel = context.WithTimeout(ctx, req.Timeout)
 		}
 		stopWatch := watchHangup(nc, r, cancel)
+		if req.Op == OpWatch {
+			err := h.stream(rctx, w, req)
+			stopWatch()
+			cancel()
+			if err != nil {
+				return
+			}
+			continue
+		}
 		rep, out := h.do(rctx, req, pix)
 		stopWatch()
 		cancel()
@@ -263,6 +293,25 @@ func (h *Holder) handle(ctx context.Context, nc net.Conn) {
 			return
 		}
 	}
+}
+
+// stream runs a watch and writes each event as a reply. An error ends the
+// stream with a reply that has the error.
+func (h *Holder) stream(ctx context.Context, w *bufio.Writer, req Request) error {
+	if req.Watch == nil {
+		return writeMsg(w, Reply{Error: remoteError(errors.New("watch needs a spec"))}, nil)
+	}
+	errWrite := errors.New("write")
+	err := h.Watch(ctx, *req.Watch, func(ev watch.Event) error {
+		if err := writeMsg(w, Reply{Event: &ev}, nil); err != nil {
+			return fmt.Errorf("%w: %w", errWrite, err)
+		}
+		return nil
+	})
+	if errors.Is(err, errWrite) || ctx.Err() != nil {
+		return errWrite
+	}
+	return writeMsg(w, Reply{Error: remoteError(err)}, nil)
 }
 
 // watchHangup cancels the request when the client goes away. The client

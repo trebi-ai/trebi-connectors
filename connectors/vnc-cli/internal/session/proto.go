@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
 )
 
@@ -25,6 +26,9 @@ const (
 	OpStable    = "stable"
 	OpStatus    = "status"
 	OpStop      = "stop"
+	// OpWatch is a stream: each event is a reply, until the client
+	// closes the socket or an error reply ends it.
+	OpWatch = "watch"
 )
 
 // Request is one command to a holder.
@@ -39,6 +43,7 @@ type Request struct {
 	// Timeout is the time that the client has left. Zero is no limit.
 	Timeout time.Duration `json:"timeout,omitempty"`
 	Image   *Frame        `json:"image,omitempty"`
+	Watch   *watch.Spec   `json:"watch,omitempty"`
 }
 
 // Reply is the answer of a holder.
@@ -48,6 +53,7 @@ type Reply struct {
 	Text   string       `json:"text,omitempty"`
 	Image  *Frame       `json:"image,omitempty"`
 	Status *Status      `json:"status,omitempty"`
+	Event  *watch.Event `json:"event,omitempty"`
 }
 
 // Frame is the size of the RGBA bytes after the line.
@@ -150,7 +156,7 @@ func remoteError(err error) *RemoteError {
 		kind = KindClosed
 	case errors.As(err, &pe):
 		kind = KindProtocol
-	case errors.Is(err, ErrOffScreen):
+	case errors.Is(err, ErrOffScreen), errors.Is(err, watch.ErrArea):
 		kind = KindFailed
 	}
 	return &RemoteError{Kind: kind, Message: err.Error()}

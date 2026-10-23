@@ -49,6 +49,7 @@ vnc-cli -s host run script.vdo                       # play a vncdotool script
 | `expect FILE [-r X,Y]` | Wait until the screen (or the area at X,Y) matches the picture. |
 | `stable SECONDS [-r X,Y,W,H]` | Wait until the screen (or the area) shows no change for SECONDS. |
 | `run FILE\|-`, `run -- COMMAND...` | Play a vncdotool `.vdo` script, or a chain of vncdotool commands, on one connection. |
+| `watch [-a [NAME=]X,Y,W,H]... [--once] [-d D]` | Watch areas of the screen and write a JSON line for each change. See "Watch". |
 | `config set NAME --address A [--login U] [--secret-env NAME] [--default]`, `config rm NAME`, `config list` | Keep named servers in `~/.cli-tools/vnc-cli/config.toml`. |
 
 `expect` and `stable` use the vncdotool compare (`vnc/compare.go`). `--fuzz N` (0 to 255) is the largest color difference of one pixel; the default comes from the pixel format (0 for 8 bits per channel, 8 for rgb565). `--blur R` blurs both pictures first; the default is 2 with `--jpeg-quality`, else 0.
@@ -88,6 +89,29 @@ server = "10.0.0.5:1"
 user = "admin"
 password_env = "LAB_VNC_PASSWORD"
 ```
+
+### Watch
+
+`watch` writes one JSON object per line to stdout. The events and their fields are those of `glkvm-cli watch`, so a script for one tool reads the output of the other.
+
+| Event | When |
+|---|---|
+| `ready` | The watch starts. It gives the areas, the reference size (`ref`), and the screen (`picture`). |
+| `change` | An area starts to change. It gives `changed_pct`, `changed_px`, and `bbox` of the changed pixels. |
+| `stable` | The area has not changed for `--settle`. It gives `changing_ms` and the `bbox` against the state before the change. This state becomes the new base. |
+| `clipboard` | The clipboard of the remote computer changed. It gives `text`. |
+| `bell` | The remote computer rang the bell. |
+| `resize` | The screen size changed. It gives `size`. A new `ready` follows, and the areas scale with the screen. |
+| `cursor` | The pointer shape changed. It gives `cursor` with a hash and the hot spot. Add it with `--events`. |
+| `disconnected`, `connected` | The connection dropped, and the connection is back. A new `ready` follows `connected`. |
+| `error` | The watch failed. |
+
+- Area coordinates are pixels of a reference image of size `--ref` (default: the screen). Without `--area`, the whole screen is one area named `screen`.
+- A pixel changes when its brightness changes by more than `--pixel-delta` (default 24). An area changes when more than `--threshold` percent (default 0.5) and at least `--min-pixels` (default 16) of its pixels change.
+- The server sends only the changed parts of the screen, so watch reads only the areas that they touch. `--max-fps` (default 10) limits the checks.
+- `--events LIST` selects the events. `--save DIR` saves a PNG of the area with each `change` and `stable` event.
+- `--once` stops after the first `stable` event. With `-d`, it stops with exit code 1 when no `stable` event comes in time. `-d` alone stops after the time with exit code 0.
+- The watch uses the background session, so the session connects again when the connection drops. With `--session off`, the watch keeps its own connection and connects again too.
 
 ### Exit codes
 

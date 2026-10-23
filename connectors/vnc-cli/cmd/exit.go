@@ -7,6 +7,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/session"
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
 )
 
@@ -82,7 +83,7 @@ func ExitCode(err error) int {
 		return ExitClosed
 	case errors.As(err, &pe):
 		return ExitProtocol
-	case errors.As(err, &fe), errors.Is(err, session.ErrOffScreen):
+	case errors.As(err, &fe), errors.Is(err, session.ErrOffScreen), errors.Is(err, watch.ErrArea):
 		return ExitFailed
 	}
 	return ExitUnexpected
