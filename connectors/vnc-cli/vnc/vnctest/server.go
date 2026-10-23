@@ -63,6 +63,7 @@ type Server struct {
 	events  []InputEvent
 	clients map[*client]struct{}
 	conns   map[net.Conn]struct{}
+	served  int
 	ln      net.Listener
 	wg      sync.WaitGroup
 }
@@ -145,6 +146,22 @@ func (s *Server) Close() {
 	}
 	s.mu.Unlock()
 	s.wg.Wait()
+}
+
+// Served is the number of client connections so far.
+func (s *Server) Served() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.served
+}
+
+// Drop closes all client connections and keeps the listener.
+func (s *Server) Drop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for nc := range s.conns {
+		nc.Close()
+	}
 }
 
 // Screen returns a copy of the server screen.
@@ -323,6 +340,7 @@ func (c *client) write(b []byte) error {
 func (s *Server) Serve(nc net.Conn) error {
 	s.mu.Lock()
 	s.conns[nc] = struct{}{}
+	s.served++
 	s.mu.Unlock()
 	defer func() {
 		nc.Close()

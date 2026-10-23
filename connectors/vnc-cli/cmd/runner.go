@@ -3,8 +3,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +11,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +49,11 @@ type Runner struct {
 
 	settings config.Settings
 	opts     vnc.Options
+	// connArgs are the flags that shape the connection. A holder gets
+	// them, and they are part of its key.
+	connArgs []string
+	session  string
+	verbose  bool
 	timeout  time.Duration
 	delay    delayRange
 	match    session.Match
@@ -113,7 +117,7 @@ func (r *Runner) App(version string) *cli.Command {
 			r.moveCommand(), r.clickCommand(), r.mouseCommand(), r.dragCommand(), r.scrollCommand(),
 			r.pasteCommand(), r.clipboardCommand(),
 			r.expectCommand(), r.stableCommand(),
-			r.runCommand(), r.configCommand(),
+			r.runCommand(), r.sessionCommand(), r.configCommand(),
 		},
 	}
 }
@@ -132,12 +136,25 @@ func (r *Runner) before(ctx context.Context, c *cli.Command) (context.Context, e
 	if r.delay, err = parseDelay(c.String("delay")); err != nil {
 		return ctx, usage(err)
 	}
-	switch c.String("session") {
+	switch r.session = c.String("session"); r.session {
 	case "auto", "off":
 	default:
-		return ctx, usage(fmt.Errorf("--session: %q is not auto or off", c.String("session")))
+		return ctx, usage(fmt.Errorf("--session: %q is not auto or off", r.session))
 	}
 	r.opts = vnc.Options{Addr: r.settings.Server, User: r.settings.User}
+	r.connArgs = nil
+	for _, name := range []string{"encodings", "jpeg-quality", "pixel-format", "tls-ca-cert", "tls-insecure-skip-verify"} {
+		if !c.IsSet(name) {
+			continue
+		}
+		v := c.Value(name)
+		if name == "tls-ca-cert" {
+			if v, err = filepath.Abs(c.String(name)); err != nil {
+				return ctx, usage(err)
+			}
+		}
+		r.connArgs = append(r.connArgs, fmt.Sprintf("--%s=%v", name, v))
+	}
 	if s := c.String("encodings"); s != "" {
 		for _, name := range strings.Split(s, ",") {
 			e, ok := vnc.EncodingNames[strings.TrimSpace(strings.ToLower(name))]
@@ -175,44 +192,66 @@ func (r *Runner) before(ctx context.Context, c *cli.Command) (context.Context, e
 			r.match.Blur = 2
 		}
 	}
-	if c.Bool("verbose") {
+	if r.verbose = c.Bool("verbose"); r.verbose {
 		r.opts.Logger = slog.New(slog.NewTextHandler(r.stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 	return ctx, nil
 }
 
-// remote connects on the first call.
+// remote connects on the first call: to a holder with --session auto, else
+// directly.
 func (r *Runner) remote(ctx context.Context) (remote, error) {
 	if r.rm != nil {
 		return r.rm, nil
 	}
-	if m := r.settings.Missing(); m != nil {
-		if r.settings.Trebi {
-			return nil, usage(m)
-		}
+	var err error
+	switch {
+	case r.session == "auto" && r.settings.Trebi:
+		r.rm, err = r.trebiSession()
+		return r.rm, err
+	case r.settings.Missing() != nil && r.settings.Trebi:
+		return nil, usage(r.settings.Missing())
+	case r.settings.Missing() != nil:
 		return nil, usage(fmt.Errorf("no server: use --server, --target, or %s", config.EnvServer))
-	}
-	o := r.opts
-	o.Password = r.settings.Password
-	c, err := vnc.Dial(ctx, o)
-	if errors.Is(err, vnc.ErrAuth) && o.Password == "" && r.prompt != nil && !r.settings.Trebi {
-		if o.Password, err = r.prompt("Password for " + o.Addr); err != nil {
-			return nil, err
+	case r.session == "off", r.opts.Cursor != "" && r.opts.Cursor != vnc.CursorNone:
+		// TODO(TREBI-496): the holder draws the cursor after the decoder merge.
+		r.rm, err = r.withPassword(func(pw string) (remote, error) {
+			o := r.opts
+			o.Password = pw
+			c, err := vnc.Dial(ctx, o)
+			if err != nil {
+				return nil, session.Explain(err)
+			}
+			return session.NewLocal(c, false), nil
+		})
+	default:
+		p, perr := r.sessionPaths()
+		if perr != nil {
+			return nil, perr
 		}
-		c, err = vnc.Dial(ctx, o)
-	}
-	var (
-		untrusted *tls.CertificateVerificationError
-		badName   x509.HostnameError
-	)
-	if errors.As(err, &untrusted) || errors.As(err, &badName) {
-		err = fmt.Errorf("%w (use --tls-ca-cert FILE or --tls-insecure-skip-verify)", err)
+		r.rm, err = r.withPassword(func(pw string) (remote, error) {
+			return session.Start(ctx, p, r.holderArgs(), holderEnv(pw))
+		})
 	}
 	if err != nil {
+		r.rm = nil
 		return nil, err
 	}
-	r.rm = session.NewLocal(c, false)
 	return r.rm, nil
+}
+
+// withPassword connects. When the server asks for a password that is not
+// set, it asks on the terminal and connects again.
+func (r *Runner) withPassword(connect func(pw string) (remote, error)) (remote, error) {
+	pw := r.settings.Password
+	rm, err := connect(pw)
+	if errors.Is(err, vnc.ErrAuth) && pw == "" && r.prompt != nil && !r.settings.Trebi {
+		if pw, err = r.prompt("Password for " + r.opts.Addr); err != nil {
+			return nil, err
+		}
+		rm, err = connect(pw)
+	}
+	return rm, err
 }
 
 func (r *Runner) close() error {

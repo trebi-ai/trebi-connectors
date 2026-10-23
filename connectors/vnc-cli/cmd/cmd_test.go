@@ -54,8 +54,20 @@ func run(t *testing.T, stdin string, args ...string) result {
 	r := NewRunner(strings.NewReader(stdin), &out, &errb)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	if !hasSession(args) {
+		args = append([]string{"--session=off"}, args...)
+	}
 	err := r.App("test").Run(ctx, append([]string{"vnc-cli"}, args...))
 	return result{out.String(), errb.String(), err}
+}
+
+func hasSession(args []string) bool {
+	for _, a := range args {
+		if a == "--session" || strings.HasPrefix(a, "--session=") {
+			return true
+		}
+	}
+	return false
 }
 
 func mustRun(t *testing.T, stdin string, args ...string) result {

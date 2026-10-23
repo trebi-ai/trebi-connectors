@@ -65,8 +65,18 @@ vnc-cli -s host run script.vdo                       # play a vncdotool script
 | `--timeout D` | | Stop with exit code 40 after D. The default is no limit. |
 | `--delay N\|MIN-MAX` | | Milliseconds between commands and between typed keys. |
 | `--encodings LIST`, `--jpeg-quality N`, `--pixel-format NAME` | | The encodings in order, lossy JPEG at quality 0 to 9, and a forced pixel format (`bgrx8888`, `rgbx8888`, `rgb565`). |
-| `--session auto\|off`, `--idle-timeout D` | `VNC_IDLE_TIMEOUT` | The background session (a later step). |
+| `--session auto\|off` | | `auto` (the default) uses the background session. `off` connects for this command only, as vncdotool does. |
+| `--idle-timeout D` | `VNC_IDLE_TIMEOUT` | The background session stops after this time with no command (default 5m). `0` keeps it until `session stop`. |
 | `-j`, `--json` | | Write JSON. |
+
+### Background session
+
+The first command starts a background session that keeps the connection open. The next commands use it, so they do not connect and do not wait for a full screen: a capture takes some milliseconds. The session connects again when the connection drops, and a command waits for it up to `--timeout`. A failed login stops the session, so that a wrong password is not sent again.
+
+- `session start`, `session status`, `session stop [--all]`, and `session list` control the sessions.
+- The server, the user, and the connection flags (`--encodings`, `--jpeg-quality`, `--pixel-format`, and the TLS flags) select the session. Other values of these flags start another session.
+- The session gets the password in its env, never in its command line. Its socket and log are in `~/.cli-tools/vnc-cli/run/` (folder mode 0700, socket mode 0600).
+- The session asks the server for a shared connection, so other viewers stay connected.
 
 The config file:
 

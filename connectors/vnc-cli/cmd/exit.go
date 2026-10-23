@@ -48,6 +48,14 @@ func (timeoutError) Is(target error) bool { return target == context.DeadlineExc
 
 func onUsageError(_ context.Context, _ *cli.Command, err error, _ bool) error { return usage(err) }
 
+// remoteCodes are the exit codes of the error kinds of a holder. An unknown
+// kind is ExitUnexpected.
+var remoteCodes = map[string]int{
+	session.KindAuth: ExitAuth, session.KindConnect: ExitConnect, session.KindClosed: ExitClosed,
+	session.KindProtocol: ExitProtocol, session.KindFailed: ExitFailed, session.KindTimeout: ExitTimeout,
+	session.KindOther: ExitUnexpected,
+}
+
 // ExitCode maps an error to its exit code.
 func ExitCode(err error) int {
 	var (
@@ -55,6 +63,7 @@ func ExitCode(err error) int {
 		de *vnc.DialError
 		pe *vnc.ProtocolError
 		fe failedError
+		re *session.RemoteError
 	)
 	switch {
 	case err == nil:
@@ -63,6 +72,8 @@ func ExitCode(err error) int {
 		return ExitTimeout
 	case errors.As(err, &ue):
 		return ExitUsage
+	case errors.As(err, &re):
+		return remoteCodes[re.Kind]
 	case errors.Is(err, vnc.ErrAuth):
 		return ExitAuth
 	case errors.As(err, &de):
