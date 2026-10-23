@@ -5,7 +5,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/des"
-	"crypto/rand"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -33,6 +33,12 @@ type Options struct {
 	// first one is used.
 	Security []uint8
 	Password string
+	// User is the user for Apple Remote Desktop and VeNCrypt Plain.
+	User string
+	// VeNCrypt lists the offered subtypes. The default is the X509 ones.
+	VeNCrypt []uint32
+	// TLS is the server certificate for VeNCrypt (see CA).
+	TLS *tls.Config
 	// FailReason is the reason that a failed login gives on 3.8.
 	FailReason string
 }
@@ -386,16 +392,23 @@ func (c *client) handshake() error {
 			return err
 		}
 	case vnc.SecVNC:
-		challenge := make([]byte, 16)
-		rand.Read(challenge)
-		if err := c.write(challenge); err != nil {
+		var err error
+		if ok, err = c.vncAuth(); err != nil {
 			return err
 		}
-		resp, err := c.read(16)
+		if err := c.result(ok, minor); err != nil {
+			return err
+		}
+	case vnc.SecAppleARD, vnc.SecVeNCrypt:
+		var err error
+		if sec == vnc.SecAppleARD {
+			ok, err = c.ard()
+		} else {
+			ok, err = c.veNCrypt()
+		}
 		if err != nil {
 			return err
 		}
-		ok = string(resp) == string(desResponse(o.Password, challenge))
 		if err := c.result(ok, minor); err != nil {
 			return err
 		}
