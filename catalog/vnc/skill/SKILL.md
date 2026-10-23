@@ -131,7 +131,7 @@ A wrong password stops the connection and asks for new inputs, so that the compu
 
 | Server | Notes |
 |---|---|
-| macOS Screen Sharing | Uses the Apple Remote Desktop login: set the user name and the account password. A plain screen password works only when "VNC viewers may control screen with password" is on. |
+| macOS Screen Sharing | Uses the Apple Remote Desktop login: set the user name and the account password. A plain screen password works only when "VNC viewers may control screen with password" is on. The Mac does not send its clipboard, so `clipboard get` is empty and no `clipboard` event comes; `paste` works. The pointer is never in a capture. `key shift-a` gives "a": use `type A` for upper case. |
 | TigerVNC, TurboVNC | VNC password and VeNCrypt with X509. TLSNone, TLSVnc, and TLSPlain (anonymous TLS) are not supported. Xvnc blocks an address after 5 failed logins. |
 | x11vnc, LibVNCServer, wayvnc | VNC password. |
 | QEMU, Proxmox | No password, VNC password, or a WebSocket address with a ticket. |

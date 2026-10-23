@@ -114,6 +114,14 @@ password_env = "LAB_VNC_PASSWORD"
 - `--once` stops after the first `stable` event. With `-d`, it stops with exit code 1 when no `stable` event comes in time. `-d` alone stops after the time with exit code 0.
 - The watch uses the background session, so the session connects again when the connection drops. With `--session off`, the watch keeps its own connection and connects again too.
 
+### macOS Screen Sharing
+
+Set `--user` and the account password: the Mac uses the Apple Remote Desktop login. The Mac gives Apple viewers some data through messages that are not in the RFB spec, so vnc-cli does not get them:
+
+- The Mac does not send its clipboard. `clipboard get` is empty, and `watch` gives no `clipboard` event. `paste` works.
+- The Mac does not send the pointer shape, and it does not draw the pointer into the screen. A capture never shows the pointer.
+- The Mac ignores shift for a letter keysym, so `key shift-a` types "a". Use `type A`.
+
 ### Exit codes
 
 The codes follow vncdotool, so that scripts can move over.
