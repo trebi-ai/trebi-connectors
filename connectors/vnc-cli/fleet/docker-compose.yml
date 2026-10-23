@@ -1,0 +1,32 @@
+# VNC servers for the fleet tests (go test -tags fleet). Copied from the
+# vncdotool test fleet (MIT, see ../NOTICE). The build context is this
+# folder. Ports follow the vncdotool PORTS.md.
+#
+#   docker compose -f fleet/docker-compose.yml up -d --build --wait
+
+name: vnc-cli-fleet
+
+services:
+  # The scene player shows goldens/scenes/0.png at 256x192.
+  tigervnc:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: tigervnc
+    image: vnc-cli-fleet-tigervnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+    ports:
+      - "127.0.0.1:5931:5900"
+
+  tigervnc-auth:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: tigervnc
+    image: vnc-cli-fleet-tigervnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+      VNC_PASSWORD: vncdotool
+    ports:
+      - "127.0.0.1:5932:5900"
