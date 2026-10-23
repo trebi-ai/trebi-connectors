@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a screen.stable event: a watched area stopped changing. The attachment is a PNG picture of the area when \"Attach a picture to each event\" is yes. This state is the new base of the area.",
+  "required": [
+    "event",
+    "time",
+    "area",
+    "rect",
+    "changing_ms"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "description": "The watch event: change, stable, clipboard, bell, or resize."
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "area": {
+      "type": "string",
+      "description": "The name of the area. \"screen\" when no area is set."
+    },
+    "rect": {
+      "type": "object",
+      "description": "The area in reference pixels (the screen size at the first connect).",
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "w": {
+          "type": "integer"
+        },
+        "h": {
+          "type": "integer"
+        }
+      }
+    },
+    "changed_pct": {
+      "type": "number",
+      "description": "The percent of the area pixels that changed."
+    },
+    "changed_px": {
+      "type": "integer",
+      "description": "The number of pixels that changed."
+    },
+    "bbox": {
+      "type": "object",
+      "description": "The bounds of the pixels that are different from the state before the change, in reference pixels.",
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "w": {
+          "type": "integer"
+        },
+        "h": {
+          "type": "integer"
+        }
+      }
+    },
+    "frame": {
+      "type": "integer",
+      "description": "The number of the check."
+    },
+    "changing_ms": {
+      "type": "integer",
+      "description": "How long the area changed before it stopped."
+    }
+  }
+}

@@ -46,6 +46,7 @@ type Holder struct {
 	idleEnd   time.Time
 	started   time.Time
 	stop      context.CancelCauseFunc
+	notify    func(error)
 }
 
 // NewHolder makes a holder. An idle timeout of 0 keeps it until a client
@@ -76,14 +77,27 @@ func (h *Holder) connect(ctx context.Context) (*Local, error) {
 	return NewLocal(c, true), nil
 }
 
+// OnChange calls f with nil after each connect, and with the error after
+// each failed connect and each drop. Call it before Connect or Serve.
+func (h *Holder) OnChange(f func(error)) { h.notify = f }
+
+func (h *Holder) changed(err error) {
+	if h.notify != nil {
+		h.notify(err)
+	}
+}
+
 func (h *Holder) set(l *Local) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.local = l
 	if l != nil {
 		close(h.ready)
 	} else {
 		h.ready = make(chan struct{})
+	}
+	h.mu.Unlock()
+	if l != nil {
+		h.changed(nil)
 	}
 }
 
@@ -138,6 +152,7 @@ func (h *Holder) Keep(ctx context.Context, stop context.CancelCauseFunc) {
 				h.log.Warn("the connection dropped", "err", l.conn.Err())
 				h.set(nil)
 				l.Close()
+				h.changed(dropped(l.conn.Err()))
 			case <-ctx.Done():
 				return
 			}
@@ -152,6 +167,7 @@ func (h *Holder) Keep(ctx context.Context, stop context.CancelCauseFunc) {
 			if ctx.Err() != nil {
 				return
 			}
+			h.changed(err)
 			if errors.Is(err, vnc.ErrAuth) {
 				h.log.Error("the login failed; the session stops", "err", err)
 				stop(err)
@@ -163,6 +179,14 @@ func (h *Holder) Keep(ctx context.Context, stop context.CancelCauseFunc) {
 			}
 		}
 	}
+}
+
+// dropped is the error of a connection that closed.
+func dropped(err error) error {
+	if err == nil {
+		return vnc.ErrClosed
+	}
+	return err
 }
 
 func (h *Holder) addClient(n int) {

@@ -21,7 +21,7 @@ import (
 // standalone clears the Trebi env and points HOME at a temp folder.
 func standalone(t *testing.T) string {
 	t.Helper()
-	for _, k := range []string{"TREBI_STATE_DIR", "TREBI_CACHE_DIR", config.EnvServer, config.EnvUser, config.EnvPassword, config.EnvIdleTimeout} {
+	for _, k := range []string{"TREBI_STATE_DIR", "TREBI_CACHE_DIR", config.EnvServer, config.EnvUser, config.EnvPassword, config.EnvIdleTimeout, config.EnvAreas, config.EnvSettle, config.EnvImages} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}

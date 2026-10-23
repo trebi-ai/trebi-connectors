@@ -1,0 +1,52 @@
+schema: trebi-connector/1
+name: vnc
+title: Remote screen
+description: "See and control the screen of another computer over VNC: watch areas for changes, take pictures, type, and click."
+version: 0.1.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: vnc-cli
+  version_command: vnc-cli --version
+setup:
+  inputs:
+    - name: VNC_SERVER
+      label: Computer address
+      help: "The name or the IP address of the computer, for example 10.0.0.5 or mac-mini.local. Add :1 for the second screen of a Linux computer, or ::5901 for a port."
+      required: true
+    - name: VNC_USER
+      label: User name
+      help: "The account name, for a Mac with a user login. Leave it empty for a screen password only."
+    - name: VNC_PASSWORD
+      label: Password
+      help: "The screen sharing password, or the account password of a Mac."
+      secret: true
+    - name: VNC_AREAS
+      label: Watched areas
+      help: "The parts of the screen to watch, as NAME=X,Y,W,H in pixels, separated by ;. Leave it empty to watch the whole screen."
+    - name: VNC_SETTLE
+      label: Quiet time before a stable event
+      help: "How long an area must stay the same after a change, for example 700ms or 2s."
+      default: 700ms
+    - name: VNC_IMAGES
+      label: Attach a picture to each event
+      help: "yes adds a picture of the area to each stable event."
+      choices: ["yes", "no"]
+      default: "yes"
+actions:
+  cli: {commands: [vnc-cli]}
+events:
+  protocol: trebi-connector/1
+  command: vnc-cli serve
+  restart: always
+  types:
+    - {type: screen.changed, description: "A watched area of the screen starts to change", schema: schemas/screen.changed.json}
+    - {type: screen.stable, description: "A watched area stopped changing, with a picture of the area", schema: schemas/screen.stable.json}
+    - {type: clipboard.changed, description: "The clipboard of the computer changed", schema: schemas/clipboard.changed.json}
+    - {type: bell, description: "The computer rang the bell", schema: schemas/bell.json}
+    - {type: screen.resized, description: "The screen size changed", schema: schemas/screen.resized.json}
+    - {type: state.changed, description: "Trebi cannot reach the computer", schema: schemas/state.changed.json}
+    - {type: state.recovered, description: "Trebi can reach the computer again", schema: schemas/state.recovered.json}

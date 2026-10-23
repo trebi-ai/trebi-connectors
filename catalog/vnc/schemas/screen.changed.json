@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a screen.changed event: a watched area starts to change. The event text names the area.",
+  "required": [
+    "event",
+    "time",
+    "area",
+    "rect"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "description": "The watch event: change, stable, clipboard, bell, or resize."
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "area": {
+      "type": "string",
+      "description": "The name of the area. \"screen\" when no area is set."
+    },
+    "rect": {
+      "type": "object",
+      "description": "The area in reference pixels (the screen size at the first connect).",
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "w": {
+          "type": "integer"
+        },
+        "h": {
+          "type": "integer"
+        }
+      }
+    },
+    "changed_pct": {
+      "type": "number",
+      "description": "The percent of the area pixels that changed."
+    },
+    "changed_px": {
+      "type": "integer",
+      "description": "The number of pixels that changed."
+    },
+    "bbox": {
+      "type": "object",
+      "description": "The bounds of the changed pixels, in reference pixels.",
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "w": {
+          "type": "integer"
+        },
+        "h": {
+          "type": "integer"
+        }
+      }
+    },
+    "frame": {
+      "type": "integer",
+      "description": "The number of the check."
+    }
+  }
+}

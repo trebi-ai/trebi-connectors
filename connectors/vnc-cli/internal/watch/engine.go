@@ -135,6 +135,9 @@ type Event struct {
 	Text   string  `json:"text,omitempty"`
 	Size   *Size   `json:"size,omitempty"`
 	Cursor *Cursor `json:"cursor,omitempty"`
+
+	// Picture of the area for change and stable. It is not sent.
+	Img *image.RGBA `json:"-"`
 }
 
 // Engine compares the areas with their last stable state. An area reports
@@ -302,6 +305,7 @@ func (e *Engine) report(a *areaState, kind string, now time.Time, cur *image.RGB
 	ev := Event{
 		Event: kind, Time: now, Area: a.Name, Rect: &a.Rect, Frame: e.frames,
 		Pixels: n, Changed: float64(int(float64(n)*10000/float64(total))) / 100,
+		Img: cur,
 	}
 	if !bb.Empty() {
 		r := e.toRef(bb.Add(a.px.Min))

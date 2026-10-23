@@ -117,7 +117,7 @@ func (r *Runner) App(version string) *cli.Command {
 			r.moveCommand(), r.clickCommand(), r.mouseCommand(), r.dragCommand(), r.scrollCommand(),
 			r.pasteCommand(), r.clipboardCommand(),
 			r.expectCommand(), r.stableCommand(),
-			r.watchCommand(), r.runCommand(), r.sessionCommand(), r.configCommand(),
+			r.watchCommand(), r.runCommand(), r.sessionCommand(), r.configCommand(), r.serveCommand(version),
 		},
 	}
 }

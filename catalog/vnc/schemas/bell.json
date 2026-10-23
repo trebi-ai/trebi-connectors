@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a bell event.",
+  "required": [
+    "event",
+    "time"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "description": "The watch event: change, stable, clipboard, bell, or resize."
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

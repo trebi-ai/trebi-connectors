@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a screen.resized event. The watched areas scale with the screen.",
+  "required": [
+    "event",
+    "time",
+    "size"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "description": "The watch event: change, stable, clipboard, bell, or resize."
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "size": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer"
+        },
+        "height": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

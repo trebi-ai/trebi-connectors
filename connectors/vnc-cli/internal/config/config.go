@@ -24,6 +24,10 @@ const (
 	EnvUser        = "VNC_USER"
 	EnvPassword    = "VNC_PASSWORD"
 	EnvIdleTimeout = "VNC_IDLE_TIMEOUT"
+	// The watch inputs of serve.
+	EnvAreas  = "VNC_AREAS"
+	EnvSettle = "VNC_SETTLE"
+	EnvImages = "VNC_IMAGES"
 )
 
 // Labels of the inputs in the catalog manifest.
@@ -31,6 +35,9 @@ const (
 	ServerLabel   = "Computer address"
 	UserLabel     = "User name"
 	PasswordLabel = "Password"
+	AreasLabel    = "Watched areas"
+	SettleLabel   = "Quiet time before a stable event"
+	ImagesLabel   = "Attach a picture to each event"
 )
 
 // DefaultIdleTimeout is the time a background session stays with no client.
@@ -77,6 +84,9 @@ type Settings struct {
 	Target       string
 	IdleTimeout  time.Duration
 
+	// Watch inputs of serve, as given. Serve parses them.
+	Areas, Settle, Images string
+
 	Trebi    bool
 	StateDir string
 	// Dir is the folder of the standalone tool, "" in Trebi mode.
@@ -88,7 +98,10 @@ type Settings struct {
 // flags, the target in the config file, then the VNC_* env names.
 func Resolve(f Flags) (Settings, error) {
 	t, trebi := sdk.FromEnv()
-	s := Settings{Trebi: trebi, StateDir: t.StateDir}
+	s := Settings{
+		Trebi: trebi, StateDir: t.StateDir,
+		Areas: os.Getenv(EnvAreas), Settle: strings.TrimSpace(os.Getenv(EnvSettle)), Images: strings.TrimSpace(os.Getenv(EnvImages)),
+	}
 	if trebi {
 		for name, v := range map[string]string{"--server": f.Server, "--target": f.Target, "--user": f.User, "--password-env": f.PasswordEnv} {
 			if v != "" {

@@ -1,6 +1,6 @@
 # connectors
 
-The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. `slack-cli` reads Slack: it sends events and has read-only operations, but it does not send messages. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
+The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. `slack-cli` reads Slack: it sends events and has read-only operations, but it does not send messages. `vnc-cli` controls the screen of another computer and watches it for changes. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
 
 | CLI | Module | Catalog entry |
 |---|---|---|
@@ -15,6 +15,7 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 | `host-cli` | `github.com/trebi-ai/trebi-connectors/connectors/host-cli` | `catalog/host` |
 | `axiom-cli` | `github.com/trebi-ai/trebi-connectors/connectors/axiom-cli` | `catalog/axiom` |
 | `slack-cli` | `github.com/trebi-ai/trebi-connectors/connectors/slack-cli` | `catalog/slack` |
+| `vnc-cli` | `github.com/trebi-ai/trebi-connectors/connectors/vnc-cli` | `catalog/vnc` |
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
@@ -109,6 +110,15 @@ These three programs poll and send events. They have no channel and no login ste
 - `axiom-cli`: `state.changed` when a monitor triggers and `state.recovered` when it resolves, from the monitor history.
 
 The README of each CLI has the details.
+
+## vnc-cli
+
+`vnc-cli` is a Go port of vncdotool. It controls the screen of another computer over VNC and keeps one connection open in a background session. Its package `vnc` is a public RFB client that perception imports by pseudo-version.
+
+- `serve` holds the connection and listens on `vnc.sock` in the state folder. A command in a job sends its work to that socket.
+- `serve` watches the areas of the screen and sends `screen.changed`, `screen.stable` (with a PNG of the area), `clipboard.changed`, `bell`, and `screen.resized`, and `state.changed` and `state.recovered` for the key `reachable`.
+- A failed login gives `auth_required` and stops the connection, so that the server does not block the address.
+- `serve --sandbox` runs the adapter over `vnc/vnctest`, a fake RFB server in the same process.
 
 ## Build and test
 

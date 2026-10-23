@@ -131,7 +131,15 @@ The codes follow vncdotool, so that scripts can move over.
 
 ## Use with Trebi
 
+The catalog entry `catalog/vnc` ("Remote screen") runs `vnc-cli serve`. The skill of the entry, `catalog/vnc/skill/SKILL.md`, is the full guide for agents.
+
 When `TREBI_STATE_DIR` is set, the server, the user, and the password come only from `VNC_SERVER`, `VNC_USER`, and `VNC_PASSWORD`. `--server`, `--target`, `--user`, and `--password-env` fail with "Trebi sets this value". `config set` and `config rm` fail with "Set this value in Trebi".
+
+- `serve` keeps the connection, and it is the background session of the Trebi connection. It listens on `$TREBI_STATE_DIR/vnc.sock` and holds `serve.lock`. A command in a job sends its work to that socket and never connects by itself. When `serve` does not run, a command fails with exit code 10.
+- `serve` runs the watch engine on the areas of `VNC_AREAS` (`NAME=X,Y,W,H` separated by `;`), with the quiet time of `VNC_SETTLE`. It sends `screen.changed`, `screen.stable`, `clipboard.changed`, `bell`, and `screen.resized`, and `state.changed` and `state.recovered` for the key `reachable`.
+- With `VNC_IMAGES` set to `yes` (the default), each `screen.stable` event has a PNG of the area. The pictures are in `$TREBI_STATE_DIR/images/`, and the newest 200 stay.
+- The status is `connecting`, then `connected`. A failed login gives `auth_required` and stops the connection, so that a wrong password is not sent again. A computer that cannot be reached gives `error`, and `serve` connects again with a wait of 1s to 30s.
+- `serve --sandbox` runs the same adapter over a fake screen in the same process. The fake changes the screen each second and the clipboard each 10s. It replaces the server and the password, so no real password goes to it.
 
 ## Tests
 
