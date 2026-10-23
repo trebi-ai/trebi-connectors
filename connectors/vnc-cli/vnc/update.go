@@ -217,7 +217,8 @@ func (c *Conn) requestUpdate(incremental bool) error {
 		return err
 	}
 	c.mu.Lock()
-	if incremental && c.pending {
+	// Continuous updates need no incremental requests.
+	if incremental && (c.pending || c.continuous) {
 		c.mu.Unlock()
 		return nil
 	}
@@ -252,7 +253,11 @@ func (c *Conn) resize(w, h int) {
 			wt.cov = newCoverage(image.Rect(0, 0, w, h))
 		}
 	}
+	continuous := c.continuous
 	c.mu.Unlock()
+	if continuous {
+		c.reply(continuousMessage(true, image.Rect(0, 0, w, h)))
+	}
 	c.publish(Event{Kind: EventResize, Width: w, Height: h})
 }
 

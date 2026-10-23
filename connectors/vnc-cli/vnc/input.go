@@ -66,9 +66,13 @@ func (c *Conn) Pointer(x, y int, buttons uint8) error {
 	return c.write(b)
 }
 
-// SetClipboard sends text to the clipboard of the server. Basic RFB carries
-// Latin-1 only; other characters become "?".
+// SetClipboard sends text to the clipboard of the server. With the
+// extended clipboard, the text is UTF-8. Basic RFB carries Latin-1 only;
+// other characters become "?".
 func (c *Conn) SetClipboard(text string) error {
+	if c.hasFeature("extended_clipboard") {
+		return c.setExtClipboard(text)
+	}
 	data := latin1(text)
 	b := make([]byte, 8+len(data))
 	b[0] = msgClientCutText
@@ -101,7 +105,10 @@ func (c *Conn) readCutText() error {
 	}
 	n := int32(binary.BigEndian.Uint32(b[3:]))
 	if n < 0 {
-		return protoErr("clipboard", "extended clipboard data that the client did not ask for")
+		if n < -maxClipboard {
+			return protoErr("clipboard", "extended clipboard message of %d bytes is too long", -int64(n))
+		}
+		return c.readExtClipboard(int(-n))
 	}
 	if n > maxClipboard {
 		return protoErr("clipboard", "text of %d bytes is too long", n)

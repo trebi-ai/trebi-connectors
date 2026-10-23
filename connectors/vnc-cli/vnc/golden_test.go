@@ -129,7 +129,7 @@ func gunzip(t *testing.T, path string) []byte {
 	return b
 }
 
-func sceneImage(t *testing.T, name string) *image.RGBA {
+func sceneImage(t testing.TB, name string) *image.RGBA {
 	t.Helper()
 	f, err := os.Open(filepath.Join("..", "fleet", "goldens", "scenes", name+".png"))
 	if err != nil {

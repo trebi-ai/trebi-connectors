@@ -49,19 +49,19 @@ type decoder interface {
 }
 
 var decoderFactories = map[int32]func() decoder{
-	EncRaw:         func() decoder { return rawDecoder{} },
-	EncCopyRect:    func() decoder { return copyRectDecoder{} },
-	EncRRE:         func() decoder { return rreDecoder{} },
-	EncCoRRE:       func() decoder { return rreDecoder{compact: true} },
-	EncHextile:     func() decoder { return hextileDecoder{} },
-	EncZRLE:        func() decoder { return &zrleDecoder{} },
-	EncTight:       func() decoder { return &tightDecoder{} },
-	EncDesktopSize: func() decoder { return desktopSizeDecoder{} },
-	//TMP	EncExtendedDesktopSize: func() decoder { return extDesktopSizeDecoder{} },
-	EncCursor:     func() decoder { return cursorDecoder{} },
-	EncXCursor:    func() decoder { return xcursorDecoder{} },
-	EncPointerPos: func() decoder { return pointerPosDecoder{} },
-	EncQEMUExtKey: func() decoder { return qemuKeyDecoder{} },
+	EncRaw:                 func() decoder { return rawDecoder{} },
+	EncCopyRect:            func() decoder { return copyRectDecoder{} },
+	EncRRE:                 func() decoder { return rreDecoder{} },
+	EncCoRRE:               func() decoder { return rreDecoder{compact: true} },
+	EncHextile:             func() decoder { return hextileDecoder{} },
+	EncZRLE:                func() decoder { return &zrleDecoder{} },
+	EncTight:               func() decoder { return &tightDecoder{} },
+	EncDesktopSize:         func() decoder { return desktopSizeDecoder{} },
+	EncExtendedDesktopSize: func() decoder { return extDesktopSizeDecoder{} },
+	EncCursor:              func() decoder { return cursorDecoder{} },
+	EncXCursor:             func() decoder { return xcursorDecoder{} },
+	EncPointerPos:          func() decoder { return pointerPosDecoder{} },
+	EncQEMUExtKey:          func() decoder { return qemuKeyDecoder{} },
 }
 
 func newDecoders() map[int32]decoder {
@@ -117,7 +117,8 @@ func (c *Conn) pseudoEncodings() []int32 {
 	if c.opts.Cursor != CursorServer {
 		out = append(out, EncCursor, EncXCursor, EncPointerPos)
 	}
-	return append(out, EncDesktopSize, EncLastRect, EncQEMUExtKey)
+	return append(out, EncDesktopSize, EncExtendedDesktopSize, EncLastRect, EncFence,
+		EncContinuousUpdates, EncQEMUExtKey, EncExtendedClipboard)
 }
 
 // offered is true when the client sent encoding e.
