@@ -143,6 +143,10 @@ func (c *Conn) readUpdate() error {
 			return protoErr("update", "the server sent encoding %d, which the client did not ask for", enc)
 		}
 		r := image.Rect(x, y, x+w, y+ht)
+		if r.Empty() {
+			// A rectangle of 0 x h has no rows to decode.
+			r.Max = r.Min
+		}
 		dirty, err := d.decode(c, r)
 		if err != nil {
 			if _, ok := err.(*ProtocolError); ok {

@@ -87,7 +87,8 @@ func (k checkDecoder) decode(c *Conn, r image.Rectangle) (bool, error) {
 	if n, limit := m1.TotalAlloc-m0.TotalAlloc, uint64(64*padded+1<<20); n > limit {
 		k.t.Fatalf("rectangle %v: %d bytes allocated, limit %d", r, n, limit)
 	}
-	if !dirty {
+	// A decoder that fails can leave a part of r written.
+	if !dirty && err == nil {
 		r = image.Rectangle{}
 	}
 	for y := before.Rect.Min.Y; y < before.Rect.Max.Y; y++ {
