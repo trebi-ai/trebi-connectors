@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc/vnctest"
 )
@@ -257,6 +258,19 @@ func TestHolderTimeoutAndHangup(t *testing.T) {
 			t.Fatalf("the request of a gone client still runs: %+v", st)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// The watch -d deadline closes the socket, and then the command closes it
+// again. The second close must not add an error to the output.
+func TestClientCloseAfterWatchDeadline(t *testing.T) {
+	f := start(t, vnctest.Options{}, 0)
+	c := f.client(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	c.Watch(ctx, watch.Spec{}, func(watch.Event) error { return nil })
+	if err := c.Close(); err != nil {
+		t.Fatalf("close after the watch: %v", err)
 	}
 }
 
