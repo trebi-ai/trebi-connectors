@@ -107,7 +107,11 @@ func (h *Holder) Serve(ctx context.Context, ln net.Listener) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	h.mu.Lock()
-	h.stop = cancel
+	// A stop closes the socket before the client of the stop sees the end.
+	h.stop = func(err error) {
+		cancel(err)
+		ln.Close()
+	}
 	h.resetIdle()
 	h.mu.Unlock()
 	go func() {
@@ -269,7 +273,8 @@ func (h *Holder) status() *Status {
 // handle runs the requests of one client in order.
 func (h *Holder) handle(ctx context.Context, nc net.Conn) {
 	defer nc.Close()
-	defer context.AfterFunc(ctx, func() { nc.Close() })()
+	keepOpen := context.AfterFunc(ctx, func() { nc.Close() })
+	defer keepOpen()
 	r := bufio.NewReaderSize(nc, 64<<10)
 	w := bufio.NewWriterSize(nc, 64<<10)
 	counted := false
@@ -311,6 +316,8 @@ func (h *Holder) handle(ctx context.Context, nc net.Conn) {
 			return
 		}
 		if req.Op == OpStop {
+			// nc closes after the stop, so its client sees the end after the socket.
+			keepOpen()
 			h.mu.Lock()
 			h.stop(errStopped)
 			h.mu.Unlock()

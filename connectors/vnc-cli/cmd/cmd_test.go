@@ -111,6 +111,15 @@ func waitEvents(t *testing.T, s *vnctest.Server, n int) []vnctest.InputEvent {
 	return ev
 }
 
+// runAndWait runs one command, then waits until the server has n events in all.
+// Each command has its own connection, and the server reads each one on its
+// own goroutine, so without the wait the events of two commands can mix.
+func runAndWait(t *testing.T, s *vnctest.Server, n int, stdin string, args ...string) {
+	t.Helper()
+	mustRun(t, stdin, args...)
+	waitEvents(t, s, n)
+}
+
 func equalEvents(t *testing.T, got, want []vnctest.InputEvent) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -126,9 +135,9 @@ func equalEvents(t *testing.T, got, want []vnctest.InputEvent) {
 func TestKeys(t *testing.T) {
 	standalone(t)
 	s, addr := server(t, vnctest.Options{})
-	mustRun(t, "", "-s", addr, "key", "ctrl-alt-del", "a")
-	mustRun(t, "", "-s", addr, "key", "down", "shift")
-	mustRun(t, "", "-s", addr, "key", "up", "shift")
+	runAndWait(t, s, 8, "", "-s", addr, "key", "ctrl-alt-del", "a")
+	runAndWait(t, s, 9, "", "-s", addr, "key", "down", "shift")
+	runAndWait(t, s, 10, "", "-s", addr, "key", "up", "shift")
 	mustRun(t, "", "-s", addr, "key", "--force-caps", "A")
 	want := append(press(vnc.KeyControlL, vnc.KeyAltL, vnc.KeyDelete), press('a')...)
 	want = append(want, vnctest.InputEvent{Kind: "key", Keysym: vnc.KeyShiftL, Down: true}, vnctest.InputEvent{Kind: "key", Keysym: vnc.KeyShiftL})
@@ -147,10 +156,10 @@ func TestType(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "text")
 	os.WriteFile(file, []byte("f\n"), 0o600)
 
-	mustRun(t, "", "-s", addr, "type", "a-B", "--enter")
-	mustRun(t, "", "-s", addr, "type", "--env", "SECRET_FOR_TEST")
-	mustRun(t, "", "-s", addr, "type", "--file", file)
-	mustRun(t, "x\n", "-s", addr, "--delay", "1-3", "type", "-")
+	runAndWait(t, s, 8, "", "-s", addr, "type", "a-B", "--enter")
+	runAndWait(t, s, 12, "", "-s", addr, "type", "--env", "SECRET_FOR_TEST")
+	runAndWait(t, s, 14, "", "-s", addr, "type", "--file", file)
+	runAndWait(t, s, 16, "x\n", "-s", addr, "--delay", "1-3", "type", "-")
 	mustRun(t, "", "-s", addr, "type", "--human", "o k")
 	var want []vnctest.InputEvent
 	for _, k := range []uint32{'a', '-', 'B', vnc.KeyReturn, 'p', 'w', 'f', 'x', 'o', ' ', 'k'} {
@@ -168,10 +177,10 @@ func TestType(t *testing.T) {
 func TestMouse(t *testing.T) {
 	standalone(t)
 	s, addr := server(t, vnctest.Options{Width: 100, Height: 100})
-	mustRun(t, "", "-s", addr, "run", "--", "move", "10", "20", "click", "3")
-	mustRun(t, "", "-s", addr, "mouse", "down", "1")
-	mustRun(t, "", "-s", addr, "mouse", "up", "1")
-	mustRun(t, "", "-s", addr, "scroll", "0", "-1")
+	runAndWait(t, s, 3, "", "-s", addr, "run", "--", "move", "10", "20", "click", "3")
+	runAndWait(t, s, 4, "", "-s", addr, "mouse", "down", "1")
+	runAndWait(t, s, 5, "", "-s", addr, "mouse", "up", "1")
+	runAndWait(t, s, 7, "", "-s", addr, "scroll", "0", "-1")
 	mustRun(t, "", "-s", addr, "drag", "--step", "10", "20", "0")
 	ev := waitEvents(t, s, 11)
 	type p struct {
@@ -249,7 +258,7 @@ func decode(t *testing.T, file string) image.Image {
 func TestClipboard(t *testing.T) {
 	standalone(t)
 	s, addr := server(t, vnctest.Options{})
-	mustRun(t, "", "-s", addr, "paste", "héllo")
+	runAndWait(t, s, 1, "", "-s", addr, "paste", "héllo")
 	mustRun(t, "line\r\n", "-s", addr, "paste", "-")
 	ev := waitEvents(t, s, 2)
 	if ev[0].Text != "héllo" || ev[1].Text != "line\n" {

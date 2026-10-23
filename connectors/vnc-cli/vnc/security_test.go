@@ -180,8 +180,9 @@ func TestVeNCryptCertificate(t *testing.T) {
 	}
 	noSecret(t, err, "s3kr1t")
 
-	// The system roots do not know the test CA.
-	_, err = dialTCP(t, addr, vnc.Options{Password: "s3kr1t"})
+	// The system roots do not know the test CA. The name matches, because
+	// Go on Linux checks the name before the chain.
+	_, err = dialTCP(t, addr, vnc.Options{Password: "s3kr1t", TLS: &tls.Config{ServerName: "desk.example"}})
 	if err == nil || !strings.Contains(err.Error(), "not trusted") {
 		t.Fatalf("unknown CA: err = %v", err)
 	}

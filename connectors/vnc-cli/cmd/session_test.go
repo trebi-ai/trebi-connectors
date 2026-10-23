@@ -77,7 +77,11 @@ func TestSessionAutoStartAndReuse(t *testing.T) {
 	if n := srv.Served(); n != 1 {
 		t.Fatalf("the server had %d connections, want 1", n)
 	}
+	// The holder sees the close of the last client a moment later.
 	st := status(t, addr)
+	for deadline := time.Now().Add(5 * time.Second); st.Clients > 0 && time.Now().Before(deadline); st = status(t, addr) {
+		time.Sleep(20 * time.Millisecond)
+	}
 	if !st.Connected || st.Width != 64 || st.Clients != 0 || st.IdleLeftSec == nil {
 		t.Fatalf("status: %+v", st)
 	}

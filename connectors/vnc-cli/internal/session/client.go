@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -171,10 +172,18 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 	return rep.Status, err
 }
 
-// Stop stops the holder.
+// Stop stops the holder. It returns when the holder has closed its socket,
+// so the next command finds no session.
 func (c *Client) Stop(ctx context.Context) error {
-	_, _, err := c.call(ctx, Request{Op: OpStop}, nil)
-	return err
+	if _, _, err := c.call(ctx, Request{Op: OpStop}, nil); err != nil {
+		return err
+	}
+	// The holder closes this connection after its socket.
+	defer context.AfterFunc(ctx, func() { c.nc.SetDeadline(time.Now()) })()
+	if _, err := io.Copy(io.Discard, c.r); err != nil && ctx.Err() == nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 // startWait is the longest time to wait for a new holder to connect.
