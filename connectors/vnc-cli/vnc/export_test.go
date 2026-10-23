@@ -30,21 +30,7 @@ var FuzzSize = image.Pt(24, 20)
 // must change no pixel outside itself, and must read and allocate no more
 // than its size allows.
 func CheckUpdates(t *testing.T, enc int32, pf PixelFormat, data []byte) {
-	c := &Conn{
-		opts:     Options{JPEG: true},
-		log:      slog.New(slog.DiscardHandler),
-		fb:       newFramebuffer(FuzzSize.X, FuzzSize.Y),
-		r:        newReader(bufio.NewReader(bytes.NewReader(data))),
-		subs:     map[*Subscription]struct{}{},
-		waiters:  map[*waiter]struct{}{},
-		features: map[string]bool{},
-		fences:   map[uint32]chan struct{}{},
-		replies:  make(chan []byte, 64),
-		done:     make(chan struct{}),
-		err:      ErrClosed,
-	}
-	// A closed connection sends no update requests.
-	close(c.done)
+	c := readConn(data)
 	for y := 0; y < FuzzSize.Y; y++ {
 		for x := 0; x < FuzzSize.X; x++ {
 			c.fb.img.SetRGBA(x, y, color.RGBA{uint8(x * 10), uint8(y * 12), uint8(x ^ y), 255})
@@ -63,6 +49,26 @@ func CheckUpdates(t *testing.T, enc int32, pf PixelFormat, data []byte) {
 			return
 		}
 	}
+}
+
+// readConn is a closed connection of FuzzSize that reads the messages of
+// the server from data. A closed connection sends no update requests.
+func readConn(data []byte) *Conn {
+	c := &Conn{
+		opts:     Options{JPEG: true},
+		log:      slog.New(slog.DiscardHandler),
+		fb:       newFramebuffer(FuzzSize.X, FuzzSize.Y),
+		r:        newReader(bufio.NewReader(bytes.NewReader(data))),
+		subs:     map[*Subscription]struct{}{},
+		waiters:  map[*waiter]struct{}{},
+		features: map[string]bool{},
+		fences:   map[uint32]chan struct{}{},
+		replies:  make(chan []byte, 64),
+		done:     make(chan struct{}),
+		err:      ErrClosed,
+	}
+	close(c.done)
+	return c
 }
 
 // checkDecoder checks the limits of each rectangle that d decodes.
