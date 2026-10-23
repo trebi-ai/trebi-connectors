@@ -3,6 +3,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,6 +87,8 @@ func (r *Runner) App(version string) *cli.Command {
 			&cli.StringFlag{Name: "delay", Usage: "milliseconds between actions and typed keys, as N or MIN-MAX"},
 			&cli.StringFlag{Name: "encodings", Usage: "the encodings to ask for, in order, for example tight,zrle,raw"},
 			&cli.IntFlag{Name: "jpeg-quality", Value: -1, Usage: "allow lossy JPEG at this quality, 0 to 9 (-1: lossless)"},
+			&cli.StringFlag{Name: "tls-ca-cert", Usage: "trust the server certificates that this CA file signs (VeNCrypt and wss://)"},
+			&cli.BoolFlag{Name: "tls-insecure-skip-verify", Usage: "do not check the server certificate"},
 			&cli.StringFlag{Name: "pixel-format", Usage: "ask for this pixel format: bgrx8888, rgbx8888, or rgb565"},
 			&cli.IntFlag{Name: "fuzz", Value: -1, DefaultText: "from the pixel format", Usage: "expect and stable: the largest color difference of a pixel, 0 (exact) to 255"},
 			&cli.IntFlag{Name: "blur", Value: -1, DefaultText: "2 with --jpeg-quality, else 0", Usage: "expect and stable: blur both pictures with this radius first"},
@@ -156,6 +160,11 @@ func (r *Runner) before(ctx context.Context, c *cli.Command) (context.Context, e
 		}
 		r.opts.PixelFormat = &pf
 	}
+	if ca, skip := c.String("tls-ca-cert"), c.Bool("tls-insecure-skip-verify"); ca != "" || skip {
+		if r.opts.TLS, err = vnc.NewTLSConfig(ca, skip); err != nil {
+			return ctx, usage(fmt.Errorf("--tls-ca-cert: %w", err))
+		}
+	}
 	r.match = session.Match{Fuzz: c.Int("fuzz"), Blur: c.Int("blur")}
 	if r.match.Fuzz > 255 || r.match.Fuzz < -1 {
 		return ctx, usage(fmt.Errorf("--fuzz: %d is not 0 to 255", r.match.Fuzz))
@@ -191,6 +200,13 @@ func (r *Runner) remote(ctx context.Context) (remote, error) {
 			return nil, err
 		}
 		c, err = vnc.Dial(ctx, o)
+	}
+	var (
+		untrusted *tls.CertificateVerificationError
+		badName   x509.HostnameError
+	)
+	if errors.As(err, &untrusted) || errors.As(err, &badName) {
+		err = fmt.Errorf("%w (use --tls-ca-cert FILE or --tls-insecure-skip-verify)", err)
 	}
 	if err != nil {
 		return nil, err

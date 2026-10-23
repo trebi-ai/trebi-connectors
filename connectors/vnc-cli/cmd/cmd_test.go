@@ -404,3 +404,31 @@ func TestTrebiMode(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSFlags(t *testing.T) {
+	standalone(t)
+	ca, err := vnctest.NewCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	srvTLS, err := ca.ServerTLS("127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := server(t, vnctest.Options{Security: []uint8{vnc.SecVeNCrypt}, VeNCrypt: []uint32{vnc.VeNCryptX509Vnc}, TLS: srvTLS, Password: "pw", Name: "tls"})
+	t.Setenv("PW_FOR_TEST", "pw")
+	caFile := filepath.Join(t.TempDir(), "ca.pem")
+	os.WriteFile(caFile, ca.PEM, 0o600)
+
+	res := run(t, "", "-s", addr, "-p", "PW_FOR_TEST", "info")
+	if res.err == nil || !strings.Contains(res.err.Error(), "--tls-ca-cert") {
+		t.Fatalf("unknown CA: %v", res.err)
+	}
+	if res := mustRun(t, "", "-s", addr, "-p", "PW_FOR_TEST", "--tls-ca-cert", caFile, "info"); !strings.Contains(res.stdout, "name: tls") {
+		t.Fatalf("with the CA: %s", res.stdout)
+	}
+	mustRun(t, "", "-s", addr, "-p", "PW_FOR_TEST", "--tls-insecure-skip-verify", "info")
+	if res := run(t, "", "-s", addr, "--tls-ca-cert", filepath.Join(t.TempDir(), "none.pem"), "info"); res.code() != ExitUsage {
+		t.Fatalf("missing CA file: exit %d (%v)", res.code(), res.err)
+	}
+}
