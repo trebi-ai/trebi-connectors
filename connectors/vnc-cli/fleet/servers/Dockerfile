@@ -55,6 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tigervnc-common \
         tigervnc-tools \
         openssl \
+        xclip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY servers/tigervnc-entrypoint.sh /entrypoint.sh
@@ -64,5 +65,144 @@ RUN chmod +x /entrypoint.sh
 # unbracketed pattern matches that, and passes with the player dead.
 HEALTHCHECK --interval=2s --timeout=2s --start-period=5s --retries=30 \
     CMD ss -H -ltn 'sport = :5900' | grep -q . && pgrep -f "[s]cene_player" >/dev/null
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+# x11vnc exporting a plain Xvfb display -- a different shape from TigerVNC
+# (a VNC server bolted onto an existing X server) and so worth covering.
+FROM base AS x11vnc
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        xvfb \
+        x11vnc \
+        x11-utils \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY servers/x11vnc-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+HEALTHCHECK --interval=2s --timeout=2s --start-period=5s --retries=30 \
+    CMD ss -H -ltn 'sport = :5900' | grep -q . \
+        && pgrep -f "[x]ev -root" >/dev/null \
+        && pgrep -f "[s]cene_player" >/dev/null
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+# Builds the vncev and example binaries from a pinned release, so neither
+# final image needs a compiler. Replaces the old libvncserver.mk host build.
+FROM base AS libvncserver-build
+
+ARG LIBVNCSERVER_VERSION=0.9.14
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        libssl-dev \
+        zlib1g-dev \
+        libjpeg-dev \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fL \
+        "https://github.com/LibVNC/libvncserver/archive/refs/tags/LibVNCServer-${LIBVNCSERVER_VERSION}.tar.gz" \
+        -o /tmp/libvncserver.tar.gz \
+    && mkdir -p /tmp/libvncserver \
+    && tar xzf /tmp/libvncserver.tar.gz --strip-components=1 -C /tmp/libvncserver \
+    && rm /tmp/libvncserver.tar.gz
+
+# Named targets rather than `all`: skips the SDL/GTK example clients.
+WORKDIR /tmp/libvncserver
+RUN cmake -DCMAKE_BUILD_TYPE=Release . \
+    && cmake --build . --target examples_vncev examples_example -- -j"$(nproc)"
+
+
+# Event sink: prints events and renders no desktop, so utils.py marks
+# it renders_desktop=False and readiness stops at the handshake.
+FROM base AS vncev
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=libvncserver-build /tmp/libvncserver/examples/vncev /usr/local/bin/vncev
+COPY --from=libvncserver-build /tmp/libvncserver/libvncserver.so* /usr/local/lib/
+RUN ldconfig
+
+ENTRYPOINT ["vncev", "-rfbport", "5900", "-rfbwait", "1000"]
+
+
+# Self-animated canvas, so it draws its own content rather than needing
+# draw-content.sh to put an X client on the screen.
+FROM base AS libvncserver-example
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=libvncserver-build /tmp/libvncserver/examples/example /usr/local/bin/example
+COPY --from=libvncserver-build /tmp/libvncserver/libvncserver.so* /usr/local/lib/
+RUN ldconfig
+
+ENTRYPOINT ["example", "-rfbport", "5900", "-rfbwait", "1000"]
+
+
+FROM base AS qemu
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        qemu-system-x86 \
+        ovmf \
+        openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY servers/qemu-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+FROM aerokube/selenoid:1.11.3 AS selenoid-dist
+
+FROM base AS selenoid
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tigervnc-standalone-server \
+        tigervnc-common \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=selenoid-dist /usr/bin/selenoid /usr/local/bin/selenoid
+
+COPY servers/selenoid-browsers.json /etc/selenoid/browsers.json
+COPY servers/selenoid-stub-webdriver.py /usr/local/bin/selenoid-stub-webdriver.py
+COPY servers/selenoid-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/selenoid-stub-webdriver.py
+
+# 5900 here is only the Xvnc behind the bridge, so the base healthcheck would
+# pass before Selenoid is listening on 4444.
+HEALTHCHECK --interval=2s --timeout=2s --start-period=5s --retries=30 \
+    CMD ss -H -ltn 'sport = :4444' | grep -q . \
+        && ss -H -ltn 'sport = :5900' | grep -q . \
+        && pgrep -f "[s]cene_player" >/dev/null
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+# wayvnc drives wlroots compositors only -- not Gnome, KDE or Weston -- so
+# sway supplies one. Debian's build links gnutls, without which wayvnc offers
+# no VeNCrypt at all.
+FROM base AS wayvnc
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        wayvnc \
+        sway \
+        xwayland \
+        openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY servers/wayvnc-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -77,3 +77,104 @@ services:
       VNC_SECURITY_TYPES: TLSVnc,TLSNone
     ports:
       - "127.0.0.1:5951:5900"
+
+  # A resize changes the screen of each viewer, so the resize test has its
+  # own server.
+  tigervnc-resize:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: tigervnc
+    image: vnc-cli-fleet-tigervnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+    ports:
+      - "127.0.0.1:5940:5900"
+
+  # x11vnc over Xvfb, no password.
+  x11vnc:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: x11vnc
+    image: vnc-cli-fleet-x11vnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+    ports:
+      - "127.0.0.1:5933:5900"
+
+  # The LibVNCServer event sink. It writes each event to its log and shows
+  # no desktop.
+  vncev:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: vncev
+    image: vnc-cli-fleet-vncev:dev
+    ports:
+      - "127.0.0.1:5934:5900"
+
+  # The LibVNCServer example: an 800x600 canvas that a drag paints on.
+  libvncserver-example:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: libvncserver-example
+    image: vnc-cli-fleet-libvncserver-example:dev
+    ports:
+      - "127.0.0.1:5935:5900"
+
+  # QEMU over a WebSocket (ws://127.0.0.1:5944/).
+  qemu:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: qemu
+    image: vnc-cli-fleet-qemu:dev
+    ports:
+      - "127.0.0.1:5944:5900"
+
+  # QEMU over a TLS WebSocket (wss://localhost:5945/). The entrypoint writes
+  # the CA to qemu-tls/ca-cert.pem.
+  qemu-tls:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: qemu
+    image: vnc-cli-fleet-qemu:dev
+    environment:
+      QEMU_VNC_TLS: "1"
+    volumes:
+      - ./qemu-tls:/tls
+    ports:
+      - "127.0.0.1:5945:5900"
+
+  # Selenoid bridges ws://127.0.0.1:5946/vnc/<session> to an Xvnc. The
+  # address works only while a WebDriver session is open.
+  selenoid:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: selenoid
+    image: vnc-cli-fleet-selenoid:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+    ports:
+      - "127.0.0.1:5946:4444"
+
+  # wayvnc on sway: VeNCrypt X509Plain with a user name. The entrypoint
+  # writes the certificate to wayvnc-certs/cert.pem.
+  wayvnc:
+    build:
+      context: .
+      dockerfile: servers/Dockerfile
+      target: wayvnc
+    image: vnc-cli-fleet-wayvnc:dev
+    environment:
+      VNC_GEOMETRY: 256x192
+      VNC_USERNAME: vncdotool
+      VNC_PASSWORD: vncdotool
+    volumes:
+      - ./wayvnc-certs:/certs
+    ports:
+      - "127.0.0.1:5952:5900"
