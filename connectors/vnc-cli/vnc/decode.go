@@ -51,7 +51,17 @@ type decoder interface {
 var decoderFactories = map[int32]func() decoder{
 	EncRaw:         func() decoder { return rawDecoder{} },
 	EncCopyRect:    func() decoder { return copyRectDecoder{} },
+	EncRRE:         func() decoder { return rreDecoder{} },
+	EncCoRRE:       func() decoder { return rreDecoder{compact: true} },
+	EncHextile:     func() decoder { return hextileDecoder{} },
+	EncZRLE:        func() decoder { return &zrleDecoder{} },
+	EncTight:       func() decoder { return &tightDecoder{} },
 	EncDesktopSize: func() decoder { return desktopSizeDecoder{} },
+	//TMP	EncExtendedDesktopSize: func() decoder { return extDesktopSizeDecoder{} },
+	EncCursor:     func() decoder { return cursorDecoder{} },
+	EncXCursor:    func() decoder { return xcursorDecoder{} },
+	EncPointerPos: func() decoder { return pointerPosDecoder{} },
+	EncQEMUExtKey: func() decoder { return qemuKeyDecoder{} },
 }
 
 func newDecoders() map[int32]decoder {
@@ -92,16 +102,22 @@ func (c *Conn) setEncodings() error {
 	return c.write(b)
 }
 
-// pseudoEncodings lists the pseudo-encodings with a decoder, in a fixed order.
+// pseudoEncodings lists the pseudo-encodings that the options ask for, in a
+// fixed order.
 func (c *Conn) pseudoEncodings() []int32 {
 	var out []int32
-	for _, e := range []int32{EncDesktopSize, EncExtendedDesktopSize, EncLastRect, EncFence,
-		EncContinuousUpdates, EncQEMUExtKey, EncExtendedClipboard} {
-		if _, ok := decoderFactories[e]; ok {
-			out = append(out, e)
-		}
+	if c.opts.JPEG {
+		out = append(out, EncJPEGQuality0+int32(min(max(c.opts.JPEGQuality, 0), 9)))
 	}
-	return out
+	if l := c.opts.CompressLevel; l > 0 {
+		out = append(out, EncCompressLevel0+int32(min(l, 9)))
+	}
+	// Cursor and PointerPos stop most servers from drawing the pointer into
+	// the framebuffer (vncdotool specs/cursor.md).
+	if c.opts.Cursor != CursorServer {
+		out = append(out, EncCursor, EncXCursor, EncPointerPos)
+	}
+	return append(out, EncDesktopSize, EncLastRect, EncQEMUExtKey)
 }
 
 // offered is true when the client sent encoding e.
@@ -130,8 +146,9 @@ const maxRead = 64 << 20
 // reader reads the server stream. bytes returns a buffer that is valid
 // until the next call.
 type reader struct {
-	br  *bufio.Reader
-	buf []byte
+	br   *bufio.Reader
+	buf  []byte
+	peak int // the largest read, for the fuzz tests
 }
 
 func newReader(br *bufio.Reader) *reader { return &reader{br: br} }
@@ -140,6 +157,7 @@ func (r *reader) bytes(n int) ([]byte, error) {
 	if n < 0 || n > maxRead {
 		return nil, fmt.Errorf("read of %d bytes is too large", n)
 	}
+	r.peak = max(r.peak, n)
 	if cap(r.buf) < n {
 		r.buf = make([]byte, n)
 	}

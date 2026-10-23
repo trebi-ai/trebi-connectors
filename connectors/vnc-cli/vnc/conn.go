@@ -34,6 +34,9 @@ type Options struct {
 	// JPEG allows lossy Tight JPEG rectangles at JPEGQuality (0-9).
 	JPEG        bool
 	JPEGQuality int
+	// CompressLevel asks for a zlib level (1-9). Zero keeps the default of
+	// the server.
+	CompressLevel int
 	// Cursor selects how the client gets the pointer shape.
 	Cursor CursorMode
 	// PixelFormat forces a pixel format. Nil keeps the native format of the
@@ -114,6 +117,9 @@ type Conn struct {
 	pending  bool // an incremental request is out
 	features map[string]bool
 	encs     []int32
+	cursor   *Cursor
+	pointer  image.Point
+	movedAt  time.Time // of the last Pointer call
 
 	done      chan struct{}
 	err       error

@@ -353,10 +353,8 @@ func (c *Conn) Seq() uint64 {
 }
 
 // Snapshot copies the area r of the screen. An empty r means the whole
-// screen.
+// screen. Options.Cursor selects whether the pointer is in it; see
+// SnapshotCursor.
 func (c *Conn) Snapshot(r image.Rectangle) *image.RGBA {
-	if r.Empty() {
-		r = c.fb.bounds()
-	}
-	return c.fb.snapshot(r)
+	return c.SnapshotCursor(r, c.opts.Cursor)
 }
