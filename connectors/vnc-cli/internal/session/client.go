@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
+	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
 )
 
 // Client runs the commands in a holder through its socket. It has the same
@@ -75,8 +76,8 @@ func (c *Client) Info(ctx context.Context) (Info, error) {
 }
 
 // Capture copies the area r of the screen.
-func (c *Client) Capture(ctx context.Context, r image.Rectangle) (*image.RGBA, error) {
-	rep, pix, err := c.call(ctx, Request{Op: OpCapture, Rect: r}, nil)
+func (c *Client) Capture(ctx context.Context, r image.Rectangle, cursor vnc.CursorMode) (*image.RGBA, error) {
+	rep, pix, err := c.call(ctx, Request{Op: OpCapture, Rect: r, Cursor: cursor}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +85,15 @@ func (c *Client) Capture(ctx context.Context, r image.Rectangle) (*image.RGBA, e
 		return nil, errors.New("the session sent no image")
 	}
 	return rep.Image.image(pix), nil
+}
+
+// Resize asks the server for a screen of w x h.
+func (c *Client) Resize(ctx context.Context, w, h int) (Info, error) {
+	rep, _, err := c.call(ctx, Request{Op: OpResize, Size: image.Pt(w, h)}, nil)
+	if err != nil || rep.Info == nil {
+		return Info{}, err
+	}
+	return *rep.Info, nil
 }
 
 // Input sends the actions in order.

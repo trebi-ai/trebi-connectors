@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/gif"
@@ -41,7 +42,12 @@ func (r *Runner) captureCommand() *cli.Command {
 				return err
 			}
 			switch m := vnc.CursorMode(c.String("cursor")); m {
-			case vnc.CursorNone, vnc.CursorLocal, vnc.CursorServer:
+			case vnc.CursorServer:
+				if r.settings.Trebi {
+					return usage(errors.New("--cursor server needs its own connection, and Trebi keeps one connection: use --cursor local"))
+				}
+				r.opts.Cursor = m
+			case vnc.CursorNone, vnc.CursorLocal:
 				r.opts.Cursor = m
 			default:
 				return usage(fmt.Errorf("--cursor: %q is not none, local, or server", m))
@@ -56,7 +62,7 @@ func (r *Runner) capture(file string, area image.Rectangle) step {
 		if err := checkFormat(file); err != nil {
 			return err
 		}
-		img, err := rm.Capture(ctx, area)
+		img, err := rm.Capture(ctx, area, r.opts.Cursor)
 		if err != nil {
 			return err
 		}
@@ -140,6 +146,27 @@ func (r *Runner) infoCommand() *cli.Command {
 					}
 				}
 				return r.print(in, b.String())
+			})
+		},
+	}
+}
+
+func (r *Runner) resizeCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "resize",
+		Usage:     "Ask the remote computer for another screen size",
+		ArgsUsage: "WIDTH HEIGHT",
+		Action: func(ctx context.Context, c *cli.Command) error {
+			n, err := ints(strings.Join(c.Args().Slice(), ","), 2)
+			if err != nil || n[0] <= 0 || n[1] <= 0 || n[0] > 0xffff || n[1] > 0xffff {
+				return usage(fmt.Errorf("resize needs WIDTH HEIGHT, each 1 to 65535"))
+			}
+			return r.do(ctx, func(ctx context.Context, rm remote) error {
+				in, err := rm.Resize(ctx, n[0], n[1])
+				if err != nil {
+					return err
+				}
+				return r.print(map[string]int{"width": in.Width, "height": in.Height}, fmt.Sprintf("size: %dx%d", in.Width, in.Height))
 			})
 		},
 	}

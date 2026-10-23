@@ -38,8 +38,9 @@ vnc-cli -s host run script.vdo                       # play a vncdotool script
 
 | Command | What it does |
 |---|---|
-| `capture [-r X,Y,W,H] [--cursor none\|local\|server] FILE` | Save the screen as png, jpg, gif, or bmp. `-` writes PNG to stdout. |
+| `capture [-r X,Y,W,H] [--cursor none\|local\|server] FILE` | Save the screen as png, jpg, gif, or bmp. `-` writes PNG to stdout. `none` (the default) leaves the pointer out, `local` draws the pointer shape from the server, and `server` connects without the background session so that the server draws the pointer. |
 | `info` | Show the name, the size, the pixel format, and the protocol. |
+| `resize WIDTH HEIGHT` | Ask the server for another screen size (ExtendedDesktopSize). A refusal or a server without the extension gives exit code 30. |
 | `key KEY...`, `key down KEY`, `key up KEY` | Press keys or combos (`enter`, `ctrl-c`, `ctrl-alt-del`, `f5`, `0xff0d`), or hold and release one key. Use `Down` for the arrow key. |
 | `type TEXT\|-`, `type --env NAME`, `type --file PATH` | Type text. `--enter` presses enter after it. `--human` types with random pauses. `--force-caps` holds shift for upper case letters and shifted symbols. |
 | `move X Y`, `click [BUTTON]`, `mouse down\|up BUTTON` | Move the pointer, click (1 left, 2 middle, 3 right), or hold and release a button. |

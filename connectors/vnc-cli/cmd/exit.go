@@ -65,6 +65,7 @@ func ExitCode(err error) int {
 		pe *vnc.ProtocolError
 		fe failedError
 		re *session.RemoteError
+		rs *vnc.ResizeError
 	)
 	switch {
 	case err == nil:
@@ -83,7 +84,8 @@ func ExitCode(err error) int {
 		return ExitClosed
 	case errors.As(err, &pe):
 		return ExitProtocol
-	case errors.As(err, &fe), errors.Is(err, session.ErrOffScreen), errors.Is(err, watch.ErrArea):
+	case errors.As(err, &fe), errors.Is(err, session.ErrOffScreen), errors.Is(err, watch.ErrArea),
+		errors.As(err, &rs), errors.Is(err, vnc.ErrUnsupported):
 		return ExitFailed
 	}
 	return ExitUnexpected

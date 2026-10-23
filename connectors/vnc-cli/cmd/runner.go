@@ -27,7 +27,8 @@ import (
 // remote is a connection to one screen: in this process or in a holder.
 type remote interface {
 	Info(ctx context.Context) (session.Info, error)
-	Capture(ctx context.Context, r image.Rectangle) (*image.RGBA, error)
+	Capture(ctx context.Context, r image.Rectangle, cursor vnc.CursorMode) (*image.RGBA, error)
+	Resize(ctx context.Context, w, h int) (session.Info, error)
 	Input(ctx context.Context, actions []session.Action) error
 	Paste(ctx context.Context, text string) error
 	Clipboard(ctx context.Context) (string, error)
@@ -112,7 +113,7 @@ func (r *Runner) App(version string) *cli.Command {
 		OnUsageError:   onUsageError,
 		ExitErrHandler: func(context.Context, *cli.Command, error) {},
 		Commands: []*cli.Command{
-			r.captureCommand(), r.infoCommand(),
+			r.captureCommand(), r.infoCommand(), r.resizeCommand(),
 			r.keyCommand(), r.typeCommand(),
 			r.moveCommand(), r.clickCommand(), r.mouseCommand(), r.dragCommand(), r.scrollCommand(),
 			r.pasteCommand(), r.clipboardCommand(),
@@ -213,8 +214,9 @@ func (r *Runner) remote(ctx context.Context) (remote, error) {
 		return nil, usage(r.settings.Missing())
 	case r.settings.Missing() != nil:
 		return nil, usage(fmt.Errorf("no server: use --server, --target, or %s", config.EnvServer))
-	case r.session == "off", r.opts.Cursor != "" && r.opts.Cursor != vnc.CursorNone:
-		// TODO(TREBI-496): the holder draws the cursor after the decoder merge.
+	case r.session == "off", r.opts.Cursor == vnc.CursorServer:
+		// A holder asks for the pointer shape, so the server does not draw
+		// the pointer into its screen.
 		r.rm, err = r.withPassword(func(pw string) (remote, error) {
 			o := r.opts
 			o.Password = pw

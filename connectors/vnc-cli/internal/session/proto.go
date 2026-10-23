@@ -24,6 +24,7 @@ const (
 	OpClipboard = "clipboard"
 	OpExpect    = "expect"
 	OpStable    = "stable"
+	OpResize    = "resize"
 	OpStatus    = "status"
 	OpStop      = "stop"
 	// OpWatch is a stream: each event is a reply, until the client
@@ -35,6 +36,8 @@ const (
 type Request struct {
 	Op      string          `json:"op"`
 	Rect    image.Rectangle `json:"rect,omitzero"`
+	Cursor  vnc.CursorMode  `json:"cursor,omitempty"`
+	Size    image.Point     `json:"size,omitzero"`
 	At      image.Point     `json:"at,omitzero"`
 	Actions []Action        `json:"actions,omitempty"`
 	Text    string          `json:"text,omitempty"`
@@ -138,9 +141,10 @@ func (e *RemoteError) Is(target error) bool {
 
 func remoteError(err error) *RemoteError {
 	var (
-		de *vnc.DialError
-		pe *vnc.ProtocolError
-		re *RemoteError
+		de  *vnc.DialError
+		pe  *vnc.ProtocolError
+		re  *RemoteError
+		rse *vnc.ResizeError
 	)
 	kind := KindOther
 	switch {
@@ -156,7 +160,7 @@ func remoteError(err error) *RemoteError {
 		kind = KindClosed
 	case errors.As(err, &pe):
 		kind = KindProtocol
-	case errors.Is(err, ErrOffScreen), errors.Is(err, watch.ErrArea):
+	case errors.Is(err, ErrOffScreen), errors.Is(err, watch.ErrArea), errors.As(err, &rse), errors.Is(err, vnc.ErrUnsupported):
 		kind = KindFailed
 	}
 	return &RemoteError{Kind: kind, Message: err.Error()}

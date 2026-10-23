@@ -105,7 +105,7 @@ func TestHolderReusesOneConnection(t *testing.T) {
 		if err := c.Stable(ctx, 50*time.Millisecond, image.Rectangle{}, Match{Fuzz: -1}); err != nil {
 			t.Fatal(err)
 		}
-		img, err := c.Capture(ctx, image.Rect(0, 0, 16, 16))
+		img, err := c.Capture(ctx, image.Rect(0, 0, 16, 16), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -262,7 +262,7 @@ func TestHolderTimeoutAndHangup(t *testing.T) {
 
 func TestHolderErrorKinds(t *testing.T) {
 	f := start(t, vnctest.Options{}, 0)
-	_, err := f.client(t).Capture(ctxT(t), image.Rect(60, 40, 80, 60))
+	_, err := f.client(t).Capture(ctxT(t), image.Rect(60, 40, 80, 60), "")
 	var re *RemoteError
 	if !errors.As(err, &re) || re.Kind != KindFailed {
 		t.Fatalf("off screen: %v", err)

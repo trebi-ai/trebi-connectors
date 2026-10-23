@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
 	"io"
 	"log/slog"
 	"os"
@@ -200,5 +203,71 @@ func TestSessionTrebiMode(t *testing.T) {
 	}
 	if res := run(t, "", "--session=auto", "-s", addr, "info"); res.err == nil || !strings.Contains(res.err.Error(), "Trebi sets this value") {
 		t.Fatalf("--server in Trebi mode: %v", res.err)
+	}
+	if res := run(t, "", "--session=auto", "capture", "--cursor", "server", "-"); res.code() != ExitUsage {
+		t.Fatalf("--cursor server in Trebi mode: exit %d (%v)", res.code(), res.err)
+	}
+}
+
+func TestSessionResize(t *testing.T) {
+	sessionHome(t)
+	srv, addr := server(t, vnctest.Options{Ext: vnctest.Extensions{ExtendedDesktopSize: true}})
+	res := mustRun(t, "", "-s", addr, "--session=auto", "--json", "resize", "128", "96")
+	if !strings.Contains(res.stdout, `"width":128`) || !strings.Contains(res.stdout, `"height":96`) {
+		t.Fatalf("resize: %q", res.stdout)
+	}
+	if res := mustRun(t, "", "-s", addr, "--session=auto", "info"); !strings.Contains(res.stdout, "128x96") {
+		t.Fatalf("info after resize: %q", res.stdout)
+	}
+	if n := srv.Served(); n != 1 {
+		t.Fatalf("the server had %d connections, want 1", n)
+	}
+	if res := run(t, "", "-s", addr, "--session=auto", "resize", "0", "96"); res.code() != ExitUsage {
+		t.Fatalf("size 0: exit %d", res.code())
+	}
+
+	_, refuses := server(t, vnctest.Options{Ext: vnctest.Extensions{ExtendedDesktopSize: true, ResizeStatus: vnc.ResizeProhibited}})
+	_, plain := server(t, vnctest.Options{})
+	for _, addr := range []string{refuses, plain} {
+		for _, s := range []string{"--session=auto", "--session=off"} {
+			if res := run(t, "", "-s", addr, s, "resize", "100", "80"); res.code() != ExitFailed {
+				t.Fatalf("%s %s: exit %d (%v)", addr, s, res.code(), res.err)
+			}
+		}
+	}
+}
+
+func TestSessionCursor(t *testing.T) {
+	sessionHome(t)
+	srv, addr := server(t, vnctest.Options{})
+	mustRun(t, "", "-s", addr, "--session=auto", "info")
+	red := color.RGBA{255, 0, 0, 255}
+	shape := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	draw.Draw(shape, shape.Bounds(), image.NewUniform(red), image.Point{}, draw.Src)
+	srv.SetCursor(shape, image.Pt(1, 1))
+	srv.MovePointer(image.Pt(20, 10))
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "local.png")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mustRun(t, "", "-s", addr, "--session=auto", "capture", "--cursor", "local", file)
+		if decode(t, file).At(20, 10) == red {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the session did not draw the pointer")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	mustRun(t, "", "-s", addr, "--session=auto", "capture", filepath.Join(dir, "none.png"))
+	if decode(t, filepath.Join(dir, "none.png")).At(20, 10) == red {
+		t.Fatal("--cursor none drew the pointer")
+	}
+	// The server draws the pointer only on a connection that does not ask
+	// for its shape, so --cursor server does not use the session.
+	mustRun(t, "", "-s", addr, "--session=auto", "capture", "--cursor", "server", filepath.Join(dir, "server.png"))
+	if n := srv.Served(); n != 2 {
+		t.Fatalf("the server had %d connections, want 2", n)
 	}
 }

@@ -372,9 +372,13 @@ func (h *Holder) do(ctx context.Context, req Request, pix []byte) (rep Reply, ou
 			rep.Info = &info
 		case OpCapture:
 			var img *image.RGBA
-			if img, err = l.Capture(ctx, req.Rect); err == nil {
+			if img, err = l.Capture(ctx, req.Rect, req.Cursor); err == nil {
 				rep.Image, out = frameOf(img)
 			}
+		case OpResize:
+			var info Info
+			info, err = l.Resize(ctx, req.Size.X, req.Size.Y)
+			rep.Info = &info
 		case OpInput:
 			err = l.Input(ctx, req.Actions)
 		case OpPaste:

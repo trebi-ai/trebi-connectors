@@ -38,8 +38,9 @@ On its own, `vnc-cli` takes `-s ADDRESS`, `--user`, and `-p ENV_NAME` (the name 
 
 | Command | What it does |
 |---|---|
-| `capture [-r X,Y,W,H] [--cursor none\|local\|server] FILE` | Save the screen, or an area of it, as png, jpg, gif, or bmp. `-` writes PNG to stdout. |
+| `capture [-r X,Y,W,H] [--cursor none\|local\|server] FILE` | Save the screen, or an area of it, as png, jpg, gif, or bmp. `-` writes PNG to stdout. The pointer is not in the picture by default. `--cursor local` draws it. `--cursor server` lets the server draw it on a second connection, so it does not work in Trebi. |
 | `info` | Show the desktop name, the size, the pixel format, and the protocol. |
+| `resize WIDTH HEIGHT` | Ask the computer for another screen size. Exit code 30 when the server refuses it or cannot resize. |
 | `key KEY...` | Press keys or combos: `enter`, `esc`, `tab`, `ctrl-c`, `ctrl-alt-del`, `cmd-space`, `f5`, `Down`, or a keysym such as `0xff0d`. |
 | `key down KEY`, `key up KEY` | Hold and release one key. |
 | `type TEXT\|-` | Type text. `--enter` presses enter after it. `--human` types with random pauses. `--force-caps` holds shift for upper case letters. |
@@ -139,8 +140,8 @@ A wrong password stops the connection and asks for new inputs, so that the compu
 
 ## Limits
 
-- The clipboard is Latin-1 on most servers. Other characters do not go through.
-- `type` sends keysyms. The keyboard layout of the remote computer decides the characters, so text that is not Latin can come out wrong.
+- The clipboard is UTF-8 when the server has the extended clipboard (TigerVNC 1.10 and later). On other servers it is Latin-1, and other characters do not go through.
+- `type` sends keysyms. The keyboard layout of the remote computer decides the characters, so text that is not Latin can come out wrong. On QEMU, `key` also sends the scan code, so keys do not depend on the layout.
 - No file transfer, no sound, and no recording.
 - A capture is the current screen of the session. After an action, use `expect` or `stable` before you capture, so the screen has time to change.
 

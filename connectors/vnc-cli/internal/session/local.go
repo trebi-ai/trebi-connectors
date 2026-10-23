@@ -97,14 +97,26 @@ func (l *Local) fresh(ctx context.Context) error {
 }
 
 // Capture copies the area r of the screen. An empty r is the full screen.
-func (l *Local) Capture(ctx context.Context, r image.Rectangle) (*image.RGBA, error) {
+// With vnc.CursorLocal, it draws the pointer into the picture.
+func (l *Local) Capture(ctx context.Context, r image.Rectangle, cursor vnc.CursorMode) (*image.RGBA, error) {
 	if err := l.fresh(ctx); err != nil {
 		return nil, err
 	}
 	if err := l.onScreen(r); err != nil {
 		return nil, err
 	}
-	return l.conn.Snapshot(r), nil
+	return l.conn.SnapshotCursor(r, cursor), nil
+}
+
+// Resize asks the server for a screen of w x h and returns the new screen.
+func (l *Local) Resize(ctx context.Context, w, h int) (Info, error) {
+	if err := l.fresh(ctx); err != nil {
+		return Info{}, err
+	}
+	if err := l.conn.SetDesktopSize(ctx, w, h); err != nil {
+		return Info{}, err
+	}
+	return l.Info(ctx)
 }
 
 func (l *Local) onScreen(r image.Rectangle) error {
