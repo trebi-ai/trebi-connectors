@@ -2,6 +2,7 @@ package vnc
 
 import (
 	"image"
+	"image/draw"
 	"sync"
 )
 
@@ -72,6 +73,13 @@ func (f *framebuffer) fill(r image.Rectangle, pixel []byte, cv *converter) {
 	for y := r.Min.Y + 1; y < r.Max.Y; y++ {
 		copy(f.img.Pix[f.img.PixOffset(r.Min.X, y):], first)
 	}
+}
+
+// draw paints a decoded image at r.
+func (f *framebuffer) draw(r image.Rectangle, img image.Image) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	draw.Draw(f.img, r, img, img.Bounds().Min, draw.Src)
 }
 
 // copyRect copies the area at sp with the size of dst to dst. The areas

@@ -35,6 +35,9 @@ type Options struct {
 	// JPEG allows lossy Tight JPEG rectangles at JPEGQuality (0-9).
 	JPEG        bool
 	JPEGQuality int
+	// CompressLevel asks for a zlib level (1-9). Zero keeps the default of
+	// the server.
+	CompressLevel int
 	// Cursor selects how the client gets the pointer shape.
 	Cursor CursorMode
 	// PixelFormat forces a pixel format. Nil keeps the native format of the
@@ -119,6 +122,22 @@ type Conn struct {
 	pending  bool // an incremental request is out
 	features map[string]bool
 	encs     []int32
+	cursor   *Cursor
+	pointer  image.Point
+	movedAt  time.Time // of the last Pointer call
+
+	screens    []Screen
+	resizeWait chan uint16 // the answer to SetDesktopSize
+	fences     map[uint32]chan struct{}
+	fenceID    uint32
+	continuous bool
+	clipFlags  uint32 // the extended clipboard capabilities of the server
+	clipLimit  uint32
+	clipOut    string // the last text from SetClipboard
+	clipOwner  bool
+
+	resizeMu sync.Mutex
+	replies  chan []byte
 
 	done      chan struct{}
 	err       error
@@ -179,6 +198,8 @@ func NewConn(ctx context.Context, nc net.Conn, o Options) (*Conn, error) {
 		subs:     map[*Subscription]struct{}{},
 		waiters:  map[*waiter]struct{}{},
 		features: map[string]bool{},
+		fences:   map[uint32]chan struct{}{},
+		replies:  make(chan []byte, 64),
 		done:     make(chan struct{}),
 	}
 	stop := context.AfterFunc(ctx, func() { nc.SetDeadline(time.Unix(1, 0)) })
@@ -199,6 +220,7 @@ func NewConn(ctx context.Context, nc net.Conn, o Options) (*Conn, error) {
 	c.first = &waiter{cov: newCoverage(c.fb.bounds()), ch: make(chan struct{})}
 	c.waiters[c.first] = struct{}{}
 	go c.loop()
+	go c.replyLoop()
 	if err := c.requestUpdate(false); err != nil {
 		c.Close()
 		return nil, err
@@ -385,6 +407,29 @@ func (c *Conn) write(b []byte) error {
 	return err
 }
 
+// reply queues a message from the read goroutine. A write there could wait
+// for the server, while the server waits for the client to read.
+func (c *Conn) reply(b []byte) {
+	select {
+	case c.replies <- b:
+	case <-c.done:
+	}
+}
+
+func (c *Conn) replyLoop() {
+	for {
+		select {
+		case b := <-c.replies:
+			if err := c.write(b); err != nil {
+				c.shutdown(err)
+				return
+			}
+		case <-c.done:
+			return
+		}
+	}
+}
+
 func (c *Conn) loop() {
 	err := c.readMessages()
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
@@ -408,6 +453,10 @@ func (c *Conn) readMessages() error {
 			c.publish(Event{Kind: EventBell})
 		case msgServerCutText:
 			err = c.readCutText()
+		case msgFence:
+			err = c.readFence()
+		case msgContinuousUpdates:
+			err = c.readEndOfContinuousUpdates()
 		default:
 			err = protoErr("message", "unknown server message type %d", t)
 		}

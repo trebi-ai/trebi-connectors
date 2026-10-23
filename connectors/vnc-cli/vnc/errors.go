@@ -10,6 +10,9 @@ var (
 	ErrAuth = errors.New("login failed")
 	// ErrClosed is the error after Close, or when the server ends the connection.
 	ErrClosed = errors.New("connection closed")
+	// ErrUnsupported is the error of a method that needs an extension that
+	// the server does not have.
+	ErrUnsupported = errors.New("the server does not support this")
 )
 
 // AuthError is a login failure. Reason comes from the server or from the

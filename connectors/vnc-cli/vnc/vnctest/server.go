@@ -41,6 +41,7 @@ type Options struct {
 	TLS *tls.Config
 	// FailReason is the reason that a failed login gives on 3.8.
 	FailReason string
+	Ext        Extensions
 }
 
 // InputEvent is one input message from a client.
@@ -51,6 +52,8 @@ type InputEvent struct {
 	X, Y    int
 	Buttons uint8
 	Text    string
+	// Scancode is the XT scan code of a QEMU key event.
+	Scancode uint32
 }
 
 // Server is a fake RFB server with a screen in RGBA.
@@ -66,6 +69,7 @@ type Server struct {
 	served  int
 	ln      net.Listener
 	wg      sync.WaitGroup
+	x       serverExt
 }
 
 // New makes a server with a black screen.
@@ -327,6 +331,7 @@ type client struct {
 	want    bool
 	resized bool
 	dirty   []image.Rectangle
+	x       clientExt
 }
 
 func (c *client) write(b []byte) error {
@@ -514,6 +519,9 @@ func (c *client) readLoop() error {
 			c.s.mu.Lock()
 			c.encs = encs
 			c.s.mu.Unlock()
+			if err := c.encodingsSet(); err != nil {
+				return err
+			}
 		case 3:
 			b, err := c.read(9)
 			if err != nil {
@@ -549,6 +557,12 @@ func (c *client) readLoop() error {
 			if err != nil {
 				return err
 			}
+			if n := int32(binary.BigEndian.Uint32(b[3:])); n < 0 {
+				if err := c.readExtClipboard(int(-n)); err != nil {
+					return err
+				}
+				continue
+			}
 			b, err = c.read(int(binary.BigEndian.Uint32(b[3:])))
 			if err != nil {
 				return err
@@ -559,7 +573,9 @@ func (c *client) readLoop() error {
 			}
 			c.s.record(InputEvent{Kind: "cut", Text: string(r)})
 		default:
-			return fmt.Errorf("vnctest: unknown client message %d", t)
+			if err := c.readExt(t); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -573,12 +589,12 @@ func (c *client) sender(done <-chan struct{}) {
 		case <-c.wake:
 		}
 		c.s.mu.Lock()
-		if !c.want || (len(c.dirty) == 0 && !c.resized) {
+		if !c.want || (len(c.dirty) == 0 && !c.resized && !c.x.pending()) {
 			c.s.mu.Unlock()
 			continue
 		}
 		msg := c.encodeUpdate()
-		c.want, c.resized, c.dirty = false, false, nil
+		c.want, c.resized, c.dirty = c.x.continuous, false, nil
 		c.s.mu.Unlock()
 		if c.write(msg) != nil {
 			return
@@ -586,19 +602,17 @@ func (c *client) sender(done <-chan struct{}) {
 	}
 }
 
-// encodeUpdate builds a FramebufferUpdate with Raw rectangles. It runs
-// under s.mu.
+// encodeUpdate builds a FramebufferUpdate in the first encoding of the
+// client that vnctest has (encode.go). It runs under s.mu.
 func (c *client) encodeUpdate() []byte {
-	var rects [][]byte
-	if c.resized && slices.Contains(c.encs, vnc.EncDesktopSize) {
-		rects = append(rects, rectHeader(image.Rect(0, 0, c.s.screen.Rect.Dx(), c.s.screen.Rect.Dy()), vnc.EncDesktopSize))
-	}
+	rects := append(c.resizeRects(), c.copyRects()...)
 	for _, r := range c.dirty {
 		if r.Empty() {
 			continue
 		}
-		rects = append(rects, append(rectHeader(r, vnc.EncRaw), c.pixels(r)...))
+		rects = append(rects, c.encodeRect(r)...)
 	}
+	rects = append(rects, c.pseudoRects()...)
 	msg := []byte{0, 0}
 	msg = binary.BigEndian.AppendUint16(msg, uint16(len(rects)))
 	for _, r := range rects {

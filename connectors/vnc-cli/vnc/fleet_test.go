@@ -145,6 +145,91 @@ func TestFleetTigerVNCAuth(t *testing.T) {
 	waitScene(t, ctx, c, "0", 0)
 }
 
+func TestFleetTigerVNCEncodings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		encs []int32
+	}{
+		{"tight", []int32{vnc.EncTight}},
+		{"zrle", []int32{vnc.EncZRLE}},
+		{"hextile", []int32{vnc.EncHextile}},
+		{"rre", []int32{vnc.EncRRE}},
+		{"copyrect+raw", []int32{vnc.EncCopyRect, vnc.EncRaw}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			c, err := vnc.Dial(ctx, vnc.Options{Addr: fleetAddr("5931"), Encodings: tc.encs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			waitScene(t, ctx, c, "0", 0)
+		})
+	}
+}
+
+func TestFleetTigerVNCJPEG(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, err := vnc.Dial(ctx, vnc.Options{Addr: fleetAddr("5931"), Encodings: []int32{vnc.EncTight}, JPEG: true, JPEGQuality: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	want := sceneImage(t, "0")
+	for {
+		if err := c.Refresh(ctx, true); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+		d := jpegDelta(c.Snapshot(image.Rectangle{}), want, 2)
+		if d <= 19 {
+			t.Logf("delta %.1f", d)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("scene 0: delta %.1f", d)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+// TestFleetTigerVNCExtensions does not resize: the other tests share the
+// screen.
+func TestFleetTigerVNCExtensions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, err := vnc.Dial(ctx, vnc.Options{Addr: fleetAddr("5931")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	waitScene(t, ctx, c, "0", 0)
+	if err := c.Sync(ctx); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if s := c.Screens(); len(s) != 1 || s[0].Rect.Size() != image.Pt(256, 192) {
+		t.Fatalf("screens %+v", s)
+	}
+	if err := c.EnableContinuousUpdates(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EnableContinuousUpdates(false); err != nil {
+		t.Fatal(err)
+	}
+	for c.ContinuousUpdates() {
+		select {
+		case <-ctx.Done():
+			t.Fatal("continuous updates did not end")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err := c.Sync(ctx); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+}
+
 // No test sends a wrong or no password: Xvnc blacklists the client address
 // after a few connections that close before auth, and the other fleet tests
 // then fail.

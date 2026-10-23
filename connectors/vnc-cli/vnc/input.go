@@ -2,7 +2,9 @@ package vnc
 
 import (
 	"encoding/binary"
+	"image"
 	"strings"
+	"time"
 )
 
 // Pointer buttons as bits of the button mask.
@@ -16,8 +18,13 @@ const (
 	ButtonWheelRight uint8 = 1 << 6
 )
 
-// Key sends one key event.
+// Key sends one key event. When the server takes QEMU key events and the
+// key has a scan code that does not depend on the layout, the event also
+// carries the scan code.
 func (c *Conn) Key(keysym uint32, down bool) error {
+	if b := c.qemuKey(keysym, down); b != nil {
+		return c.write(b)
+	}
 	b := make([]byte, 8)
 	b[0] = msgKeyEvent
 	if down {
@@ -48,6 +55,9 @@ func (c *Conn) Pointer(x, y int, buttons uint8) error {
 	sz := c.Size()
 	x = min(max(x, 0), max(sz.X-1, 0))
 	y = min(max(y, 0), max(sz.Y-1, 0))
+	c.mu.Lock()
+	c.pointer, c.movedAt = image.Pt(x, y), time.Now()
+	c.mu.Unlock()
 	b := make([]byte, 6)
 	b[0] = msgPointerEvent
 	b[1] = buttons
@@ -56,9 +66,13 @@ func (c *Conn) Pointer(x, y int, buttons uint8) error {
 	return c.write(b)
 }
 
-// SetClipboard sends text to the clipboard of the server. Basic RFB carries
-// Latin-1 only; other characters become "?".
+// SetClipboard sends text to the clipboard of the server. With the
+// extended clipboard, the text is UTF-8. Basic RFB carries Latin-1 only;
+// other characters become "?".
 func (c *Conn) SetClipboard(text string) error {
+	if c.hasFeature("extended_clipboard") {
+		return c.setExtClipboard(text)
+	}
 	data := latin1(text)
 	b := make([]byte, 8+len(data))
 	b[0] = msgClientCutText
@@ -91,7 +105,10 @@ func (c *Conn) readCutText() error {
 	}
 	n := int32(binary.BigEndian.Uint32(b[3:]))
 	if n < 0 {
-		return protoErr("clipboard", "extended clipboard data that the client did not ask for")
+		if n < -maxClipboard {
+			return protoErr("clipboard", "extended clipboard message of %d bytes is too long", -int64(n))
+		}
+		return c.readExtClipboard(int(-n))
 	}
 	if n > maxClipboard {
 		return protoErr("clipboard", "text of %d bytes is too long", n)

@@ -246,6 +246,32 @@ func (cv *converter) value(p []byte) uint32 {
 	}
 }
 
+// put writes the pixel value v in wire bytes. It is the inverse of value.
+func (cv *converter) put(p []byte, v uint32) {
+	switch cv.bypp {
+	case 1:
+		p[0] = uint8(v)
+	case 2:
+		if cv.pf.BigEndian {
+			binary.BigEndian.PutUint16(p, uint16(v))
+		} else {
+			binary.LittleEndian.PutUint16(p, uint16(v))
+		}
+	case 3:
+		if cv.pf.BigEndian {
+			p[0], p[1], p[2] = uint8(v>>16), uint8(v>>8), uint8(v)
+		} else {
+			p[0], p[1], p[2] = uint8(v), uint8(v>>8), uint8(v>>16)
+		}
+	default:
+		if cv.pf.BigEndian {
+			binary.BigEndian.PutUint32(p, v)
+		} else {
+			binary.LittleEndian.PutUint32(p, v)
+		}
+	}
+}
+
 // rgb returns the colour of one pixel in wire bytes.
 func (cv *converter) rgb(p []byte) (r, g, b uint8) {
 	switch cv.fast {

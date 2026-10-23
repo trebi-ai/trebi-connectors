@@ -143,6 +143,10 @@ func (c *Conn) readUpdate() error {
 			return protoErr("update", "the server sent encoding %d, which the client did not ask for", enc)
 		}
 		r := image.Rect(x, y, x+w, y+ht)
+		if r.Empty() {
+			// A rectangle of 0 x h has no rows to decode.
+			r.Max = r.Min
+		}
 		dirty, err := d.decode(c, r)
 		if err != nil {
 			if _, ok := err.(*ProtocolError); ok {
@@ -217,7 +221,8 @@ func (c *Conn) requestUpdate(incremental bool) error {
 		return err
 	}
 	c.mu.Lock()
-	if incremental && c.pending {
+	// Continuous updates need no incremental requests.
+	if incremental && (c.pending || c.continuous) {
 		c.mu.Unlock()
 		return nil
 	}
@@ -252,7 +257,11 @@ func (c *Conn) resize(w, h int) {
 			wt.cov = newCoverage(image.Rect(0, 0, w, h))
 		}
 	}
+	continuous := c.continuous
 	c.mu.Unlock()
+	if continuous {
+		c.reply(continuousMessage(true, image.Rect(0, 0, w, h)))
+	}
 	c.publish(Event{Kind: EventResize, Width: w, Height: h})
 }
 
@@ -353,10 +362,8 @@ func (c *Conn) Seq() uint64 {
 }
 
 // Snapshot copies the area r of the screen. An empty r means the whole
-// screen.
+// screen. Options.Cursor selects whether the pointer is in it; see
+// SnapshotCursor.
 func (c *Conn) Snapshot(r image.Rectangle) *image.RGBA {
-	if r.Empty() {
-		r = c.fb.bounds()
-	}
-	return c.fb.snapshot(r)
+	return c.SnapshotCursor(r, c.opts.Cursor)
 }
