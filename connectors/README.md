@@ -19,6 +19,17 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
+## Install a CLI on this computer
+
+`install.sh <cli>` builds one CLI to `<cli>/build/<cli>` and links it into `/usr/local/bin`. Set `BIN_DIR` to use another folder. The script always builds again, so run it again after a `git pull` to update the CLI. It makes the link only when no file has that name. It does not replace a file or a link to another build.
+
+```bash
+connectors/install.sh vnc-cli
+BIN_DIR=~/bin connectors/install.sh discord-cli
+```
+
+`slack-cli` also writes `slack-op` next to the program. The script does not link it.
+
 ## serve
 
 - `<cli> serve` runs the adapter. Stdout belongs to the protocol. Logs go to stderr.
