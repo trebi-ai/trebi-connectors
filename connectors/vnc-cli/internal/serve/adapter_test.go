@@ -112,7 +112,7 @@ func (r *rig) event(typ string) sdk.Event {
 }
 
 func TestEvents(t *testing.T) {
-	r := start(t, vnctest.Options{Name: "Lab desktop"}, config.Settings{Areas: "top=0,0,64,24; bottom=0,24,64,24"})
+	r := start(t, vnctest.Options{Name: "Lab desktop"}, config.Settings{Watch: "yes", Areas: "top=0,0,64,24; bottom=0,24,64,24"})
 	r.status(sdk.StateConnecting)
 	r.status(sdk.StateConnected)
 
@@ -183,8 +183,36 @@ func TestEvents(t *testing.T) {
 	r.event(sdk.EventStateRecovered)
 }
 
+func TestWatchOff(t *testing.T) {
+	r := start(t, vnctest.Options{Name: "Lab desktop"}, config.Settings{})
+	r.status(sdk.StateConnecting)
+	r.status(sdk.StateConnected)
+	cl, err := session.Open(r.sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := cl.Capture(ctx, image.Rectangle{}, vnc.CursorNone); err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	cl.Close()
+
+	// No screen event comes: the next event is the drop.
+	r.srv.Paint(image.Rect(0, 0, 64, 48), color.RGBA{255, 255, 255, 255})
+	r.srv.Bell()
+	time.Sleep(500 * time.Millisecond)
+	r.srv.Drop()
+	r.status(sdk.StateError)
+	if ev := r.event(sdk.EventStateChanged); ev.Room.Name != "Lab desktop" {
+		t.Fatalf("state.changed room: %+v", ev.Room)
+	}
+	r.status(sdk.StateConnected)
+	r.event(sdk.EventStateRecovered)
+}
+
 func TestNoImages(t *testing.T) {
-	r := start(t, vnctest.Options{}, config.Settings{Images: "no"})
+	r := start(t, vnctest.Options{}, config.Settings{Watch: "yes", Images: "no"})
 	r.status(sdk.StateConnecting)
 	r.status(sdk.StateConnected)
 	r.srv.Paint(image.Rect(0, 0, 20, 20), color.RGBA{255, 255, 255, 255})
@@ -217,9 +245,9 @@ func TestNoPassword(t *testing.T) {
 }
 
 func TestBadInputs(t *testing.T) {
-	for _, s := range []config.Settings{{Areas: "x=1,2"}, {Settle: "soon"}, {Images: "maybe"}} {
-		if _, _, err := serve.Spec(s); err == nil {
-			t.Errorf("Spec(%+v) gave no error", s)
+	for _, s := range []config.Settings{{Watch: "maybe"}, {Areas: "x=1,2"}, {Settle: "soon"}, {Images: "maybe"}} {
+		if _, err := serve.ParseWatch(s); err == nil {
+			t.Errorf("ParseWatch(%+v) gave no error", s)
 		}
 	}
 	r := start(t, vnctest.Options{}, config.Settings{Settle: "soon"})

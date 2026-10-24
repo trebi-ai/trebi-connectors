@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: vnc
 title: VNC Remote Control
 description: "See and control the screen of another computer over VNC: watch areas for changes, take pictures, type, and click."
-version: 0.1.1
+version: 0.1.2
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -24,9 +24,14 @@ setup:
       label: Password
       help: "The screen sharing password, or the account password of a Mac."
       secret: true
+    - name: VNC_WATCH
+      label: Watch the screen for changes
+      help: "yes sends an event when the screen changes. no keeps the connection for actions only, and sends an event only when Trebi cannot reach the computer."
+      choices: ["yes", "no"]
+      default: "no"
     - name: VNC_AREAS
       label: Watched areas
-      help: "The parts of the screen to watch, as NAME=X,Y,W,H in pixels, separated by ;. Leave it empty to watch the whole screen."
+      help: "The parts of the screen to watch, as NAME=X,Y,W,H in pixels, separated by ;. Leave it empty to watch the whole screen. A clock or a status number on the screen changes often, so leave it out."
     - name: VNC_SETTLE
       label: Quiet time before a stable event
       help: "How long an area must stay the same after a change, for example 700ms or 2s."

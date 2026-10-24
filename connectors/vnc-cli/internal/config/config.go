@@ -25,6 +25,7 @@ const (
 	EnvPassword    = "VNC_PASSWORD"
 	EnvIdleTimeout = "VNC_IDLE_TIMEOUT"
 	// The watch inputs of serve.
+	EnvWatch  = "VNC_WATCH"
 	EnvAreas  = "VNC_AREAS"
 	EnvSettle = "VNC_SETTLE"
 	EnvImages = "VNC_IMAGES"
@@ -35,6 +36,7 @@ const (
 	ServerLabel   = "Computer address"
 	UserLabel     = "User name"
 	PasswordLabel = "Password"
+	WatchLabel    = "Watch the screen for changes"
 	AreasLabel    = "Watched areas"
 	SettleLabel   = "Quiet time before a stable event"
 	ImagesLabel   = "Attach a picture to each event"
@@ -85,7 +87,7 @@ type Settings struct {
 	IdleTimeout  time.Duration
 
 	// Watch inputs of serve, as given. Serve parses them.
-	Areas, Settle, Images string
+	Watch, Areas, Settle, Images string
 
 	Trebi    bool
 	StateDir string
@@ -100,7 +102,7 @@ func Resolve(f Flags) (Settings, error) {
 	t, trebi := sdk.FromEnv()
 	s := Settings{
 		Trebi: trebi, StateDir: t.StateDir,
-		Areas: os.Getenv(EnvAreas), Settle: strings.TrimSpace(os.Getenv(EnvSettle)), Images: strings.TrimSpace(os.Getenv(EnvImages)),
+		Watch: strings.TrimSpace(os.Getenv(EnvWatch)), Areas: os.Getenv(EnvAreas), Settle: strings.TrimSpace(os.Getenv(EnvSettle)), Images: strings.TrimSpace(os.Getenv(EnvImages)),
 	}
 	if trebi {
 		for name, v := range map[string]string{"--server": f.Server, "--target": f.Target, "--user": f.User, "--password-env": f.PasswordEnv} {

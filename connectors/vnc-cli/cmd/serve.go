@@ -60,6 +60,8 @@ jobs on the socket in the state folder.`,
 					s.Server, s.User, s.Password = addr, "", ""
 				}
 				r.opts.Addr, r.opts.User = s.Server, s.User
+				// The sandbox watches, so that the conformance check sees events.
+				s.Watch = "yes"
 			}
 			if s.Missing() != nil {
 				return sdk.Serve(ctx, serve.New(nil, nil, s, version), sdk.WithIO(r.stdin, r.stdout), sdk.WithStateDir(s.StateDir))

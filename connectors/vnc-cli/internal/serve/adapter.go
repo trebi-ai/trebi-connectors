@@ -1,6 +1,6 @@
 // Package serve is the trebi-connector/1 adapter of vnc-cli. It holds the
 // connection to one computer, runs the commands of jobs that come on the
-// socket in the state folder, and sends the watch events.
+// socket in the state folder, and sends the watch events when the watch is on.
 package serve
 
 import (
@@ -63,8 +63,7 @@ type Adapter struct {
 	ln       net.Listener
 	s        config.Settings
 	version  string
-	spec     watch.Spec
-	images   bool
+	watch    Watch
 	stateDir string
 	setupErr error
 
@@ -77,12 +76,28 @@ type Adapter struct {
 // complete.
 func New(h Holder, ln net.Listener, s config.Settings, version string) *Adapter {
 	a := &Adapter{h: h, ln: ln, s: s, version: version, state: sdk.AuthState{State: sdk.StateConnecting}}
-	a.spec, a.images, a.setupErr = Spec(s)
+	a.watch, a.setupErr = ParseWatch(s)
 	return a
 }
 
-// Spec parses the watch inputs.
-func Spec(s config.Settings) (watch.Spec, bool, error) {
+// Watch is the parsed watch inputs. With On false, serve holds the
+// connection for commands and sends only the reachable state.
+type Watch struct {
+	On     bool
+	Spec   watch.Spec
+	Images bool
+}
+
+// ParseWatch parses the watch inputs. The watch is off by default.
+func ParseWatch(s config.Settings) (Watch, error) {
+	var w Watch
+	var err error
+	if w.On, err = yesNo(config.WatchLabel, s.Watch, false); err != nil {
+		return w, err
+	}
+	if w.Images, err = yesNo(config.ImagesLabel, s.Images, true); err != nil {
+		return w, err
+	}
 	spec := watch.Spec{Options: watch.Options{Threshold: 0.5, MinPixels: 16, PixelDelta: 24, Settle: DefaultSettle, MaxFPS: 10}}
 	for i, f := range strings.FieldsFunc(s.Areas, func(r rune) bool { return r == ';' || r == '\n' }) {
 		if f = strings.TrimSpace(f); f == "" {
@@ -90,24 +105,31 @@ func Spec(s config.Settings) (watch.Spec, bool, error) {
 		}
 		ar, err := watch.ParseArea(f, i+1)
 		if err != nil {
-			return spec, false, fmt.Errorf("%s: %w", config.AreasLabel, err)
+			return w, fmt.Errorf("%s: %w", config.AreasLabel, err)
 		}
 		spec.Areas = append(spec.Areas, ar)
 	}
 	if s.Settle != "" {
 		d, err := time.ParseDuration(s.Settle)
 		if err != nil || d < 0 {
-			return spec, false, fmt.Errorf("%s: %q is not a time such as 700ms or 2s", config.SettleLabel, s.Settle)
+			return w, fmt.Errorf("%s: %q is not a time such as 700ms or 2s", config.SettleLabel, s.Settle)
 		}
 		spec.Options.Settle = d
 	}
-	switch strings.ToLower(s.Images) {
-	case "", "yes":
-		return spec, true, nil
+	w.Spec = spec
+	return w, nil
+}
+
+func yesNo(label, v string, def bool) (bool, error) {
+	switch strings.ToLower(v) {
+	case "":
+		return def, nil
+	case "yes":
+		return true, nil
 	case "no":
-		return spec, false, nil
+		return false, nil
 	}
-	return spec, false, fmt.Errorf("%s: %q is not yes or no", config.ImagesLabel, s.Images)
+	return false, fmt.Errorf("%s: %q is not yes or no", label, v)
 }
 
 // UseFolders keeps the state folder.
@@ -160,6 +182,13 @@ func (a *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
 	}
 	last := sdk.Status{State: sdk.StateConnecting}
 	a.h.OnChange(func(cerr error) {
+		if cerr == nil {
+			if c, err := a.h.Conn(ctx); err == nil && c.Name() != "" {
+				a.mu.Lock()
+				a.name = c.Name()
+				a.mu.Unlock()
+			}
+		}
 		if st := a.status(cerr); st.State != last.State || st.Message != last.Message {
 			last = st
 			a.mu.Lock()
@@ -190,7 +219,12 @@ func (a *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
 	go func() { served <- a.h.Serve(wctx, a.ln) }()
 	watched := make(chan error, 1)
 	go func() {
-		watched <- watch.Run(wctx, a.h, a.spec, func(ev watch.Event) error { return a.event(wctx, e, ev) })
+		if !a.watch.On {
+			<-wctx.Done()
+			watched <- nil
+			return
+		}
+		watched <- watch.Run(wctx, a.h, a.watch.Spec, func(ev watch.Event) error { return a.event(e, ev) })
 	}()
 
 	select {
@@ -244,17 +278,10 @@ func (a *Adapter) room() sdk.Room {
 	return sdk.Room{ID: a.s.Server, Name: name, Kind: "computer"}
 }
 
-func (a *Adapter) event(ctx context.Context, e sdk.Emitter, ev watch.Event) error {
+func (a *Adapter) event(e sdk.Emitter, ev watch.Event) error {
 	room := a.room()
 	var typ, text string
 	switch ev.Event {
-	case watch.KindReady:
-		if c, err := a.h.Conn(ctx); err == nil && c.Name() != "" {
-			a.mu.Lock()
-			a.name = c.Name()
-			a.mu.Unlock()
-		}
-		return nil
 	case watch.KindChange:
 		typ, text = EventChanged, fmt.Sprintf("The screen of %s changes in %q: %.2f%% of the area.", room.Name, ev.Area, ev.Changed)
 	case watch.KindStable:
@@ -277,7 +304,7 @@ func (a *Adapter) event(ctx context.Context, e sdk.Emitter, ev watch.Event) erro
 		ID:   fmt.Sprintf("%s:%s:%s:%d", typ, room.ID, ev.Area, ev.Time.UnixNano()),
 		Type: typ, TS: ev.Time.UTC().Format(time.RFC3339Nano), Room: &room, Text: text, Data: data,
 	}
-	if typ == EventStable && a.images && ev.Img != nil {
+	if typ == EventStable && a.watch.Images && ev.Img != nil {
 		at, err := a.save(ev)
 		if err != nil {
 			slog.Warn("save the picture", "err", err)

@@ -16,6 +16,7 @@ In Trebi, the connection has these inputs:
 - "Computer address" (`VNC_SERVER`): the address of the computer. See "Addresses".
 - "User name" (`VNC_USER`): the account name for a Mac with a user login (Apple Remote Desktop), or for VeNCrypt Plain. Leave it empty for a screen password only.
 - "Password" (`VNC_PASSWORD`, secret): the screen sharing password, or the account password of a Mac.
+- "Watch the screen for changes" (`VNC_WATCH`): `no` (default) keeps the connection for actions only. Then the connection sends no screen, clipboard, or bell events, only `state.changed` and `state.recovered`. `yes` turns on the events of "Events in Trebi".
 - "Watched areas" (`VNC_AREAS`): `NAME=X,Y,W,H` in screen pixels, separated by `;`. Empty watches the whole screen as one area named `screen`.
 - "Quiet time before a stable event" (`VNC_SETTLE`): default `700ms`.
 - "Attach a picture to each event" (`VNC_IMAGES`): `yes` (default) adds a PNG of the area to each `screen.stable` event.
@@ -103,6 +104,8 @@ A clock, a blinking text cursor, or an animation in an area gives events each ti
 ## Events in Trebi
 
 The room is the computer: its address, with the desktop name as the room name.
+
+The screen, clipboard, and bell events come only when "Watch the screen for changes" is `yes`. With `no`, a job that runs on `screen.stable` never starts. Then use `vnc-cli stable` or `vnc-cli expect` in the job to wait for the screen.
 
 - `screen.changed`: a watched area starts to change. `data` has the watch fields (`area`, `rect`, `changed_pct`, `changed_px`, `bbox`).
 - `screen.stable`: the area stopped changing. `data` adds `changing_ms`. With "Attach a picture to each event" set to yes, the attachment is a PNG of the area. Trebi keeps the newest 200 pictures.
