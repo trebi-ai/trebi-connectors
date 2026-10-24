@@ -140,7 +140,7 @@ The codes follow vncdotool, so that scripts can move over.
 
 ## Use with Trebi
 
-The catalog entry `catalog/vnc` ("Remote screen") runs `vnc-cli serve`. The skill of the entry, `catalog/vnc/skill/SKILL.md`, is the full guide for agents.
+The catalog entry `catalog/vnc` ("VNC Remote Control") runs `vnc-cli serve`. The skill of the entry, `catalog/vnc/skill/SKILL.md`, is the full guide for agents.
 
 When `TREBI_STATE_DIR` is set, the server, the user, and the password come only from `VNC_SERVER`, `VNC_USER`, and `VNC_PASSWORD`. `--server`, `--target`, `--user`, and `--password-env` fail with "Trebi sets this value". `config set` and `config rm` fail with "Set this value in Trebi".
 

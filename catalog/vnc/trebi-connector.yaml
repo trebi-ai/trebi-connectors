@@ -1,8 +1,8 @@
 schema: trebi-connector/1
 name: vnc
-title: Remote screen
+title: VNC Remote Control
 description: "See and control the screen of another computer over VNC: watch areas for changes, take pictures, type, and click."
-version: 0.1.0
+version: 0.1.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
