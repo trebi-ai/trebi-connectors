@@ -46,6 +46,8 @@ channel:
 
 - Each input has one env name. The `label` is the name that the user sees. Use a verb for a user action.
 - `channel.features` and `channel.limits` must match what `initialize` returns. The adapter must not promise more than the manifest.
+- List every type that the program sends in `events.types`, with a short `description`. The user selects the types to receive on the Events tab. Trebi drops an event of a type that is not in the list, and the conformance check fails on it.
+- Use one type for each kind of event. Keep a busy type apart from a rare one, so that the user can skip the busy one alone. Do not filter events in the program; the user chooses.
 - Put the skill for the agent in `catalog/<name>/skill/SKILL.md`. It is the only copy.
 
 ## 2. The config package: two modes in one place
@@ -184,6 +186,7 @@ Bump `version` in `catalog/<name>/trebi-connector.yaml` in the same PR as each c
 - With `events.subscriptions`: `Sync` is idempotent and returns one state for each subscription, in order.
 - With `events.subscriptions`: `modes` lists `poll` or `stream`, and `Sync` with no webhook gives `polling`.
 - `ReceiveWebhook` checks the signature first and returns `sdk.Invalid` for a bad one.
+- Each event type that the program sends is in `events.types`.
 - Each `action` text uses simple words.
 - The fake of `serve --sandbox` registers a webhook and POSTs one signed delivery.
 - Stale platform webhooks of an old URL are deleted on the next `Sync`.

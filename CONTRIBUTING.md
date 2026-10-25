@@ -224,7 +224,7 @@ An event is a typed `event` message. `sdk/contract/event.message.json` is an exa
 | Field | Rule |
 |---|---|
 | `id` | A stable id from the system, for example the message id or the delivery id. Trebi drops a second event with the same id, so a retry or a restart does not start a job two times. |
-| `type` | One of the types in `events.types`. An undeclared type counts as a parse error. |
+| `type` | One of the types in `events.types`. The conformance check fails on a type that is not in the list. |
 | `room` | Where the event happened: a chat, a channel, a repository, a list. A trigger can limit a job to some rooms. Use the same room id in every event of that room. |
 | `thread` | The thread in the room, or null. |
 | `sender` | `{id, name}` of the person or the bot. Set `bot: true` for a bot. Set `self: true` for the account itself: Trebi stores that event and does not start a job. |
@@ -233,6 +233,15 @@ An event is a typed `event` message. `sdk/contract/event.message.json` is an exa
 | `reply_to` | The id of the message that this message answers, when there is one. |
 
 Each schema file must be a valid JSON Schema (draft 2020-12). Give each property a `description`: an agent reads it to write a trigger.
+
+### Let the user choose the events
+
+A user selects the events that each connection sends to Trebi: all, some types, or none. The Events tab of the connector shows one row for each type in `events.types`, with its `description` and its count for the last hour. Trebi does not store a skipped event and starts no job from it. With none, the connection is for actions only: it stays connected, and its commands work.
+
+- List every type that the program sends in `events.types`. Trebi drops an event of a type that is not in the list and counts it as a parse error.
+- Give each type a short `description` that a person understands, for example "A new message in a room". The Events tab shows it as the label of the row.
+- Use a different type for a different thing. A busy type (for example a screen change each second) must not share a type with a rare one, so that the user can skip it alone.
+- Do not filter events in the program to save work for Trebi. Send each event; the user chooses.
 
 ### Watch things
 
@@ -321,6 +330,7 @@ A channel adds the `channel` block. Each feature in `channel.features` must matc
 - [ ] Each secret input has `secret: true`.
 - [ ] `skill/SKILL.md` has `name` and `description`, and its commands work.
 - [ ] Each event type has a schema in `schemas/`.
+- [ ] Each type that the program sends is in `events.types` with a `description`.
 - [ ] An entry with `events.subscriptions` lists `poll` or `stream` in `modes`, so it works with no Trebi Cloud link.
 - [ ] The program needs no prompt from a person and writes no file outside the two Trebi folders.
 - [ ] `scripts/validate.sh <name>` passes.
