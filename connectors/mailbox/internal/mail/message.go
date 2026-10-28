@@ -56,6 +56,8 @@ type Message struct {
 	Text        string       `json:"text"`
 	HTML        string       `json:"html,omitempty"`
 	Attachments []Attachment `json:"attachments"`
+
+	open bool // the text part can go on after the data
 }
 
 // Parse reads a full RFC 5322 message. Text is the plain part, or the HTML
@@ -77,7 +79,10 @@ func parse(raw []byte) (Message, error) {
 	}
 	defer r.Close() //nolint:errcheck // a read-only reader
 	msg.Headers = readHeaders(r.Header)
+	mt, _, _ := r.Header.ContentType()
+	single := !strings.HasPrefix(mt, "multipart/") // the body runs to the end of the data
 	var plain, html string
+	var plainOpen, htmlOpen bool
 	for {
 		p, err := r.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -86,17 +91,20 @@ func parse(raw []byte) (Message, error) {
 		if err != nil {
 			msg.Text = textOf(plain, html)
 			msg.HTML = html
+			msg.open = msg.Text == "" || textOpen(plain, plainOpen, htmlOpen)
 			return msg, err
 		}
 		switch h := p.Header.(type) {
 		case *mail.InlineHeader:
 			ct, _, _ := h.ContentType()
-			b, _ := io.ReadAll(io.LimitReader(p.Body, maxTextPart)) // a cut part still has text
+			b, err := io.ReadAll(io.LimitReader(p.Body, maxTextPart+1)) // a cut part still has text
+			open := err != nil || single || len(b) > maxTextPart
+			b = b[:min(len(b), maxTextPart)]
 			switch {
 			case ct == "text/html" && html == "":
-				html = string(b)
+				html, htmlOpen = string(b), open
 			case (ct == "text/plain" || ct == "") && plain == "":
-				plain = string(b)
+				plain, plainOpen = string(b), open
 			}
 		case *mail.AttachmentHeader:
 			name, _ := h.Filename()
@@ -107,7 +115,16 @@ func parse(raw []byte) (Message, error) {
 	}
 	msg.Text = textOf(plain, html)
 	msg.HTML = html
+	msg.open = textOpen(plain, plainOpen, htmlOpen)
 	return msg, nil
+}
+
+// textOpen tells if the part that textOf uses can go on after the data.
+func textOpen(plain string, plainOpen, htmlOpen bool) bool {
+	if strings.TrimSpace(plain) != "" {
+		return plainOpen
+	}
+	return htmlOpen
 }
 
 func textOf(plain, html string) string {
@@ -160,12 +177,34 @@ func addrs(h mail.Header, key string) []string {
 // snippet reads the start of a message and returns a short text.
 func snippet(raw []byte, n int) string {
 	msg, _ := parse(raw) // a partial body often ends inside a part
-	s := strings.Join(strings.Fields(msg.Text), " ")
+	return msg.snippet(n)
+}
+
+func (m Message) snippet(n int) string {
+	s := strings.Join(strings.Fields(m.Text), " ")
 	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
 	r := []rune(s)
 	return string(r[:n]) + "…"
+}
+
+// maxBody caps the body of a new mail event, in bytes.
+const maxBody = 32 << 10
+
+// body returns the text for a new mail event, cut to maxBody bytes on a
+// rune boundary. whole is false when the data is only the start of the
+// message. truncated is true when the text goes on after body.
+func (m Message) body(whole bool) (body string, truncated bool) {
+	s := m.Text
+	if len(s) > maxBody {
+		i := maxBody
+		for i > 0 && !utf8.RuneStart(s[i]) {
+			i--
+		}
+		return s[:i], true
+	}
+	return s, !whole && m.open
 }
 
 // maxMessage caps a built message. Gmail refuses a message larger than

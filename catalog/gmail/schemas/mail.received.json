@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "description": "The data of a new message in the inbox. The event text has the subject and the start of the body.",
+  "description": "The data of a new message in the inbox. Each mail connector sends this data. The event text has the subject and the start of the body.",
   "properties": {
     "id": {"type": "string", "description": "The id of the message. Give it to read, thread, reply, or the inbox actions."},
     "from": {"type": "string", "description": "The sender, with the name and the address."},
@@ -9,12 +9,14 @@
     "cc": {"type": "array", "items": {"type": "string"}, "description": "The copy recipients."},
     "subject": {"type": "string", "description": "The subject."},
     "date": {"type": "string", "description": "When the message was sent, as RFC 3339."},
-    "message_id": {"type": "string", "description": "The Message-ID header of the message."},
+    "message_id": {"type": "string", "description": "The Message-ID header of the message. It is empty when the message has no Message-ID."},
     "thread_id": {"type": "string", "description": "The conversation of the message. Give it to thread."},
     "labels": {"type": "array", "items": {"type": "string"}, "description": "The labels of the message."},
     "snippet": {"type": "string", "description": "The start of the body as text, at most 500 characters."},
+    "body": {"type": "string", "description": "The full text of the message, at most 32768 bytes. It is the plain text part, or the HTML part as text when there is no plain text part."},
+    "body_truncated": {"type": "boolean", "description": "True when the text of the message is longer than body."},
     "has_attachments": {"type": "boolean", "description": "True when the message has attachments."},
     "size": {"type": "integer", "description": "The size of the message in bytes."}
   },
-  "required": ["id", "from", "to", "subject", "snippet", "has_attachments", "size"]
+  "required": ["from", "subject", "body", "message_id"]
 }

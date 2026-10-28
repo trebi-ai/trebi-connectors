@@ -12,8 +12,11 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 )
 
-// eventSnippetLen is the length of the snippet in a new mail event.
-const eventSnippetLen = 500
+// Limits of a new mail event.
+const (
+	eventSnippetLen = 500       // runes
+	eventFetchBytes = 256 << 10 // HTML mail needs much more than maxBody
+)
 
 // NewMail is one message that arrived in the watched folder.
 type NewMail struct {
@@ -31,6 +34,8 @@ type NewMail struct {
 	MessageID      string
 	InReplyTo      string
 	Snippet        string
+	Body           string
+	BodyTruncated  bool
 	Size           int64
 	Attachments    []Attachment
 	HasAttachments bool
@@ -112,7 +117,7 @@ func (w *WatchConn) Noop(timeout time.Duration) error {
 
 // Fetch returns the messages with a UID after after, in UID order.
 func (w *WatchConn) Fetch(after imap.UID) ([]NewMail, error) {
-	part := &imap.FetchItemBodySection{Peek: true, Partial: &imap.SectionPartial{Size: snippetBytes}}
+	part := &imap.FetchItemBodySection{Peek: true, Partial: &imap.SectionPartial{Size: eventFetchBytes}}
 	set := imap.UIDSet{imap.UIDRange{Start: after + 1, Stop: 0}}
 	msgs, err := w.s.c.Fetch(set, &imap.FetchOptions{
 		UID: true, Envelope: true, RFC822Size: true,
@@ -147,9 +152,11 @@ func (w *WatchConn) Fetch(after imap.UID) ([]NewMail, error) {
 			}
 		}
 		if raw := msg.FindBodySection(part); raw != nil {
-			nm.Snippet = snippet(raw, eventSnippetLen)
-			h, _ := parse(raw) //nolint:errcheck // a cut body still has its headers
-			nm.ThreadID = threadRoot(h.Headers)
+			m, _ := parse(raw) //nolint:errcheck // a cut body still has its headers and text
+			whole := len(raw) < eventFetchBytes || (nm.Size > 0 && int64(len(raw)) >= nm.Size)
+			nm.Snippet = m.snippet(eventSnippetLen)
+			nm.Body, nm.BodyTruncated = m.body(whole)
+			nm.ThreadID = threadRoot(m.Headers)
 		}
 		if bs := msg.BodyStructure; bs != nil {
 			nm.Attachments = attachmentsOf(bs)

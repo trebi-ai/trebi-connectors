@@ -58,4 +58,4 @@ Prefer `html` for a formatted message: headings, lists, tables, bold text, and l
 
 ## New mail
 
-The connection sends a `mail.received` event for each new message in the inbox. A rule can start a job on it. The event data has `id`, `from`, `to`, `cc`, `subject`, `date`, `message_id`, `thread_id`, `labels` (for example `Inbox` and `Important`), `snippet` (the start of the body), `has_attachments`, and `size`. Use the `id` with `read`, `thread`, `reply`, or the operations in "Sort the inbox". Mail that this account sends gives no event.
+The connection sends a `mail.received` event for each new message in the inbox. A rule can start a job on it. The event data has `id`, `from`, `to`, `cc`, `subject`, `date`, `message_id`, `thread_id`, `labels` (for example `Inbox` and `Important`), `snippet` (the start of the body), `body` (the full text, at most 32768 bytes), `body_truncated` (true when the text is longer than `body`), `has_attachments`, and `size`. Use the `id` with `read`, `thread`, `reply`, or the operations in "Sort the inbox". Mail that this account sends gives no event.

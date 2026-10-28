@@ -232,7 +232,8 @@ func (w *Watcher) sync(conn *mail.WatchConn, emit func(sdk.Event) error) error {
 	return nil
 }
 
-// Data is the data of a mail.received event (schemas/mail.received.json).
+// Data is the data of a mail.received event. The schema is
+// catalog/schemas/mail.received.json; its required fields have no omitempty.
 type Data struct {
 	ID             string   `json:"id"`
 	From           string   `json:"from"`
@@ -240,10 +241,12 @@ type Data struct {
 	Cc             []string `json:"cc"`
 	Subject        string   `json:"subject"`
 	Date           string   `json:"date,omitempty"`
-	MessageID      string   `json:"message_id,omitempty"`
+	MessageID      string   `json:"message_id"`
 	ThreadID       string   `json:"thread_id,omitempty"`
 	Labels         []string `json:"labels"`
 	Snippet        string   `json:"snippet"`
+	Body           string   `json:"body"`
+	BodyTruncated  bool     `json:"body_truncated"`
 	HasAttachments bool     `json:"has_attachments"`
 	Size           int64    `json:"size"`
 }
@@ -260,7 +263,7 @@ func (w *Watcher) event(nm mail.NewMail, uidValidity uint32) sdk.Event {
 	data, _ := json.Marshal(Data{ //nolint:errchkjson // plain fields
 		ID: nm.ID, From: nm.From, To: nm.To, Cc: nm.Cc, Subject: nm.Subject, Date: nm.Date,
 		MessageID: nm.MessageID, ThreadID: nm.ThreadID, Labels: labels, Snippet: nm.Snippet,
-		HasAttachments: nm.HasAttachments, Size: nm.Size,
+		Body: nm.Body, BodyTruncated: nm.BodyTruncated, HasAttachments: nm.HasAttachments, Size: nm.Size,
 	})
 	ts := nm.Date
 	if ts == "" {

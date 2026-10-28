@@ -17,6 +17,7 @@ The daemon owns the protocol, the manifest schema, and the conformance checks. T
 | Folder | What it is |
 |---|---|
 | `catalog/<name>/` | One entry: `trebi-connector.yaml`, `skill/SKILL.md`, and event schemas in `schemas/`. |
+| `catalog/schemas/` | The shared event schemas, for example `mail.received.json`. It is not an entry. Each entry that sends one of these types keeps a byte-identical copy in its `schemas/` folder; `scripts/validate.sh` checks it. |
 | `schema/` | The manifest JSON Schema, vendored byte-identical from `trebi/internal/connectors/manifest/schema.json`. Do not edit it here. |
 | `sdk/` | The Go SDK (module `github.com/trebi-ai/trebi-connectors/sdk`). `sdk/contract/` is vendored from `trebi/internal/connectors/protocol/testdata/contract/`. Do not edit it here. |
 | `connectors/<cli>/` | The source of one program: a normal CLI plus a `serve` command that speaks the protocol. `scripts/build.sh [version] [output]` builds it. |

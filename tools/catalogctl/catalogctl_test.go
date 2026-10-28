@@ -110,8 +110,15 @@ func TestRepositoryCatalog(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("no entries")
 	}
+	shared, err := LoadSharedSchemas("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := shared["mail.received"]; !ok {
+		t.Fatal("no shared mail.received schema")
+	}
 	var out bytes.Buffer
-	if err := validate(context.Background(), entries, schemaPath, false, ReleaseChecker{}, &out); err != nil {
+	if err := validate(context.Background(), entries, schemaPath, shared, false, ReleaseChecker{}, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 }

@@ -69,7 +69,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return validate(ctx, entries, *schema, *checkAssets, rc, stdout)
+		shared, err := LoadSharedSchemas(*root)
+		if err != nil {
+			return err
+		}
+		return validate(ctx, entries, *schema, shared, *checkAssets, rc, stdout)
 	case "build":
 		if *out == "" {
 			return errors.New("build: --out is required")
@@ -78,7 +82,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if err := validate(ctx, entries, *schema, false, rc, stdout); err != nil {
+		shared, err := LoadSharedSchemas(*root)
+		if err != nil {
+			return err
+		}
+		if err := validate(ctx, entries, *schema, shared, false, rc, stdout); err != nil {
 			return err
 		}
 		key, err := ParseSigningKey(os.Getenv("CATALOG_SIGNING_KEY"), *pub)
@@ -137,7 +145,7 @@ func loadEntries(root string, names []string) ([]*Entry, error) {
 			return nil, err
 		}
 		for _, d := range des {
-			if d.IsDir() && !strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() && !strings.HasPrefix(d.Name(), ".") && d.Name() != SharedDir {
 				names = append(names, d.Name())
 			}
 		}
@@ -154,14 +162,14 @@ func loadEntries(root string, names []string) ([]*Entry, error) {
 	return out, nil
 }
 
-func validate(ctx context.Context, entries []*Entry, schemaPath string, checkAssets bool, rc ReleaseChecker, w io.Writer) error {
+func validate(ctx context.Context, entries []*Entry, schemaPath string, shared SharedSchemas, checkAssets bool, rc ReleaseChecker, w io.Writer) error {
 	schema, err := LoadSchema(schemaPath)
 	if err != nil {
 		return err
 	}
 	bad := 0
 	for _, e := range entries {
-		errs := e.Validate(schema)
+		errs := append(e.Validate(schema), shared.Check(e)...)
 		for _, err := range errs {
 			fmt.Fprintf(w, "FAIL %s: %v\n", e.Name(), err)
 		}

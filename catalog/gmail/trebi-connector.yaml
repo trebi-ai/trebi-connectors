@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: gmail
 title: Gmail
 description: "Read, answer, and sort your Gmail. Start a job when new mail comes in. Sending is off until you turn it on."
-version: 0.3.0
+version: 0.4.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

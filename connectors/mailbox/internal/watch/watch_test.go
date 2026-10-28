@@ -142,7 +142,7 @@ func TestIdleSendsEvent(t *testing.T) {
 	if err := json.Unmarshal(e.Data, &d); err != nil {
 		t.Fatal(err)
 	}
-	if e.Room == nil || e.Room.ID != "INBOX" || d.MessageID != "<n1@example.com>" || d.ID != "INBOX:1" || d.Labels == nil {
+	if e.Room == nil || e.Room.ID != "INBOX" || d.MessageID != "<n1@example.com>" || d.ID != "INBOX:1" || d.Labels == nil || d.Body != "Body 1" || d.BodyTruncated {
 		t.Fatalf("event %+v data %s", e, e.Data)
 	}
 }

@@ -234,6 +234,8 @@ An event is a typed `event` message. `sdk/contract/event.message.json` is an exa
 
 Each schema file must be a valid JSON Schema (draft 2020-12). Give each property a `description`: an agent reads it to write a trigger.
 
+Some event types have a shared schema in `catalog/schemas/<type>.json`, for example `mail.received`. All connectors of that kind send the same `data`, so a job works with each of them. An entry that sends such a type keeps a byte-identical copy of the shared file in its own `schemas/` folder, because the snapshot holds only the entry folder. `scripts/validate.sh` fails when a copy differs. To change a shared schema, edit `catalog/schemas/<type>.json`, copy it into each entry that uses it, and bump the `version` of each entry.
+
 ### Let the user choose the events
 
 A user selects the events that each connection sends to Trebi: all, some types, or none. The Events tab of the connector shows one row for each type in `events.types`, with its `description` and its count for the last hour. Trebi does not store a skipped event and starts no job from it. With none, the connection is for actions only: it stays connected, and its commands work.
@@ -329,7 +331,7 @@ A channel adds the `channel` block. Each feature in `channel.features` must matc
 - [ ] Each required input has a `label`, and no label is an env name.
 - [ ] Each secret input has `secret: true`.
 - [ ] `skill/SKILL.md` has `name` and `description`, and its commands work.
-- [ ] Each event type has a schema in `schemas/`.
+- [ ] Each event type has a schema in `schemas/`. A type with a shared schema in `catalog/schemas/` uses a byte-identical copy.
 - [ ] Each type that the program sends is in `events.types` with a `description`.
 - [ ] An entry with `events.subscriptions` lists `poll` or `stream` in `modes`, so it works with no Trebi Cloud link.
 - [ ] The program needs no prompt from a person and writes no file outside the two Trebi folders.
