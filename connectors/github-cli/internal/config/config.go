@@ -215,6 +215,10 @@ func (g *GHLogin) Bin() string {
 			continue
 		}
 		p := filepath.Join(d, "gh")
+		// Trebi also links the gh of this program into a shared folder.
+		if real, err := filepath.EvalSymlinks(p); err == nil && sameDir(filepath.Dir(real), g.skip) {
+			continue
+		}
 		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
 			return p
 		}

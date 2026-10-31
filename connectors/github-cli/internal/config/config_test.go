@@ -102,6 +102,13 @@ func TestGHLoginSkipsProgramFolder(t *testing.T) {
 	if tok, err := g.Token(ctx); err != nil || tok != "user" {
 		t.Fatalf("token: %q %v", tok, err)
 	}
+	links := t.TempDir()
+	if err := os.Symlink(filepath.Join(own, "gh"), filepath.Join(links, "gh")); err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := NewGHLoginIn(links+string(os.PathListSeparator)+user, own).Token(ctx); err != nil || tok != "user" {
+		t.Fatalf("a link to the program gh must not count: %q %v", tok, err)
+	}
 	if _, err := NewGHLoginIn(own, own).Token(ctx); !errors.Is(err, ErrGHLoggedOut) {
 		t.Fatalf("only the program folder: %v", err)
 	}
