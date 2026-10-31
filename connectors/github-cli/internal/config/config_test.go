@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
@@ -115,6 +116,18 @@ func TestGHLoginSkipsProgramFolder(t *testing.T) {
 	t.Setenv(EnvGHToken, "env")
 	if tok, err := g.Token(ctx); err != nil || tok != "user" {
 		t.Fatalf("the child must get no token env: %q %v", tok, err)
+	}
+}
+
+func TestGHLoginSlow(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nexec sleep 5\n"), 0o755); err != nil { //nolint:gosec // a test script must run
+		t.Fatal(err)
+	}
+	g := NewGHLoginIn(dir, "")
+	g.wait = 100 * time.Millisecond
+	if _, err := g.Token(context.Background()); !errors.Is(err, ErrGHSlow) {
+		t.Fatalf("a slow gh is not a logout: %v", err)
 	}
 }
 

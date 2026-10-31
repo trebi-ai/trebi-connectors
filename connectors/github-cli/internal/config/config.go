@@ -41,6 +41,10 @@ var ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // T
 // ErrGHLoggedOut is a gh login that has no token for github.com.
 var ErrGHLoggedOut = errors.New("GitHub is not logged in on this machine")
 
+// ErrGHSlow is a read of the gh login that did not end in time. It is not a
+// logout: keep the last token.
+var ErrGHSlow = errors.New("the GitHub login on this machine did not answer in time; try again")
+
 // Settings is the token and the place it came from.
 type Settings struct {
 	Token  string
@@ -89,7 +93,11 @@ func resolve(ctx context.Context, flagToken string, readGH bool) (Settings, erro
 		case SourceGH:
 			if readGH {
 				// A gh that logged out gives no token; the status reports it.
-				s.Token, _ = s.GH.Token(ctx) //nolint:errcheck // no token is the answer
+				tok, err := s.GH.Token(ctx)
+				if errors.Is(err, ErrGHSlow) {
+					return s, err
+				}
+				s.Token = tok
 			}
 		}
 		return s, nil
@@ -180,8 +188,9 @@ func (l *LoginStore) Clear() error {
 // ghDirs are the install folders of gh that a LaunchAgent PATH can miss.
 var ghDirs = []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"} //nolint:gochecknoglobals // fixed list, never changed
 
-// ghTimeout bounds one read of the gh login.
-const ghTimeout = 5 * time.Second
+// ghTimeout bounds one read of the gh login. A busy machine can make the
+// keychain slow.
+const ghTimeout = 15 * time.Second
 
 // GHLogin reads the token of the gh login of the user. It never runs the
 // gh of the connector, which is a shim that would ask the connection.
@@ -189,12 +198,13 @@ type GHLogin struct {
 	path string   // PATH to search
 	dirs []string // known install folders, after PATH
 	skip string   // the program folder of the connector
+	wait time.Duration
 }
 
 // NewGHLogin searches PATH and the known install folders, and skips the
 // folder of this program.
 func NewGHLogin() *GHLogin {
-	g := &GHLogin{path: os.Getenv("PATH"), dirs: ghDirs}
+	g := &GHLogin{path: os.Getenv("PATH"), dirs: ghDirs, wait: ghTimeout}
 	if exe, err := os.Executable(); err == nil {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
@@ -205,7 +215,9 @@ func NewGHLogin() *GHLogin {
 }
 
 // NewGHLoginIn searches only path, and skips the folder skip (tests).
-func NewGHLoginIn(path, skip string) *GHLogin { return &GHLogin{path: path, skip: skip} }
+func NewGHLoginIn(path, skip string) *GHLogin {
+	return &GHLogin{path: path, skip: skip, wait: ghTimeout}
+}
 
 // Bin returns the gh program of the user, or "".
 func (g *GHLogin) Bin() string {
@@ -233,7 +245,7 @@ func (g *GHLogin) Token(ctx context.Context) (string, error) {
 	if bin == "" {
 		return "", ErrGHLoggedOut
 	}
-	ctx, cancel := context.WithTimeout(ctx, ghTimeout)
+	ctx, cancel := context.WithTimeout(ctx, g.wait)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "auth", "token", "-h", "github.com") //nolint:gosec // the gh of the user, fixed args
 	for _, kv := range os.Environ() {
@@ -247,6 +259,9 @@ func (g *GHLogin) Token(ctx context.Context) (string, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", ErrGHSlow
+		}
 		return "", ErrGHLoggedOut
 	}
 	token := strings.TrimSpace(out.String())

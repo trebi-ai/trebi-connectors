@@ -211,7 +211,10 @@ func (a *Adapter) refresh(ctx context.Context, failed string) bool {
 		return false
 	}
 	token, err := gh.Token(ctx)
-	if err != nil {
+	switch {
+	case errors.Is(err, config.ErrGHSlow):
+		return false
+	case err != nil:
 		token = ""
 	}
 	a.mu.Lock()
@@ -312,7 +315,7 @@ func (a *Adapter) beginGH(ctx context.Context, steps sdk.StepSink) error {
 	}
 	token, err := a.ghLogin.Token(ctx)
 	if err != nil {
-		return sdk.Invalid(config.ErrGHLoggedOut.Error())
+		return sdk.Invalid(err.Error())
 	}
 	c := a.gh()
 	c.Token = token
