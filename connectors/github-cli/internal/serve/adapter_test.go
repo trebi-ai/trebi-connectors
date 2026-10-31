@@ -259,6 +259,36 @@ func TestWebhookFlow(t *testing.T) {
 	}
 }
 
+func TestHookDeleteKeepsRecordWithNoAnswer(t *testing.T) {
+	t.Parallel()
+	hook := &sdk.Webhook{URL: "http://127.0.0.1:1/in", Secret: "x"}
+	fake := fakegithub.Start()
+	t.Cleanup(fake.Close)
+	fake.NoDeliveries()
+	dir := t.TempDir()
+	c, _ := startWith(t, fake, dir, fakegithub.Token, hook)
+	syncSubs(t, c, sub("s1", fakegithub.AdminRepo))
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cl := client.New(fakegithub.Token)
+	cl.API, cl.Web = fake.URL(), fake.URL()
+	a, err := New(cl, "test", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.reconcile(stopped, hook, nil, nil)
+	if len(a.state.Hooks) != 1 {
+		t.Fatalf("a delete with no answer must keep the record: %+v", a.state.Hooks)
+	}
+	a.reconcile(context.Background(), hook, nil, nil)
+	if len(a.state.Hooks) != 0 || len(fake.Hooks(fakegithub.AdminRepo)) != 0 {
+		t.Fatalf("the next sync must delete the hook: %+v %+v", a.state.Hooks, fake.Hooks(fakegithub.AdminRepo))
+	}
+}
+
 func TestHookFallsBackToPoll(t *testing.T) {
 	t.Parallel()
 	hook := &sdk.Webhook{URL: "http://127.0.0.1:1/in", Secret: "x"}

@@ -612,10 +612,14 @@ func (a *Adapter) reconcile(ctx context.Context, hook *sdk.Webhook, want map[str
 		switch client.StatusOf(err) {
 		case http.StatusUnauthorized:
 			return true
-		case 0, http.StatusForbidden:
+		case 0:
 			if err != nil {
+				// No answer from GitHub: keep the record, so the next sync tries again.
 				a.log.Warn("delete hook", "repo", repo, "err", err)
+				continue
 			}
+		case http.StatusForbidden:
+			a.log.Warn("delete hook", "repo", repo, "err", err)
 		}
 		delete(state.Hooks, repo)
 	}
