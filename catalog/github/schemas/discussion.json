@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a discussion event.",
+  "required": [
+    "repository",
+    "action",
+    "number"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example created, edited, or answered."
+    },
+    "number": {
+      "type": "integer",
+      "description": "The number of the discussion."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the discussion."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the discussion."
+    },
+    "author": {
+      "type": "string",
+      "description": "The login of the author of the discussion."
+    },
+    "category": {
+      "type": "string",
+      "description": "The category of the discussion."
+    },
+    "state": {
+      "type": "string",
+      "description": "open or closed."
+    },
+    "answer_url": {
+      "type": "string",
+      "description": "The page of the answer, when the discussion has one."
+    }
+  }
+}

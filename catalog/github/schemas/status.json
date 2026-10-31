@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a commit status event.",
+  "required": [
+    "repository",
+    "sha",
+    "state"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page that the service gives for the status."
+    },
+    "sha": {
+      "type": "string",
+      "description": "The SHA of the commit."
+    },
+    "state": {
+      "type": "string",
+      "description": "pending, success, failure, or error."
+    },
+    "context": {
+      "type": "string",
+      "description": "The name of the status, for example ci/build."
+    },
+    "description": {
+      "type": "string",
+      "description": "The short text of the status."
+    },
+    "branches": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The branches that contain the commit."
+    }
+  }
+}

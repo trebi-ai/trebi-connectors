@@ -1,8 +1,8 @@
 schema: trebi-connector/1
 name: github
 title: GitHub
-description: "Start work when something happens in a GitHub repository, and read repositories, events, and webhooks."
-version: 0.2.0
+description: "Do GitHub work from Trebi, and start jobs when something happens in a repository or needs you."
+version: 0.3.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT
@@ -13,16 +13,147 @@ install:
   version_command: github-cli --version
 setup:
   login:
+    - {id: gh, type: existing, label: Use the GitHub login on this machine, help: "Trebi asks the GitHub app of this machine for its login each time. Log in there first."}
     - {id: device, type: browser, label: Sign in with GitHub}
-    - {id: token, type: key, label: Paste a token, input: GITHUB_TOKEN}
+    - {id: token, type: key, label: Paste a token, input: GITHUB_TOKEN, test: github-cli whoami}
   inputs:
     - name: GITHUB_TOKEN
       label: Personal access token
-      help: "Make a fine-grained token with the permissions Webhooks: read and write, and Contents: read."
-      url: https://github.com/settings/personal-access-tokens/new
+      help: "Make a classic token with the scopes repo, read:org, and admin:repo_hook. A fine-grained token also works, but it gives no \"your activity\" events."
+      url: https://github.com/settings/tokens/new?scopes=repo,read:org,admin:repo_hook&description=Trebi
       secret: true
 actions:
-  cli: {commands: [github-cli]}
+  cli: {commands: [gh, github-cli]}
+  operations:
+    # github-op is a copy of github-cli: an operation program must not also be a run command.
+    - name: search
+      label: Find issues and pull requests
+      description: "Find issues and pull requests with the GitHub search words, such as repo:owner/name, is:pr, is:open, author:login, or label:bug. The most recently changed comes first."
+      readonly: true
+      default: on
+      command: [github-op, search]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          query: {type: string, maxLength: 500, description: "The GitHub search words, for example \"repo:octo/app is:pr is:open review-requested:@me\"."}
+          limit: {type: integer, minimum: 1, maximum: 50, description: The maximum number of results. The default is 20.}
+        required: [query]
+    - name: get
+      label: Show an issue or pull request
+      description: "Read one issue or pull request: the text, the labels, the assignees, and the last comments. For a pull request, also the branches, the reviews, and the checks."
+      readonly: true
+      default: on
+      command: [github-op, get]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          repository: {type: string, maxLength: 200, description: The repository as owner/name.}
+          number: {type: integer, minimum: 1, description: The number of the issue or the pull request.}
+          comments: {type: integer, minimum: 0, maximum: 50, description: The number of last comments to read. The default is 10.}
+        required: [repository, number]
+    - name: my_work
+      label: Show what needs you
+      description: "List the pull requests that wait for your review, the open issues and pull requests assigned to you, and your open pull requests with their checks and reviews."
+      readonly: true
+      default: on
+      command: [github-op, my_work]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          limit: {type: integer, minimum: 1, maximum: 50, description: The maximum number of items in each list. The default is 20.}
+    - name: comment
+      label: Comment on an issue or pull request
+      description: Add a comment to an issue or a pull request.
+      readonly: false
+      default: ask
+      command: [github-op, comment]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          repository: {type: string, maxLength: 200, description: The repository as owner/name.}
+          number: {type: integer, minimum: 1, description: The number of the issue or the pull request.}
+          body: {type: string, maxLength: 65536, description: The text of the comment. Markdown works.}
+        required: [repository, number, body]
+    - name: create_issue
+      label: Create an issue
+      description: Open a new issue in a repository.
+      readonly: false
+      default: ask
+      command: [github-op, create_issue]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          repository: {type: string, maxLength: 200, description: The repository as owner/name.}
+          title: {type: string, maxLength: 256, description: The title of the issue.}
+          body: {type: string, maxLength: 65536, description: The text of the issue. Markdown works.}
+          labels: {type: array, items: {type: string, maxLength: 100}, description: The names of labels that the repository has.}
+          assignees: {type: array, items: {type: string, maxLength: 100}, description: The logins of the people to assign.}
+        required: [repository, title]
+    - name: review_pr
+      label: Review a pull request
+      description: "Approve a pull request, ask for changes, or add a review comment."
+      readonly: false
+      default: ask
+      command: [github-op, review_pr]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          repository: {type: string, maxLength: 200, description: The repository as owner/name.}
+          number: {type: integer, minimum: 1, description: The number of the pull request.}
+          verdict: {type: string, enum: [approve, request_changes, comment], description: "approve, request_changes, or comment."}
+          body: {type: string, maxLength: 65536, description: "The text of the review. It is necessary for request_changes and comment."}
+        required: [repository, number, verdict]
+    - name: merge_pr
+      label: Merge a pull request
+      description: "Merge a pull request. It can also delete the branch of the pull request."
+      readonly: false
+      default: ask
+      command: [github-op, merge_pr]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          repository: {type: string, maxLength: 200, description: The repository as owner/name.}
+          number: {type: integer, minimum: 1, description: The number of the pull request.}
+          method: {type: string, enum: [merge, squash, rebase], description: "merge, squash, or rebase. The default is squash."}
+          delete_branch: {type: boolean, description: "True deletes the branch after the merge. Trebi deletes only a branch of the same repository that is not its main branch. The default is false."}
+        required: [repository, number]
+    - name: rerun_workflow
+      label: Run a workflow again
+      description: "Run a workflow run again: only its failed jobs, or all its jobs."
+      readonly: false
+      default: ask
+      command: [github-op, rerun_workflow]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          repository: {type: string, maxLength: 200, description: The repository as owner/name.}
+          run_id: {type: integer, minimum: 1, description: The id of the workflow run. A workflow_run event gives it as run_id.}
+          failed_only: {type: boolean, description: True runs only the failed jobs again. The default is true.}
+        required: [repository, run_id]
 events:
   protocol: trebi-connector/1
   command: github-cli serve
@@ -31,17 +162,30 @@ events:
     - {type: push, description: Commits pushed to a branch, schema: schemas/push.json}
     - {type: pull_request, description: "A pull request opened, changed, or closed", schema: schemas/pull_request.json}
     - {type: pull_request_review, description: A review on a pull request, schema: schemas/pull_request_review.json}
+    - {type: pull_request_review_comment, description: A comment on a line of a pull request, schema: schemas/pull_request_review_comment.json}
     - {type: issues, description: "An issue opened, changed, or closed", schema: schemas/issues.json}
     - {type: issue_comment, description: A comment on an issue or a pull request, schema: schemas/issue_comment.json}
     - {type: release, description: A release published or changed, schema: schemas/release.json}
     - {type: workflow_run, description: An Actions workflow run that starts or ends, schema: schemas/workflow_run.json}
+    - {type: check_suite, description: "Checks on a commit end, for example CI from another service", schema: schemas/check_suite.json}
+    - {type: status, description: A commit status from another service, schema: schemas/status.json}
+    - {type: create, description: A branch or a tag created, schema: schemas/create.json}
+    - {type: delete, description: A branch or a tag deleted, schema: schemas/delete.json}
+    - {type: deployment_status, description: "A deployment that starts, succeeds, or fails", schema: schemas/deployment_status.json}
+    - {type: discussion, description: "A discussion opened, changed, or answered", schema: schemas/discussion.json}
+    - {type: discussion_comment, description: A comment on a discussion, schema: schemas/discussion_comment.json}
+    - {type: review_requested, description: Someone asks for your review on a pull request, schema: schemas/review_requested.json}
+    - {type: mention, description: Someone mentions you or your team, schema: schemas/mention.json}
+    - {type: assigned, description: Someone assigns an issue or a pull request to you, schema: schemas/assigned.json}
+    - {type: ci_activity, description: A workflow run that you started ends, schema: schemas/ci_activity.json}
+    - {type: activity, description: Other activity on a thread you follow, schema: schemas/activity.json}
   subscriptions:
     action: Watch a repository
     modes: [api, poll]
     fields:
       - name: repository
         label: Repository
-        help: Trebi adds a webhook to the repository. You must be an admin of it.
+        help: Pick a repository. Trebi gets each change at once when you are an admin of it, else it checks every minute.
         dynamic: true
         required: true
         room: true

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a deployment status event.",
+  "required": [
+    "repository",
+    "action",
+    "state"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened, for example created."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the deployment."
+    },
+    "deployment_id": {
+      "type": "integer",
+      "description": "The id of the deployment."
+    },
+    "environment": {
+      "type": "string",
+      "description": "The environment, for example production."
+    },
+    "state": {
+      "type": "string",
+      "description": "pending, in_progress, queued, success, failure, error, or inactive."
+    },
+    "description": {
+      "type": "string",
+      "description": "The short text of the status."
+    },
+    "ref": {
+      "type": "string",
+      "description": "The branch, the tag, or the SHA of the deployment."
+    },
+    "sha": {
+      "type": "string",
+      "description": "The SHA of the commit."
+    }
+  }
+}

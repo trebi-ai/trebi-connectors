@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a comment on a discussion.",
+  "required": [
+    "repository",
+    "action",
+    "number"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "action": {
+      "type": "string",
+      "description": "What happened: created, edited, or deleted."
+    },
+    "number": {
+      "type": "integer",
+      "description": "The number of the discussion."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the discussion."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the comment."
+    },
+    "author": {
+      "type": "string",
+      "description": "The login of the author."
+    },
+    "category": {
+      "type": "string",
+      "description": "The category of the discussion."
+    },
+    "body": {
+      "type": "string",
+      "description": "The text of the comment."
+    }
+  }
+}

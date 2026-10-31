@@ -209,6 +209,7 @@ jobs:
             # build.sh can write helper programs next to the program, such as
             # slack-op. The archive holds each file in the work folder.
             (cd "$work" && tar -czf "../../out/$name/${bin}_${GOOS}_${GOARCH}.tar.gz" *)
+            tar -tvzf "out/$name/${bin}_${GOOS}_${GOARCH}.tar.gz"
           done < <(jq -r --arg os "$GOOS" --arg arch "$GOARCH" \
             '.[] | select(.os == $os and .arch == $arch) | "\(.name) \(.bin) \(.version)"' <<<"$BUILDS")
       # The artifact service is in the GitHub US datacenter. The runner line

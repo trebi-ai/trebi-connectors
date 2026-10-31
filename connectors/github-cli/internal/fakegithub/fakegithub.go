@@ -1,10 +1,13 @@
 // Package fakegithub is an in-process GitHub for the sandbox and the
-// tests: the device flow, repositories, events, and repository webhooks.
-// A new hook gets one signed push delivery, then a ping.
+// tests: the device flow, repositories, events, Actions runs,
+// notifications, repository webhooks, and the calls of the operations. A
+// new hook gets one signed push delivery, one review comment delivery, then
+// a ping. The first notifications read adds one review request.
 package fakegithub
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,7 +27,11 @@ import (
 // Values of the fake.
 const (
 	Token       = "gho_sandbox"
-	Revoked     = "revoked" // a token that gives 401
+	FineGrained = "github_pat_sandbox" // no scopes header, no notifications
+	Revoked     = "revoked"            // a token that gives 401
+	NoHookScope = "gho_nohooks"        // a classic token with read:org only
+	Idle        = "gho_idle"           // an account with no issues or pull requests
+	Scopes      = "repo, read:org, admin:repo_hook"
 	UserCode    = "SAND-BOX1"
 	AdminRepo   = "octo/app"
 	OtherAdmin  = "octo/docs"
@@ -43,6 +51,21 @@ type Server struct {
 	events  map[string][]client.Event
 	deliver bool
 	every   int // X-Poll-Interval in seconds
+	runs    map[string][]client.Run
+	notifs  []client.Notification
+	nreads  int
+	stamp   int // the Last-Modified of the notifications, in seconds
+	calls   []string
+	nextObj int64
+	refuse  bool // hook creation gives 404
+}
+
+// RefuseHooks makes each new hook fail with 404, as for a login whose
+// organization blocks the OAuth app.
+func (s *Server) RefuseHooks() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refuse = true
 }
 
 // Start runs the fake on a local port.
@@ -53,8 +76,11 @@ func Start() *Server {
 		events:  map[string][]client.Event{},
 		deliver: true,
 		every:   60,
+		runs:    map[string][]client.Run{},
+		nextObj: 100,
 	}
 	s.events[AdminRepo] = []client.Event{s.event("1", "PushEvent", AdminRepo)}
+	s.runs[AdminRepo] = []client.Run{run(AdminRepo, 1, "completed", "success")}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	return s
 }
@@ -132,30 +158,65 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Bad credentials"})
 		return
 	}
-	if r.URL.Path == "/user" {
+	s.mu.Lock()
+	s.calls = append(s.calls, r.Method+" "+r.URL.Path)
+	s.mu.Unlock()
+	switch r.URL.Path {
+	case "/user":
+		switch token {
+		case FineGrained:
+		case NoHookScope:
+			w.Header().Set("X-OAuth-Scopes", "read:org")
+		default:
+			w.Header().Set("X-OAuth-Scopes", Scopes)
+		}
 		writeJSON(w, http.StatusOK, client.User{ID: 1, Login: "octo", Name: "Octo Cat", Type: "User"})
 		return
-	}
-	if r.URL.Path == "/user/repos" {
-		repos := []map[string]any{
-			{"id": 1, "full_name": AdminRepo, "private": false, "permissions": map[string]bool{"admin": true}},
-			{"id": 2, "full_name": OtherAdmin, "private": true, "permissions": map[string]bool{"admin": true}},
-			{"id": 3, "full_name": NoAdminRepo, "private": false, "permissions": map[string]bool{"admin": false}},
+	case "/user/repos":
+		repos := make([]map[string]any, 0, len(repoList))
+		for _, name := range repoList {
+			repos = append(repos, repoJSON(name))
 		}
 		writeJSON(w, http.StatusOK, repos)
 		return
+	case "/notifications":
+		if token == FineGrained {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": "Resource not accessible by personal access token"})
+			return
+		}
+		s.serveNotifications(w, r)
+		return
+	case "/search/issues":
+		if token == Idle {
+			writeJSON(w, http.StatusOK, map[string]any{"total_count": 0, "items": []any{}})
+			return
+		}
+		s.serveSearch(w, r)
+		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/repos/"), "/")
-	if !strings.HasPrefix(r.URL.Path, "/repos/") || len(parts) < 3 {
+	if !strings.HasPrefix(r.URL.Path, "/repos/") || len(parts) < 2 || !slices.Contains(repoList, parts[0]+"/"+parts[1]) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
 	repo := parts[0] + "/" + parts[1]
+	if len(parts) == 2 {
+		writeJSON(w, http.StatusOK, repoJSON(repo))
+		return
+	}
 	switch parts[2] {
+	case "issues", "pulls", "commits", "git":
+		s.serveObjects(w, r, repo, parts[2:])
+	case "actions":
+		if len(parts) > 4 && parts[3] == "runs" {
+			s.serveRerun(w, r, repo, parts[4:])
+			return
+		}
+		s.serveRuns(w, r, repo)
 	case "events":
 		s.serveEvents(w, r, repo)
 	case "hooks":
-		if repo == NoAdminRepo || (repo != AdminRepo && repo != OtherAdmin) {
+		if repo == NoAdminRepo {
 			writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 			return
 		}
@@ -204,6 +265,8 @@ func (s *Server) serveHooks(w http.ResponseWriter, r *http.Request, repo string,
 			out = append(out, h)
 		}
 		writeJSON(w, http.StatusOK, out)
+	case r.Method == http.MethodPost && id == 0 && s.refuse:
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 	case r.Method == http.MethodPost && id == 0:
 		var h client.Hook
 		if err := json.NewDecoder(r.Body).Decode(&h); err != nil || h.Config.URL == "" {
@@ -242,12 +305,15 @@ func (s *Server) serveHooks(w http.ResponseWriter, r *http.Request, repo string,
 	}
 }
 
-// deliverNew posts one push and one ping to a new hook, as GitHub does.
+// deliverNew posts one push, one review comment, and one ping to a new
+// hook.
 func (s *Server) deliverNew(repo string, h client.Hook) {
 	defer s.wg.Done()
 	push := fmt.Sprintf(`{"ref":"refs/heads/main","before":"000000","after":"abc123","repository":{"id":1,"full_name":%q,"html_url":"https://github.com/%s"},"pusher":{"name":"octo"},"sender":{"login":"octo","id":1,"type":"User"},"head_commit":{"id":"abc123","message":"Fix the build","url":"https://github.com/%s/commit/abc123"},"commits":[{"id":"abc123","message":"Fix the build"}]}`, repo, repo, repo)
 	ping := fmt.Sprintf(`{"zen":"Keep it simple.","hook_id":%d,"repository":{"id":1,"full_name":%q},"sender":{"login":"octo","id":1,"type":"User"}}`, h.ID, repo)
+	comment := fmt.Sprintf(`{"action":"created","repository":{"id":1,"full_name":%q},"sender":{"login":"hubot","id":2,"type":"User"},"pull_request":{"number":8,"title":"Add a cache","html_url":"https://github.com/%s/pull/8","state":"open","user":{"login":"hubot","id":2,"type":"User"}},"comment":{"id":31,"body":"Use a map here.","path":"cache.go","line":12,"html_url":"https://github.com/%s/pull/8#discussion_r31","user":{"login":"hubot","id":2,"type":"User"}}}`, repo, repo, repo)
 	s.post(h.Config, "push", fmt.Sprintf("delivery-%d-push", h.ID), push)
+	s.post(h.Config, "pull_request_review_comment", fmt.Sprintf("delivery-%d-comment", h.ID), comment)
 	s.post(h.Config, "ping", fmt.Sprintf("delivery-%d-ping", h.ID), ping)
 }
 
@@ -275,4 +341,271 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v) //nolint:errcheck,gosec // a test server
+}
+
+// GHLogin is a gh login on this machine with the fake token.
+type GHLogin struct{}
+
+// Token returns the fake token.
+func (GHLogin) Token(context.Context) (string, error) { return Token, nil }
+
+// repoList holds the repositories of the account. octo/app and octo/docs
+// are admin; other/lib is read only.
+var repoList = []string{AdminRepo, OtherAdmin, NoAdminRepo} //nolint:gochecknoglobals // fixed list, never changed
+
+func repoJSON(name string) map[string]any {
+	admin := name != NoAdminRepo
+	return map[string]any{
+		"id": slices.Index(repoList, name) + 1, "full_name": name, "private": name == OtherAdmin, "default_branch": "main",
+		"permissions": map[string]bool{"admin": admin, "push": admin, "pull": true},
+	}
+}
+
+// Calls returns the "METHOD /path" of each API call with a token.
+func (s *Server) Calls() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.calls)
+}
+
+func run(repo string, id int64, status, conclusion string) client.Run {
+	r := client.Run{ID: id, Name: "CI", Status: status, Conclusion: conclusion, HeadBranch: "main", Event: "push",
+		HTMLURL: fmt.Sprintf("https://github.com/%s/actions/runs/%d", repo, id), UpdatedAt: "2026-10-08T12:00:00Z"}
+	r.Actor = client.User{ID: 1, Login: "octo", Type: "User"}
+	return r
+}
+
+// SetRun adds a workflow run or changes its status.
+func (s *Server) SetRun(repo string, id int64, status, conclusion string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runs := s.runs[repo]
+	for i := range runs {
+		if runs[i].ID == id {
+			runs[i].Status, runs[i].Conclusion = status, conclusion
+			return
+		}
+	}
+	s.runs[repo] = append([]client.Run{run(repo, id, status, conclusion)}, runs...)
+}
+
+func (s *Server) serveRuns(w http.ResponseWriter, r *http.Request, repo string) {
+	s.mu.Lock()
+	runs := slices.Clone(s.runs[repo])
+	s.mu.Unlock()
+	if runs == nil {
+		runs = []client.Run{}
+	}
+	data, _ := json.Marshal(runs) //nolint:errcheck // plain values
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("ETag", etag)
+	writeJSON(w, http.StatusOK, map[string]any{"total_count": len(runs), "workflow_runs": runs})
+}
+
+func (s *Server) serveRerun(w http.ResponseWriter, r *http.Request, repo string, parts []string) {
+	id, _ := strconv.ParseInt(parts[0], 10, 64) //nolint:errcheck // a bad id finds no run
+	s.mu.Lock()
+	found := slices.ContainsFunc(s.runs[repo], func(x client.Run) bool { return x.ID == id })
+	s.mu.Unlock()
+	switch {
+	case !found:
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
+	case r.Method != http.MethodPost || len(parts) != 2 || (parts[1] != "rerun" && parts[1] != "rerun-failed-jobs"):
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
+	case repo == NoAdminRepo:
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "Must have admin rights to Repository."})
+	default:
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
+// AddNotification adds a thread, or updates it, and moves Last-Modified.
+func (s *Server) AddNotification(id, reason, repo string, number int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addNotification(id, reason, repo, number)
+}
+
+func (s *Server) addNotification(id, reason, repo string, number int) {
+	s.stamp++
+	n := client.Notification{ID: id, Reason: reason, Unread: true, UpdatedAt: time.Unix(1791460800+int64(s.stamp), 0).UTC().Format(time.RFC3339)}
+	n.Repository.FullName = repo
+	n.Subject.Type = "PullRequest"
+	n.Subject.Title = "Add a cache"
+	n.Subject.URL = fmt.Sprintf("%s/repos/%s/pulls/%d", s.srv.URL, repo, number)
+	if reason == "mention" {
+		n.Subject.LatestCommentURL = fmt.Sprintf("%s/repos/%s/issues/comments/41", s.srv.URL, repo)
+	}
+	s.notifs = slices.DeleteFunc(s.notifs, func(x client.Notification) bool { return x.ID == id })
+	s.notifs = append([]client.Notification{n}, s.notifs...)
+}
+
+func (s *Server) serveNotifications(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nreads++
+	last := time.Unix(1791460800+int64(s.stamp), 0).UTC().Format(http.TimeFormat)
+	if s.every > 0 {
+		w.Header().Set("X-Poll-Interval", strconv.Itoa(s.every))
+	}
+	w.Header().Set("Last-Modified", last)
+	if r.Header.Get("If-Modified-Since") == last {
+		w.WriteHeader(http.StatusNotModified)
+	} else {
+		writeJSON(w, http.StatusOK, append([]client.Notification{}, s.notifs...))
+	}
+	if s.nreads == 1 {
+		s.addNotification("9001", "review_requested", AdminRepo, 8)
+	}
+}
+
+// The issues and pull requests of octo/app: 7 is an issue, 8 is a pull
+// request of hubot, 9 is a pull request of octo that cannot merge.
+func (s *Server) issue(repo string, number int) (map[string]any, bool) {
+	if repo != AdminRepo || number < 7 || number > 9 {
+		return nil, false
+	}
+	author, title := "hubot", "Add a cache"
+	if number == 7 {
+		title = "Crash on start"
+	}
+	if number == 9 {
+		author, title = "octo", "Rename the flag"
+	}
+	m := map[string]any{
+		"number": number, "title": title, "state": "open", "body": "Body of " + title, "comments": 2,
+		"html_url":       fmt.Sprintf("https://github.com/%s/%s/%d", repo, map[bool]string{true: "issues", false: "pull"}[number == 7], number),
+		"repository_url": s.srv.URL + "/repos/" + repo, "updated_at": "2026-10-08T12:00:00Z",
+		"user": map[string]any{"login": author, "id": 2, "type": "User"}, "labels": []map[string]string{{"name": "bug"}},
+		"assignees": []map[string]any{{"login": "octo", "id": 1}},
+	}
+	if number != 7 {
+		m["pull_request"] = map[string]string{"url": fmt.Sprintf("%s/repos/%s/pulls/%d", s.srv.URL, repo, number)}
+	}
+	return m, true
+}
+
+func (s *Server) serveSearch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if strings.Contains(q, "is:invalid") {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Validation Failed"})
+		return
+	}
+	var items []map[string]any
+	for n := 7; n <= 9; n++ {
+		it, _ := s.issue(AdminRepo, n)
+		switch {
+		case strings.Contains(q, "review-requested:@me") && n != 8,
+			strings.Contains(q, "author:@me") && n != 9,
+			strings.Contains(q, "is:pr") && n == 7,
+			strings.Contains(q, "assignee:@me") && n != 7:
+			continue
+		}
+		items = append(items, it)
+	}
+	if per, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && per < len(items) {
+		items = items[:per]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"total_count": len(items), "items": append([]map[string]any{}, items...)})
+}
+
+// serveObjects answers the issues, pulls, commits, and git calls of the
+// operations and of the activity reader.
+func (s *Server) serveObjects(w http.ResponseWriter, r *http.Request, repo string, p []string) {
+	notFound := func() { writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"}) }
+	num := 0
+	if len(p) > 1 {
+		num, _ = strconv.Atoi(p[1]) //nolint:errcheck // a bad number finds nothing
+	}
+	s.mu.Lock()
+	s.nextObj++
+	obj := s.nextObj
+	s.mu.Unlock()
+	switch {
+	case p[0] == "issues" && len(p) == 1 && r.Method == http.MethodPost:
+		var in struct {
+			Title string `json:"title"`
+		}
+		if json.NewDecoder(r.Body).Decode(&in) != nil || in.Title == "" {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Validation Failed"})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"id": obj, "number": 10, "html_url": "https://github.com/" + repo + "/issues/10"})
+	case p[0] == "issues" && len(p) == 3 && p[1] == "comments":
+		writeJSON(w, http.StatusOK, map[string]any{"id": 41, "body": "@octo please look", "html_url": "https://github.com/" + repo + "/pull/8#issuecomment-41", "user": map[string]any{"login": "monalisa", "id": 3, "type": "User"}})
+	case p[0] == "issues" && len(p) == 2:
+		it, ok := s.issue(repo, num)
+		if !ok {
+			notFound()
+			return
+		}
+		writeJSON(w, http.StatusOK, it)
+	case p[0] == "issues" && len(p) == 3 && p[2] == "comments":
+		if _, ok := s.issue(repo, num); !ok {
+			notFound()
+			return
+		}
+		if r.Method == http.MethodPost {
+			writeJSON(w, http.StatusCreated, map[string]any{"id": obj, "html_url": fmt.Sprintf("https://github.com/%s/issues/%d#issuecomment-%d", repo, num, obj)})
+			return
+		}
+		writeJSON(w, http.StatusOK, []map[string]any{
+			{"user": map[string]any{"login": "hubot"}, "created_at": "2026-10-08T12:00:00Z", "body": "First"},
+			{"user": map[string]any{"login": "octo"}, "created_at": "2026-10-08T12:05:00Z", "body": strings.Repeat("x", 9000)},
+		})
+	case p[0] == "pulls" && len(p) == 2:
+		it, ok := s.issue(repo, num)
+		if !ok || num == 7 {
+			notFound()
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"number": num, "title": it["title"], "html_url": it["html_url"], "user": it["user"], "draft": false, "merged": false, "mergeable_state": "clean",
+			"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": repo, "default_branch": "main"}},
+			"head": map[string]any{"ref": fmt.Sprintf("feature-%d", num), "sha": fmt.Sprintf("sha%d", num), "repo": map[string]any{"full_name": repo}},
+		})
+	case p[0] == "pulls" && len(p) == 3 && p[2] == "reviews":
+		if _, ok := s.issue(repo, num); !ok || num == 7 {
+			notFound()
+			return
+		}
+		if r.Method == http.MethodPost {
+			var in struct {
+				Event string `json:"event"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&in) //nolint:errcheck // an empty event fails below
+			if num == 9 && in.Event == "APPROVE" {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Can not approve your own pull request"})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"id": obj, "html_url": fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", repo, num, obj)})
+			return
+		}
+		writeJSON(w, http.StatusOK, []map[string]any{
+			{"user": map[string]any{"login": "monalisa"}, "state": "CHANGES_REQUESTED"},
+			{"user": map[string]any{"login": "hubot"}, "state": "COMMENTED"},
+			{"user": map[string]any{"login": "monalisa"}, "state": "APPROVED"},
+		})
+	case p[0] == "pulls" && len(p) == 3 && p[2] == "merge" && r.Method == http.MethodPut:
+		if num == 9 {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "Pull Request is not mergeable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"sha": "merged1", "merged": true, "message": "Pull Request successfully merged"})
+	case p[0] == "commits" && len(p) == 3 && p[2] == "check-runs":
+		writeJSON(w, http.StatusOK, map[string]any{"check_runs": []map[string]string{
+			{"name": "build", "status": "completed", "conclusion": "success"},
+			{"name": "lint", "status": "completed", "conclusion": "failure"},
+			{"name": "e2e", "status": "in_progress"},
+		}})
+	case p[0] == "git" && len(p) >= 4 && p[1] == "refs" && p[2] == "heads" && r.Method == http.MethodDelete:
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		notFound()
+	}
 }

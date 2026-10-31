@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a branch or a tag that someone deleted.",
+  "required": [
+    "repository",
+    "ref",
+    "ref_type"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "author": {
+      "type": "string",
+      "description": "The login of the person who deleted it."
+    },
+    "ref": {
+      "type": "string",
+      "description": "The name of the branch or the tag."
+    },
+    "ref_type": {
+      "type": "string",
+      "description": "branch or tag."
+    }
+  }
+}

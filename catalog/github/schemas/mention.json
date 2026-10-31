@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a mention of you or your team.",
+  "required": [
+    "repository",
+    "reason",
+    "title",
+    "url"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "description": "The repository as owner/name."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why you got it: mention or team_mention."
+    },
+    "subject_type": {
+      "type": "string",
+      "description": "The kind of thread: Issue, PullRequest, CheckSuite, Release, Discussion, or another kind."
+    },
+    "number": {
+      "type": "integer",
+      "description": "The number of the issue or the pull request, when the thread has one."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title of the thread."
+    },
+    "url": {
+      "type": "string",
+      "description": "The page of the thread or of its newest comment."
+    },
+    "thread_id": {
+      "type": "string",
+      "description": "The id of the GitHub notification thread."
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "The time of the activity, in RFC 3339."
+    }
+  }
+}

@@ -1,6 +1,7 @@
 // Package serve is the trebi-connector/1 adapter of github-cli. A watched
-// repository gets a webhook when the connection has a hosted hook, and a
-// poll of its events otherwise.
+// repository gets a webhook when the connection has a hosted hook and the
+// account is an admin of it, and a poll of its events otherwise. The
+// notifications of the account give the "your activity" events.
 package serve
 
 import (
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,11 +29,18 @@ import (
 // Name is the adapter name in initialize.
 const Name = "github-cli"
 
-// Scope is the OAuth scope of the device login.
-const Scope = "repo admin:repo_hook"
+// Scope is the OAuth scope of the device login. read:org lets gh read the
+// teams and the repositories of an org.
+const Scope = "repo read:org admin:repo_hook"
 
 // FieldRepository is the one field of the watch form.
 const FieldRepository = "repository"
+
+// Login methods. The manifest setup.login has the same ids and types.
+const (
+	LoginGH     = "gh"
+	LoginDevice = "device"
+)
 
 // hooksFile keeps the hooks that the adapter made, so that it can delete
 // them when the subscription goes.
@@ -40,31 +49,54 @@ const hooksFile = "github-hooks.json"
 // minPoll is the shortest poll interval that GitHub allows.
 const minPoll = 60 * time.Second
 
-// Events are the event types. Each is a GitHub webhook event name.
-var Events = []sdk.EventDecl{
-	{Type: "push"}, {Type: "pull_request"}, {Type: "pull_request_review"}, {Type: "issues"},
-	{Type: "issue_comment"}, {Type: "release"}, {Type: "workflow_run"},
+// maxRuns bounds the seen workflow runs of one repository.
+const maxRuns = 200
+
+// Repository events. Each is a GitHub webhook event name.
+var repoEvents = []string{ //nolint:gochecknoglobals // fixed list, never changed
+	"push", "pull_request", "pull_request_review", "pull_request_review_comment",
+	"issues", "issue_comment", "release", "workflow_run", "check_suite", "status",
+	"create", "delete", "deployment_status", "discussion", "discussion_comment",
+}
+
+// Events are the event types: the repository events, then the activity
+// events of the notifications.
+var Events = func() []sdk.EventDecl { //nolint:gochecknoglobals // fixed list, never changed
+	var out []sdk.EventDecl
+	for _, t := range append(slices.Clone(repoEvents), activityTypes...) {
+		out = append(out, sdk.EventDecl{Type: t})
+	}
+	return out
+}()
+
+// TokenSource reads the gh login of the user.
+type TokenSource interface {
+	Token(ctx context.Context) (string, error)
 }
 
 // Adapter serves one GitHub account.
 type Adapter struct {
 	version  string
 	clientID string
-	login    *config.LoginStore // the device login; nil outside Trebi
-	input    bool               // the token is a connection input
+	login    *config.LoginStore // nil outside Trebi
+	ghLogin  TokenSource        // the gh login on this machine; nil outside Trebi
 	stateDir string
 	every    time.Duration
 	log      *slog.Logger
 	wake     chan struct{}
+	activity *ActivityReader
 
-	mu    sync.Mutex
-	api   client.Client
-	emit  sdk.Emitter
-	hook  *sdk.Webhook
-	self  *client.User
-	subs  []sdk.Subscription
-	state hookState
-	polls map[string]*pollCursor
+	mu       sync.Mutex
+	api      client.Client
+	source   string // a config.Source* value
+	emit     sdk.Emitter
+	hook     *sdk.Webhook
+	id       *client.Identity
+	subs     []sdk.Subscription
+	state    hookState
+	pollRepo map[string]bool // the watched repositories in poll mode
+	polls    map[string]*pollCursor
+	flows    map[string]chan map[string]sdk.Value
 }
 
 var (
@@ -89,11 +121,17 @@ type hookRec struct {
 	Events []string `json:"events"`
 }
 
-// pollCursor is the poll position of one repository.
+// pollCursor is the poll position of one repository: the events API, and
+// the Actions runs with the last status of each.
 type pollCursor struct {
 	etag   string
 	lastID string
 	primed bool
+
+	runETag    string
+	runs       map[int64]string
+	runOrder   []int64
+	runsPrimed bool
 }
 
 // Option changes the adapter.
@@ -102,30 +140,33 @@ type Option func(*Adapter)
 // WithPollEvery replaces the poll interval (tests).
 func WithPollEvery(d time.Duration) Option { return func(a *Adapter) { a.every = d } }
 
-// WithLogin turns on the device login. clientID is the OAuth app; an empty
-// one makes BeginAuth explain that a token is necessary.
-func WithLogin(store *config.LoginStore, clientID string) Option {
-	return func(a *Adapter) { a.login, a.clientID = store, clientID }
+// WithLogin turns on the logins. clientID is the OAuth app of the device
+// login; an empty one makes it unavailable. gh reads the gh login on this
+// machine; nil makes it unavailable.
+func WithLogin(store *config.LoginStore, clientID string, gh TokenSource) Option {
+	return func(a *Adapter) { a.login, a.clientID, a.ghLogin = store, clientID, gh }
 }
 
-// WithInputToken marks the token as a connection input, which logout
-// cannot remove.
-func WithInputToken() Option { return func(a *Adapter) { a.input = true } }
+// WithSource tells where the token came from: a config.Source* value.
+func WithSource(source string) Option { return func(a *Adapter) { a.source = source } }
 
-// New builds the adapter. stateDir keeps the hooks; empty keeps them in
-// memory.
+// New builds the adapter. stateDir keeps the hooks and the activity
+// position; empty keeps them in memory.
 func New(api *client.Client, version, stateDir string, opts ...Option) (*Adapter, error) {
 	a := &Adapter{
 		version: version, stateDir: stateDir, every: minPoll,
-		log:   slog.Default().With("source", "github"),
-		wake:  make(chan struct{}, 1),
-		api:   *api,
-		state: hookState{Hooks: map[string]hookRec{}},
-		polls: map[string]*pollCursor{},
+		log:      slog.Default().With("source", "github"),
+		wake:     make(chan struct{}, 1),
+		api:      *api,
+		state:    hookState{Hooks: map[string]hookRec{}},
+		pollRepo: map[string]bool{},
+		polls:    map[string]*pollCursor{},
+		flows:    map[string]chan map[string]sdk.Value{},
 	}
 	for _, o := range opts {
 		o(a)
 	}
+	a.activity = NewActivityReader(a, stateDir)
 	if stateDir == "" {
 		return a, nil
 	}
@@ -153,6 +194,35 @@ func (a *Adapter) gh() *client.Client {
 	return &c
 }
 
+func (a *Adapter) identity() *client.Identity {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.id
+}
+
+// refresh reads the gh login again after a 401 of the token failed, or at
+// a start with no token. It reports whether there is now a token that is
+// not failed. A gh that logged out clears the token.
+func (a *Adapter) refresh(ctx context.Context, failed string) bool {
+	a.mu.Lock()
+	src, gh, old := a.source, a.ghLogin, a.api.Token
+	a.mu.Unlock()
+	if src != config.SourceGH || gh == nil {
+		return false
+	}
+	token, err := gh.Token(ctx)
+	if err != nil {
+		token = ""
+	}
+	a.mu.Lock()
+	a.api.Token = token
+	if token != old {
+		a.id = nil
+	}
+	a.mu.Unlock()
+	return token != "" && token != failed
+}
+
 // Initialize keeps the hook. A token that GitHub rejects is not an error:
 // the status reports it.
 func (a *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.InitializeResult, error) {
@@ -169,13 +239,25 @@ func (a *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.
 	return res, nil
 }
 
-// AuthStatus asks GitHub who the token is.
+// AuthStatus asks GitHub who the token is, and keeps its scopes.
 func (a *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
+	if a.gh().Token == "" {
+		a.refresh(ctx, "")
+	}
 	gh := a.gh()
 	if gh.Token == "" {
+		a.mu.Lock()
+		src := a.source
+		a.mu.Unlock()
+		if src == config.SourceGH {
+			return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonLoggedOut}, nil
+		}
 		return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonNone}, nil
 	}
-	u, err := gh.Me(ctx)
+	id, err := gh.Whoami(ctx)
+	if client.StatusOf(err) == http.StatusUnauthorized && a.refresh(ctx, gh.Token) {
+		id, err = a.gh().Whoami(ctx)
+	}
 	if client.StatusOf(err) == http.StatusUnauthorized {
 		return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonRevoked}, nil
 	}
@@ -183,31 +265,97 @@ func (a *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 		return sdk.AuthState{}, err
 	}
 	a.mu.Lock()
-	a.self = &u
+	a.id = &id
 	a.mu.Unlock()
-	return sdk.AuthState{State: sdk.StateConnected, Account: &sdk.Account{ID: u.Login, Name: cmp.Or(u.Name, u.Login)}}, nil
+	return sdk.AuthState{State: sdk.StateConnected, Account: &sdk.Account{ID: id.Login, Name: cmp.Or(id.Name, id.Login)}}, nil
 }
 
-// LoginDevice is the adapter login method: the GitHub device flow. The
-// manifest setup.login has the same id and type.
-const LoginDevice = "device"
-
-// LoginMethods has the device flow. It is not available outside Trebi or
-// in a build with no OAuth app.
-func (a *Adapter) LoginMethods(context.Context) ([]sdk.LoginMethod, error) {
-	m := sdk.LoginMethod{ID: LoginDevice, Type: sdk.LoginBrowser, Label: "Sign in with GitHub", Available: true}
-	switch {
-	case a.login == nil:
-		m.Available, m.Reason = false, "Log in works only in Trebi. Use --token or GITHUB_TOKEN."
-	case a.clientID == "":
-		m.Available, m.Reason = false, "This build has no GitHub login. Paste a personal access token."
+// LoginMethods has the gh login on this machine and the device flow.
+// Outside Trebi neither is available.
+func (a *Adapter) LoginMethods(ctx context.Context) ([]sdk.LoginMethod, error) {
+	gh := sdk.LoginMethod{ID: LoginGH, Type: sdk.LoginExisting, Label: "Use the GitHub login on this machine"}
+	dev := sdk.LoginMethod{ID: LoginDevice, Type: sdk.LoginBrowser, Label: "Sign in with GitHub", Available: true}
+	if a.login == nil {
+		const why = "Log in works only in Trebi. Use --token or GITHUB_TOKEN."
+		gh.Reason, dev.Available, dev.Reason = why, false, why
+		return []sdk.LoginMethod{gh, dev}, nil
 	}
-	return []sdk.LoginMethod{m}, nil
+	gh.Reason = config.ErrGHLoggedOut.Error() + "."
+	if a.ghLogin != nil {
+		if _, err := a.ghLogin.Token(ctx); err == nil {
+			gh.Available, gh.Reason = true, ""
+		}
+	}
+	if a.clientID == "" {
+		dev.Available, dev.Reason = false, "This build has no GitHub login. Paste a token."
+	}
+	return []sdk.LoginMethod{gh, dev}, nil
 }
 
-// BeginAuth runs the device flow and saves the token. The SDK starts it
+// BeginAuth runs one login method and saves the login. The SDK starts it
 // only when LoginMethods says it is available.
-func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) error {
+func (a *Adapter) BeginAuth(ctx context.Context, method string, steps sdk.StepSink) error {
+	switch method {
+	case LoginGH:
+		return a.beginGH(ctx, steps)
+	case LoginDevice:
+		return a.beginDevice(ctx, steps)
+	}
+	return sdk.Invalid("unknown login method " + strconv.Quote(method))
+}
+
+// beginGH shows the account of the gh login and waits for the person to
+// pick it. auth.json keeps only the source: the token stays in gh.
+func (a *Adapter) beginGH(ctx context.Context, steps sdk.StepSink) error {
+	if a.ghLogin == nil {
+		return sdk.Invalid(config.ErrGHLoggedOut.Error())
+	}
+	token, err := a.ghLogin.Token(ctx)
+	if err != nil {
+		return sdk.Invalid(config.ErrGHLoggedOut.Error())
+	}
+	c := a.gh()
+	c.Token = token
+	id, err := c.Whoami(ctx)
+	if err != nil {
+		return fmt.Errorf("read the GitHub account: %w", err)
+	}
+	in := make(chan map[string]sdk.Value, 1)
+	a.mu.Lock()
+	a.flows[steps.FlowID()] = in
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		delete(a.flows, steps.FlowID())
+		a.mu.Unlock()
+	}()
+	desc := "github.com"
+	if id.Name != "" {
+		desc = id.Name + ", github.com"
+	}
+	if err := steps.Step(sdk.Step{Kind: sdk.StepInput, Message: "Trebi uses the GitHub login on this machine. It does not copy the token.", Fields: []sdk.StepField{{
+		Name: "account", Label: "Account", Choices: []sdk.Choice{{Value: id.Login, Label: id.Login, Description: desc}}, Default: sdk.Value{id.Login},
+	}}}); err != nil {
+		return err
+	}
+	var fields map[string]sdk.Value
+	select {
+	case fields = <-in:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if !slices.Contains(fields["account"], id.Login) {
+		return errors.New("pick the account to log in")
+	}
+	if err := a.login.Save(config.LoginRecord{Source: config.SourceGH}); err != nil {
+		return err
+	}
+	a.loggedIn(token, config.SourceGH, &id)
+	return nil
+}
+
+// beginDevice runs the device flow and saves the token.
+func (a *Adapter) beginDevice(ctx context.Context, steps sdk.StepSink) error {
 	gh := a.gh()
 	dc, err := gh.StartDevice(ctx, a.clientID, Scope)
 	if err != nil {
@@ -231,38 +379,59 @@ func (a *Adapter) BeginAuth(ctx context.Context, _ string, steps sdk.StepSink) e
 			return errors.New("the code expired: log in again")
 		}
 		token, err := gh.PollDevice(ctx, a.clientID, dc.DeviceCode)
+		if errors.Is(err, client.ErrSlowDown) {
+			wait += 5 * time.Second
+			continue
+		}
 		if errors.Is(err, client.ErrPending) {
 			continue
 		}
 		if err != nil {
 			return fmt.Errorf("GitHub login: %w", err)
 		}
-		if err := a.login.Save(token); err != nil {
+		if err := a.login.Save(config.LoginRecord{Source: config.SourceDevice, Token: token}); err != nil {
 			return err
 		}
-		a.mu.Lock()
-		a.api.Token, a.self, a.input = token, nil, false
-		emit := a.emit
-		a.mu.Unlock()
-		if emit != nil {
-			_ = emit.SubscriptionsChanged() //nolint:errcheck // the daemon also syncs on the next status
-		}
-		a.poke()
+		a.loggedIn(token, config.SourceDevice, nil)
 		return nil
 	}
 }
 
-// SubmitAuth has no use: the device flow has no input step.
-func (a *Adapter) SubmitAuth(context.Context, string, map[string]sdk.Value) error {
-	return sdk.Invalid("the GitHub login has no input step")
+// loggedIn uses the new token, and starts the activity read again.
+func (a *Adapter) loggedIn(token, source string, id *client.Identity) {
+	a.mu.Lock()
+	a.api.Token, a.source, a.id = token, source, id
+	emit := a.emit
+	a.mu.Unlock()
+	a.activity.Reset()
+	if emit != nil {
+		_ = emit.SubscriptionsChanged() //nolint:errcheck // the daemon also syncs on the next status
+	}
+	a.poke()
 }
 
-// Logout removes the saved token.
+// SubmitAuth answers the account pick of the gh login.
+func (a *Adapter) SubmitAuth(_ context.Context, flowID string, fields map[string]sdk.Value) error {
+	a.mu.Lock()
+	in := a.flows[flowID]
+	a.mu.Unlock()
+	if in == nil {
+		return sdk.Invalid("this login step has no input")
+	}
+	select {
+	case in <- fields:
+		return nil
+	default:
+		return sdk.Invalid("the login has the answer already")
+	}
+}
+
+// Logout removes the saved login. It never logs out the gh of the user.
 func (a *Adapter) Logout(context.Context) error {
 	a.mu.Lock()
-	input := a.input
+	src := a.source
 	a.mu.Unlock()
-	if input {
+	if src == config.SourceInput {
 		return sdk.Permanent("The token comes from the connection settings. Remove it there.")
 	}
 	if a.login != nil {
@@ -271,13 +440,12 @@ func (a *Adapter) Logout(context.Context) error {
 		}
 	}
 	a.mu.Lock()
-	a.api.Token, a.self = "", nil
+	a.api.Token, a.id, a.source = "", nil, ""
 	a.mu.Unlock()
 	return nil
 }
 
-// Options lists the repositories of the account. With a hook, only the
-// repositories where the account is an admin can get a webhook.
+// Options lists the repositories that the account can read.
 func (a *Adapter) Options(ctx context.Context, q sdk.OptionQuery) (sdk.OptionPage, error) {
 	if q.Field != FieldRepository {
 		return sdk.OptionPage{}, sdk.Invalid("unknown field " + q.Field)
@@ -286,9 +454,6 @@ func (a *Adapter) Options(ctx context.Context, q sdk.OptionQuery) (sdk.OptionPag
 	if gh.Token == "" {
 		return sdk.OptionPage{}, sdk.AuthRequired("Log in to GitHub first.")
 	}
-	a.mu.Lock()
-	admin := a.hook != nil
-	a.mu.Unlock()
 	page := 1
 	if q.Cursor != "" {
 		if _, err := fmt.Sscanf(q.Cursor, "%d", &page); err != nil || page < 1 {
@@ -303,28 +468,39 @@ func (a *Adapter) Options(ctx context.Context, q sdk.OptionQuery) (sdk.OptionPag
 			return sdk.OptionPage{}, a.apiErr(err)
 		}
 		for _, r := range repos {
-			if (admin && !r.Permissions.Admin) || !strings.Contains(strings.ToLower(r.FullName), needle) {
+			if !strings.Contains(strings.ToLower(r.FullName), needle) {
 				continue
 			}
-			o := sdk.FieldOption{Value: r.FullName, Label: r.FullName, Description: r.Description}
-			if r.Private && o.Description == "" {
-				o.Description = "Private"
+			desc := "Read only"
+			if r.Permissions.Admin {
+				desc = "Admin"
 			}
-			out.Options = append(out.Options, o)
+			if r.Private {
+				desc += ", private"
+			}
+			out.Options = append(out.Options, sdk.FieldOption{Value: r.FullName, Label: r.FullName, Description: desc})
 		}
 		if !more {
 			return out, nil
 		}
 		page++
 		if len(out.Options) >= q.Limit {
-			out.Next = fmt.Sprint(page)
+			out.Next = strconv.Itoa(page)
 			return out, nil
 		}
 	}
 }
 
+// repoMode is the plan for one watched repository: a webhook (api), or a
+// poll with the reason in msg. fail is an error message.
+type repoMode struct {
+	api  bool
+	msg  string
+	fail string
+}
+
 // Sync makes GitHub match the list: one hook for each watched repository
-// with a hook, or a poll without one.
+// that can have one, and a poll for the others.
 func (a *Adapter) Sync(ctx context.Context, p sdk.SyncParams) (sdk.SyncResult, error) {
 	a.mu.Lock()
 	a.subs = slices.Clone(p.Subscriptions)
@@ -336,48 +512,89 @@ func (a *Adapter) Sync(ctx context.Context, p sdk.SyncParams) (sdk.SyncResult, e
 			want[repo] = union(want[repo], typesOf(s))
 		}
 	}
-	failed := map[string]string{}
-	authLost := false
-	if a.gh().Token == "" {
-		authLost = true
-	} else {
-		failed, authLost = a.reconcile(ctx, hook, want)
+	modes := map[string]repoMode{}
+	authLost := a.gh().Token == ""
+	if !authLost {
+		modes, authLost = a.plan(ctx, hook, want)
+	}
+	if !authLost {
+		authLost = a.reconcile(ctx, hook, want, modes)
 	}
 	if authLost {
 		if e := sdk.EmitterFrom(ctx); e != nil {
 			_ = e.Status(sdk.Status{State: sdk.StateAuthRequired, Reason: sdk.ReasonRevoked}) //nolint:errcheck // the next sync reports it again
 		}
 	}
+	polled := map[string]bool{}
 	res := sdk.SyncResult{Subscriptions: make([]sdk.SubscriptionState, 0, len(p.Subscriptions))}
 	for _, s := range p.Subscriptions {
 		repo := s.Value(FieldRepository)
+		m := modes[repo]
 		st := sdk.SubscriptionState{ID: s.ID, Title: repo, Mode: sdk.ModeAPI, State: sdk.SubscriptionActive}
-		if hook == nil {
-			st.Mode, st.State = sdk.ModePoll, sdk.SubscriptionPolling
+		if !m.api {
+			st.Mode, st.State, st.Message = sdk.ModePoll, sdk.SubscriptionPolling, m.msg
 		}
 		switch {
 		case repo == "":
 			st.State, st.Message = sdk.SubscriptionError, "Choose a repository."
 		case authLost:
 			st.State, st.Message = sdk.SubscriptionError, "Log in to GitHub again."
-		case failed[repo] != "":
-			st.State, st.Message = sdk.SubscriptionError, failed[repo]
+		case m.fail != "":
+			st.State, st.Message = sdk.SubscriptionError, m.fail
+		case !m.api:
+			polled[repo] = true
 		}
 		if repo != "" {
 			st.Room = &sdk.Room{ID: repo, Name: repo, Kind: sdk.RoomChannel}
 		}
 		res.Subscriptions = append(res.Subscriptions, st)
 	}
+	a.mu.Lock()
+	a.pollRepo = polled
+	a.mu.Unlock()
 	a.poke()
 	return res, nil
 }
 
-// reconcile deletes the hooks that no subscription uses, then makes one
-// hook for each repository. It returns a message for each repository that
-// failed, and whether GitHub rejected the token.
-func (a *Adapter) reconcile(ctx context.Context, hook *sdk.Webhook, want map[string][]string) (map[string]string, bool) {
+// plan picks the mode of each repository. A webhook needs the hosted hook,
+// a login that can manage hooks, and admin access to the repository. It
+// reports whether GitHub rejected the token.
+func (a *Adapter) plan(ctx context.Context, hook *sdk.Webhook, want map[string][]string) (map[string]repoMode, bool) {
+	modes := map[string]repoMode{}
+	id := a.identity()
+	noScope := id != nil && id.Scoped && !id.Has("repo", "admin:repo_hook", "write:repo_hook")
 	gh := a.gh()
-	failed := map[string]string{}
+	for _, repo := range sortedKeys(want) {
+		r, err := gh.Repo(ctx, repo)
+		switch client.StatusOf(err) {
+		case 0:
+		case http.StatusUnauthorized:
+			return modes, true
+		case http.StatusNotFound, http.StatusForbidden:
+			modes[repo] = repoMode{fail: "Trebi cannot find " + repo + ", or this login cannot read it."}
+			continue
+		}
+		switch {
+		case err != nil:
+			modes[repo] = repoMode{fail: err.Error()}
+		case hook == nil:
+			modes[repo] = repoMode{}
+		case noScope:
+			modes[repo] = repoMode{msg: "This login cannot add webhooks, so Trebi checks " + repo + " every minute."}
+		case !r.Permissions.Admin:
+			modes[repo] = repoMode{msg: "You are not an admin of " + repo + ", so Trebi checks it every minute."}
+		default:
+			modes[repo] = repoMode{api: true}
+		}
+	}
+	return modes, false
+}
+
+// reconcile deletes the hooks that no api repository uses, then makes one
+// hook for each api repository. A repository whose hook GitHub refuses
+// moves to poll. It reports whether GitHub rejected the token.
+func (a *Adapter) reconcile(ctx context.Context, hook *sdk.Webhook, want map[string][]string, modes map[string]repoMode) bool {
+	gh := a.gh()
 	a.mu.Lock()
 	state := hookState{Hooks: map[string]hookRec{}, Old: slices.Clone(a.state.Old)}
 	for k, v := range a.state.Hooks {
@@ -385,13 +602,13 @@ func (a *Adapter) reconcile(ctx context.Context, hook *sdk.Webhook, want map[str
 	}
 	a.mu.Unlock()
 	for repo, rec := range state.Hooks {
-		if _, ok := want[repo]; ok && hook != nil && rec.URL == hook.URL {
+		if modes[repo].api && hook != nil && rec.URL == hook.URL {
 			continue
 		}
 		err := gh.DeleteHook(ctx, repo, rec.ID)
 		switch client.StatusOf(err) {
 		case http.StatusUnauthorized:
-			return failed, true
+			return true
 		case 0, http.StatusForbidden:
 			if err != nil {
 				a.log.Warn("delete hook", "repo", repo, "err", err)
@@ -399,30 +616,28 @@ func (a *Adapter) reconcile(ctx context.Context, hook *sdk.Webhook, want map[str
 		}
 		delete(state.Hooks, repo)
 	}
-	if hook != nil {
-		for _, repo := range sortedKeys(want) {
-			rec, err := a.ensureHook(ctx, gh, hook, repo, want[repo])
-			switch client.StatusOf(err) {
-			case 0:
-			case http.StatusUnauthorized:
-				return failed, true
-			case http.StatusForbidden, http.StatusNotFound:
-				failed[repo] = "Trebi needs admin access to " + repo + "."
-				continue
-			default:
-				failed[repo] = err.Error()
-				continue
-			}
-			if err != nil {
-				failed[repo] = err.Error()
-				continue
-			}
-			if old := state.Hooks[repo].Secret; old != "" && old != rec.Secret && !slices.Contains(state.Old, old) {
-				state.Old = append(state.Old, old)
-				state.Old = state.Old[max(0, len(state.Old)-3):]
-			}
-			state.Hooks[repo] = rec
+	for _, repo := range sortedKeys(want) {
+		if !modes[repo].api {
+			continue
 		}
+		rec, err := a.ensureHook(ctx, gh, hook, repo, want[repo])
+		switch client.StatusOf(err) {
+		case 0:
+		case http.StatusUnauthorized:
+			return true
+		case http.StatusForbidden, http.StatusNotFound:
+			modes[repo] = repoMode{msg: "This login cannot add webhooks to " + repo + ", so Trebi checks it every minute."}
+			continue
+		}
+		if err != nil {
+			modes[repo] = repoMode{fail: err.Error()}
+			continue
+		}
+		if old := state.Hooks[repo].Secret; old != "" && old != rec.Secret && !slices.Contains(state.Old, old) {
+			state.Old = append(state.Old, old)
+			state.Old = state.Old[max(0, len(state.Old)-3):]
+		}
+		state.Hooks[repo] = rec
 	}
 	a.mu.Lock()
 	a.state = state
@@ -430,10 +645,11 @@ func (a *Adapter) reconcile(ctx context.Context, hook *sdk.Webhook, want map[str
 	if err := a.saveState(state); err != nil {
 		a.log.Warn("save hooks", "err", err)
 	}
-	return failed, false
+	return false
 }
 
-// ensureHook finds the hook of the URL, then creates or updates it.
+// ensureHook finds the hook of the URL, then creates or updates it. A hook
+// of an older version with other events gets the new list.
 func (a *Adapter) ensureHook(ctx context.Context, gh *client.Client, hook *sdk.Webhook, repo string, events []string) (hookRec, error) {
 	hooks, err := gh.Hooks(ctx, repo)
 	if err != nil {
@@ -470,8 +686,7 @@ func (a *Adapter) saveState(st hookState) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(a.stateDir, hooksFile)
-	return sdk.WriteFileAtomic(path, data, 0o600)
+	return sdk.WriteFileAtomic(filepath.Join(a.stateDir, hooksFile), data, 0o600)
 }
 
 // SubmitSubscription has no use: no subscription asks a person.
@@ -491,7 +706,7 @@ func (a *Adapter) ReceiveWebhook(ctx context.Context, req sdk.WebhookRequest) er
 		secrets = append(secrets, rec.Secret)
 	}
 	secrets = append(secrets, a.state.Old...)
-	subs, self := a.subs, a.self
+	subs, id := a.subs, a.id
 	a.mu.Unlock()
 	ok := false
 	for _, s := range secrets {
@@ -504,7 +719,7 @@ func (a *Adapter) ReceiveWebhook(ctx context.Context, req sdk.WebhookRequest) er
 		return sdk.Invalid("the signature does not match")
 	}
 	typ := req.Header("x-github-event")
-	if typ == "ping" || !slices.ContainsFunc(Events, func(d sdk.EventDecl) bool { return d.Type == typ }) {
+	if typ == "ping" || !slices.Contains(repoEvents, typ) {
 		return nil
 	}
 	var p payload
@@ -518,12 +733,11 @@ func (a *Adapter) ReceiveWebhook(ctx context.Context, req sdk.WebhookRequest) er
 	if subs != nil && !watched(subs, repo, typ) {
 		return nil
 	}
-	id := cmp.Or(req.Header("x-github-delivery"), req.ID)
 	var sender client.User
 	if p.Sender != nil {
 		sender = *p.Sender
 	}
-	ev := toEvent(id, typ, cmp.Or(req.ReceivedAt, time.Now().UTC().Format(time.RFC3339)), repo, sender, self, p, json.RawMessage(req.Body))
+	ev := toEvent(cmp.Or(req.Header("x-github-delivery"), req.ID), typ, cmp.Or(req.ReceivedAt, time.Now().UTC().Format(time.RFC3339)), repo, sender, selfOf(id), p, json.RawMessage(req.Body))
 	e := sdk.EmitterFrom(ctx)
 	if e == nil {
 		return sdk.Permanent("no session")
@@ -531,21 +745,27 @@ func (a *Adapter) ReceiveWebhook(ctx context.Context, req sdk.WebhookRequest) er
 	return e.Event(ev)
 }
 
-// Run polls the watched repositories when the connection has no hook.
+// Run polls the repositories in poll mode and reads the activity of the
+// account until ctx ends.
 func (a *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
 	a.mu.Lock()
 	a.emit = e
 	a.mu.Unlock()
 	every := a.every
+	var activityDue time.Time
 	for {
 		if next := a.pollAll(ctx, e); next > every {
 			every = next
 		}
+		if now := time.Now(); !now.Before(activityDue) {
+			activityDue = now.Add(max(a.activity.Read(ctx, e), a.every))
+		}
+		wait := max(min(every, time.Until(activityDue)), a.every)
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-a.wake:
-		case <-time.After(every):
+		case <-time.After(wait):
 		}
 	}
 }
@@ -557,35 +777,41 @@ func (a *Adapter) poke() {
 	}
 }
 
-// pollAll reads the events of each watched repository once. It returns the
-// longest X-Poll-Interval that GitHub asked for.
+// tokenLost handles a 401: it reads the gh login again, and else reports
+// auth_required. It reports whether the token is gone.
+func (a *Adapter) tokenLost(ctx context.Context, e sdk.Emitter, failed string) bool {
+	if a.refresh(ctx, failed) {
+		return false
+	}
+	_ = e.Status(sdk.Status{State: sdk.StateAuthRequired, Reason: sdk.ReasonRevoked}) //nolint:errcheck // the next poll reports it again
+	return true
+}
+
+// pollAll reads the events and the Actions runs of each repository in
+// poll mode once. It returns the longest X-Poll-Interval that GitHub asked
+// for.
 func (a *Adapter) pollAll(ctx context.Context, e sdk.Emitter) time.Duration {
 	a.mu.Lock()
-	hook, subs, self := a.hook, a.subs, a.self
+	subs, self := a.subs, selfOf(a.id)
+	repos := sortedKeys(a.pollRepo)
 	a.mu.Unlock()
 	gh := a.gh()
-	if hook != nil || gh.Token == "" {
+	if gh.Token == "" {
 		return 0
 	}
-	repos := map[string]bool{}
-	for _, s := range subs {
-		if r := s.Value(FieldRepository); r != "" {
-			repos[r] = true
-		}
-	}
 	var next time.Duration
-	for _, repo := range sortedKeys(repos) {
+	for _, repo := range repos {
 		a.mu.Lock()
 		cur := a.polls[repo]
 		if cur == nil {
-			cur = &pollCursor{}
+			cur = &pollCursor{runs: map[int64]string{}}
 			a.polls[repo] = cur
 		}
 		etag := cur.etag
 		a.mu.Unlock()
 		page, err := gh.Events(ctx, repo, etag)
 		if client.StatusOf(err) == http.StatusUnauthorized {
-			_ = e.Status(sdk.Status{State: sdk.StateAuthRequired, Reason: sdk.ReasonRevoked}) //nolint:errcheck // the next poll reports it again
+			a.tokenLost(ctx, e, gh.Token)
 			return 0
 		}
 		if err != nil {
@@ -593,38 +819,99 @@ func (a *Adapter) pollAll(ctx context.Context, e sdk.Emitter) time.Duration {
 			continue
 		}
 		next = max(next, page.Interval)
-		if page.NotModified {
-			continue
+		if !page.NotModified {
+			a.emitEvents(e, repo, cur, page, subs, self)
 		}
-		a.mu.Lock()
-		cur.etag = page.ETag
-		last, primed := cur.lastID, cur.primed
-		for _, ev := range page.Events {
-			if newerID(ev.ID, cur.lastID) {
-				cur.lastID = ev.ID
-			}
-		}
-		cur.primed = true
-		a.mu.Unlock()
-		if !primed {
-			continue // the first poll only finds the position
-		}
-		for i := len(page.Events) - 1; i >= 0; i-- {
-			ev := page.Events[i]
-			typ := pollTypes[ev.Type]
-			if typ == "" || !newerID(ev.ID, last) || !watched(subs, repo, typ) {
-				continue
-			}
-			var p payload
-			if err := json.Unmarshal(ev.Payload, &p); err != nil {
-				continue
-			}
-			if err := e.Event(toEvent("poll:"+ev.ID, typ, ev.CreatedAt, repo, ev.Actor, self, p, ev.Payload)); err != nil {
-				a.log.Warn("emit", "err", err)
-			}
+		if watched(subs, repo, "workflow_run") {
+			a.pollRuns(ctx, e, gh, repo, cur, self)
 		}
 	}
 	return next
+}
+
+// emitEvents sends the new events of one events API page. The first page
+// only finds the position.
+func (a *Adapter) emitEvents(e sdk.Emitter, repo string, cur *pollCursor, page client.EventPage, subs []sdk.Subscription, self *client.User) {
+	a.mu.Lock()
+	cur.etag = page.ETag
+	last, primed := cur.lastID, cur.primed
+	for _, ev := range page.Events {
+		if newerID(ev.ID, cur.lastID) {
+			cur.lastID = ev.ID
+		}
+	}
+	cur.primed = true
+	a.mu.Unlock()
+	if !primed {
+		return
+	}
+	for i := len(page.Events) - 1; i >= 0; i-- {
+		ev := page.Events[i]
+		typ := pollTypes[ev.Type]
+		if typ == "" || !newerID(ev.ID, last) || !watched(subs, repo, typ) {
+			continue
+		}
+		var p payload
+		if err := json.Unmarshal(ev.Payload, &p); err != nil {
+			continue
+		}
+		if err := e.Event(toEvent("poll:"+ev.ID, typ, ev.CreatedAt, repo, ev.Actor, self, p, ev.Payload)); err != nil {
+			a.log.Warn("emit", "err", err)
+		}
+	}
+}
+
+// pollRuns sends a workflow_run event when a run appears and when it ends.
+// The first read only finds the position.
+func (a *Adapter) pollRuns(ctx context.Context, e sdk.Emitter, gh *client.Client, repo string, cur *pollCursor, self *client.User) {
+	a.mu.Lock()
+	etag := cur.runETag
+	a.mu.Unlock()
+	page, err := gh.Runs(ctx, repo, etag)
+	if err != nil {
+		if client.StatusOf(err) != http.StatusUnauthorized {
+			a.log.Warn("poll runs", "repo", repo, "err", err)
+		}
+		return
+	}
+	if page.NotModified {
+		return
+	}
+	var out []sdk.Event
+	a.mu.Lock()
+	cur.runETag = page.ETag
+	for i := len(page.Runs) - 1; i >= 0; i-- {
+		r := page.Runs[i]
+		prev, seen := cur.runs[r.ID]
+		if seen && prev == r.Status {
+			continue
+		}
+		if !seen {
+			cur.runOrder = append(cur.runOrder, r.ID)
+		}
+		cur.runs[r.ID] = r.Status
+		if !cur.runsPrimed || (seen && r.Status != "completed") {
+			continue
+		}
+		action := "requested"
+		if r.Status == "completed" {
+			action = "completed"
+		}
+		p := payload{Action: action, WorkflowRun: &workflowRun{ID: r.ID, Name: r.Name, Status: r.Status, Conclusion: r.Conclusion, HeadBranch: r.HeadBranch, HTMLURL: r.HTMLURL}}
+		raw, _ := json.Marshal(r) //nolint:errcheck // a struct of plain values
+		out = append(out, toEvent(fmt.Sprintf("poll:run:%d:%s", r.ID, r.Status), "workflow_run", r.UpdatedAt, repo, r.Actor, self, p, raw))
+	}
+	cur.runsPrimed = true
+	for len(cur.runOrder) > maxRuns {
+		delete(cur.runs, cur.runOrder[0])
+		cur.runOrder = cur.runOrder[1:]
+	}
+	a.mu.Unlock()
+	for _, ev := range out {
+		if err := e.Event(ev); err != nil {
+			a.log.Warn("emit", "err", err)
+		}
+	}
 }
 
 // apiErr maps a GitHub error to a protocol error.
@@ -638,28 +925,31 @@ func (a *Adapter) apiErr(err error) error {
 	return err
 }
 
-// pollTypes maps the events API names to the webhook names.
-var pollTypes = map[string]string{
-	"PushEvent":              "push",
-	"PullRequestEvent":       "pull_request",
-	"PullRequestReviewEvent": "pull_request_review",
-	"IssuesEvent":            "issues",
-	"IssueCommentEvent":      "issue_comment",
-	"ReleaseEvent":           "release",
+// pollTypes maps the events API names to the webhook names. The other
+// webhook types have no events API entry.
+var pollTypes = map[string]string{ //nolint:gochecknoglobals // fixed map, never changed
+	"PushEvent":                     "push",
+	"PullRequestEvent":              "pull_request",
+	"PullRequestReviewEvent":        "pull_request_review",
+	"PullRequestReviewCommentEvent": "pull_request_review_comment",
+	"IssuesEvent":                   "issues",
+	"IssueCommentEvent":             "issue_comment",
+	"ReleaseEvent":                  "release",
+	"CreateEvent":                   "create",
+	"DeleteEvent":                   "delete",
 }
 
-// typesOf returns the GitHub events of a subscription: its types, or all.
+// typesOf returns the repository events of a subscription: its types, or
+// all.
 func typesOf(s sdk.Subscription) []string {
 	var out []string
 	for _, t := range s.Types {
-		if slices.ContainsFunc(Events, func(d sdk.EventDecl) bool { return d.Type == t }) {
+		if slices.Contains(repoEvents, t) {
 			out = append(out, t)
 		}
 	}
 	if len(out) == 0 {
-		for _, d := range Events {
-			out = append(out, d.Type)
-		}
+		out = slices.Clone(repoEvents)
 	}
 	return out
 }
@@ -672,6 +962,13 @@ func watched(subs []sdk.Subscription, repo, typ string) bool {
 		}
 	}
 	return false
+}
+
+func selfOf(id *client.Identity) *client.User {
+	if id == nil {
+		return nil
+	}
+	return &id.User
 }
 
 func union(a, b []string) []string {

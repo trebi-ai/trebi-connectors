@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/cmd"
 	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/internal/ghshim"
 )
 
 var version = "dev"
@@ -30,14 +32,18 @@ func init() {
 func newApp() *cli.App {
 	return &cli.App{
 		Name:    "github-cli",
-		Usage:   "GitHub CLI tool: repositories, events, and webhooks",
+		Usage:   "GitHub tool for Trebi: login, repositories, events, webhooks, and operations",
 		Version: version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "token", Usage: "GitHub token (outside Trebi only; the default is GITHUB_TOKEN, GH_TOKEN, then the config file)"},
 			&cli.BoolFlag{Name: "json", Aliases: []string{"j"}, Usage: "output as JSON"},
 		},
 		Before: func(c *cli.Context) error {
-			s, err := config.Resolve(c.String("token"))
+			resolve := config.Resolve
+			if c.Args().First() == "serve" {
+				resolve = config.ResolveStored
+			}
+			s, err := resolve(c.Context, c.String("token"))
 			if err != nil {
 				return err
 			}
@@ -49,6 +55,8 @@ func newApp() *cli.App {
 			cmd.ReposCommand(),
 			cmd.EventsCommand(),
 			cmd.HooksCommand(),
+			cmd.WhoamiCommand(),
+			cmd.OpCommand(),
 			cmd.ServeCommand(version, clientID),
 		},
 		Metadata: map[string]any{},
@@ -56,8 +64,17 @@ func newApp() *cli.App {
 }
 
 func main() {
-	if err := newApp().Run(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+	args := os.Args
+	switch filepath.Base(args[0]) {
+	case "gh":
+		// The gh of a run: the real gh with the token of the connection.
+		os.Exit(ghshim.New().Run(context.Background(), args[1:]))
+	case "github-op":
+		// The operations of the Trebi manifest run as github-op <name>,
+		// because an operation program must not also be a run command.
+		args = append([]string{"github-cli", "op"}, args[1:]...)
+	}
+	if err := newApp().Run(args); err != nil {
+		os.Exit(cmd.Report(os.Stderr, err))
 	}
 }

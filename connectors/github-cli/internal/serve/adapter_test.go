@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -63,19 +64,87 @@ func start(t *testing.T, token string, hook *sdk.Webhook, opts ...Option) (*sdkt
 	t.Helper()
 	fake := fakegithub.Start()
 	t.Cleanup(fake.Close)
+	c, res := startWith(t, fake, t.TempDir(), token, hook, opts...)
+	return c, fake, res
+}
+
+// startFast runs the adapter with a poll of 10 ms and no X-Poll-Interval.
+func startFast(t *testing.T, token string) (*sdktest.Conn, *fakegithub.Server) {
+	t.Helper()
+	fake := fakegithub.Start()
+	t.Cleanup(fake.Close)
+	fake.SetPollInterval(0)
+	c, _ := startWith(t, fake, t.TempDir(), token, nil, WithPollEvery(10*time.Millisecond))
+	return c, fake
+}
+
+// startWith runs the adapter against a given fake and state folder.
+func startWith(t *testing.T, fake *fakegithub.Server, stateDir, token string, hook *sdk.Webhook, opts ...Option) (*sdktest.Conn, sdk.InitializeResult) {
+	t.Helper()
 	cl := client.New(token)
 	cl.API, cl.Web = fake.URL(), fake.URL()
-	a, err := New(cl, "test", t.TempDir(), opts...)
+	a, err := New(cl, "test", stateDir, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := sdktest.Start(a, sdk.WithStateDir(t.TempDir()))
+	c := sdktest.Start(a, sdk.WithStateDir(stateDir))
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck,gosec // the test checks the calls
 	res, err := c.Initialize(sdk.InitializeParams{Webhook: hook})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return c, fake, res
+	return c, res
+}
+
+// nextEvent waits for the next repository event. It drops the activity
+// events, which the fake sends after the first notifications read.
+func nextEvent(t *testing.T, c *sdktest.Conn) sdk.Event {
+	t.Helper()
+	return waitEvent(t, c, func(ev sdk.Event) bool { return !strings.HasPrefix(ev.ID, "notif:") })
+}
+
+// nextActivity waits for the next activity event.
+func nextActivity(t *testing.T, c *sdktest.Conn) sdk.Event {
+	t.Helper()
+	return waitEvent(t, c, func(ev sdk.Event) bool { return strings.HasPrefix(ev.ID, "notif:") })
+}
+
+func waitEvent(t *testing.T, c *sdktest.Conn, keep func(sdk.Event) bool) sdk.Event {
+	t.Helper()
+	for {
+		m, err := c.WaitNote(sdk.MethodEvent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ev sdk.Event
+		if err := json.Unmarshal(m.Params, &ev); err != nil {
+			t.Fatal(err)
+		}
+		if keep(ev) {
+			return ev
+		}
+	}
+}
+
+// ghToken is a gh login on this machine that a test can change.
+type ghToken struct {
+	mu    sync.Mutex
+	token string
+}
+
+func (g *ghToken) set(token string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.token = token
+}
+
+func (g *ghToken) Token(context.Context) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.token == "" {
+		return "", config.ErrGHLoggedOut
+	}
+	return g.token, nil
 }
 
 func sub(id, repo string, types ...string) sdk.Subscription {
@@ -91,6 +160,28 @@ func syncSubs(t *testing.T, c *sdktest.Conn, subs ...sdk.Subscription) []sdk.Sub
 	return res.Subscriptions
 }
 
+// waitCalls waits until the fake has n calls of call. The second read of a
+// poll starts after the first one found the position.
+func waitCalls(t *testing.T, fake *fakegithub.Server, call string, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if count(fake.Calls(), call) >= n {
+			return
+		}
+	}
+	t.Fatalf("no %d calls of %s", n, call)
+}
+
+func count(calls []string, call string) int {
+	n := 0
+	for _, c := range calls {
+		if c == call {
+			n++
+		}
+	}
+	return n
+}
+
 func TestWebhookFlow(t *testing.T) {
 	t.Parallel()
 	hooks := newSink(t)
@@ -104,41 +195,43 @@ func TestWebhookFlow(t *testing.T) {
 	if err := c.Call(sdk.MethodSubscriptionsOptions, sdk.OptionQuery{Field: FieldRepository, Limit: 10}, &page); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Options) != 2 || page.Options[0].Value != fakegithub.AdminRepo {
-		t.Fatalf("options %+v: only admin repositories can get a hook", page.Options)
+	if len(page.Options) != 3 || page.Options[0].Value != fakegithub.AdminRepo || page.Options[0].Description != "Admin" ||
+		page.Options[1].Description != "Admin, private" || page.Options[2].Description != "Read only" {
+		t.Fatalf("options %+v: every repository, with its access", page.Options)
 	}
 
-	st := syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "push"), sub("s2", fakegithub.NoAdminRepo))
+	st := syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "push", "pull_request_review_comment"), sub("s2", fakegithub.NoAdminRepo))
 	if st[0].State != sdk.SubscriptionActive || st[0].Mode != sdk.ModeAPI || st[0].Room.ID != fakegithub.AdminRepo {
 		t.Fatalf("s1 %+v", st[0])
 	}
-	if st[1].State != sdk.SubscriptionError || !strings.Contains(st[1].Message, "admin access to other/lib") {
+	if st[1].State != sdk.SubscriptionPolling || st[1].Mode != sdk.ModePoll || st[1].Message != "You are not an admin of other/lib, so Trebi checks it every minute." {
 		t.Fatalf("s2 %+v", st[1])
 	}
 	gh := fake.Hooks(fakegithub.AdminRepo)
-	if len(gh) != 1 || gh[0].Config.URL != hook.URL || strings.Join(gh[0].Events, ",") != "push" {
+	if len(gh) != 1 || gh[0].Config.URL != hook.URL || strings.Join(gh[0].Events, ",") != "pull_request_review_comment,push" {
 		t.Fatalf("hooks %+v", gh)
 	}
+	if len(fake.Hooks(fakegithub.NoAdminRepo)) != 0 {
+		t.Fatal("a read-only repository gets no hook")
+	}
 
-	reqs := hooks.wait(t, 2)
+	reqs := hooks.wait(t, 3)
 	for _, r := range reqs {
 		if err := c.Call(sdk.MethodWebhookReceive, r, nil); err != nil {
 			t.Fatalf("receive %s: %v", r.Headers["x-github-event"], err)
 		}
 	}
-	m, err := c.WaitNote(sdk.MethodEvent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ev sdk.Event
-	if err := json.Unmarshal(m.Params, &ev); err != nil {
-		t.Fatal(err)
-	}
+	ev := nextEvent(t, c)
 	if ev.Type != "push" || ev.ID != "delivery-1-push" || ev.Room.ID != fakegithub.AdminRepo || ev.Sender.ID != "octo" || !ev.Sender.Self {
 		t.Fatalf("event %+v %+v", ev, ev.Sender)
 	}
 	if !strings.Contains(ev.Text, "Fix the build") || !strings.Contains(string(ev.Data), `"branch":"main"`) {
 		t.Fatalf("event text %q data %s", ev.Text, ev.Data)
+	}
+	ev = nextEvent(t, c)
+	if ev.Type != "pull_request_review_comment" || ev.Thread == nil || ev.Thread.ID != "8" || ev.Sender.ID != "hubot" || ev.Sender.Self ||
+		!strings.Contains(ev.Text, "Use a map here.") || !strings.Contains(string(ev.Data), `"path":"cache.go"`) {
+		t.Fatalf("review comment %+v data %s", ev, ev.Data)
 	}
 
 	forged := reqs[0]
@@ -150,8 +243,15 @@ func TestWebhookFlow(t *testing.T) {
 
 	fake.NoDeliveries()
 	syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "push", "issues"))
-	if gh := fake.Hooks(fakegithub.AdminRepo); len(gh) != 1 || strings.Join(gh[0].Events, ",") != "issues,push" {
-		t.Fatalf("the second sync must update the one hook: %+v", gh)
+	if gh2 := fake.Hooks(fakegithub.AdminRepo); len(gh2) != 1 || gh2[0].ID != gh[0].ID || strings.Join(gh2[0].Events, ",") != "issues,push" {
+		t.Fatalf("the second sync must update the one hook: %+v", gh2)
+	}
+	if n := count(fake.Calls(), "PATCH /repos/octo/app/hooks/1"); n != 1 {
+		t.Fatalf("one PATCH for a new event list, got %d", n)
+	}
+	syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "push", "issues"))
+	if n := count(fake.Calls(), "PATCH /repos/octo/app/hooks/1"); n != 1 {
+		t.Fatalf("no PATCH when the event list is the same, got %d", n)
 	}
 	syncSubs(t, c)
 	if gh := fake.Hooks(fakegithub.AdminRepo); len(gh) != 0 {
@@ -159,40 +259,84 @@ func TestWebhookFlow(t *testing.T) {
 	}
 }
 
+func TestHookFallsBackToPoll(t *testing.T) {
+	t.Parallel()
+	hook := &sdk.Webhook{URL: "http://127.0.0.1:1/in", Secret: "x"}
+	c, fake, _ := start(t, fakegithub.Token, hook)
+	fake.RefuseHooks()
+	st := syncSubs(t, c, sub("s1", fakegithub.AdminRepo))
+	if st[0].Mode != sdk.ModePoll || st[0].Message != "This login cannot add webhooks to octo/app, so Trebi checks it every minute." {
+		t.Fatalf("a refused hook must poll: %+v", st[0])
+	}
+
+	c, _, _ = start(t, fakegithub.NoHookScope, hook)
+	st = syncSubs(t, c, sub("s1", fakegithub.AdminRepo), sub("s2", "octo/missing"))
+	if st[0].Mode != sdk.ModePoll || st[0].Message != "This login cannot add webhooks, so Trebi checks octo/app every minute." {
+		t.Fatalf("a token with no hook scope must poll: %+v", st[0])
+	}
+	if st[1].State != sdk.SubscriptionError || !strings.Contains(st[1].Message, "cannot find octo/missing") {
+		t.Fatalf("a missing repository: %+v", st[1])
+	}
+}
+
 func TestPollFlow(t *testing.T) {
 	t.Parallel()
-	c, fake, _ := start(t, fakegithub.Token, nil, WithPollEvery(10*time.Millisecond))
-	fake.SetPollInterval(0)
-	st := syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "issues"))
+	c, fake := startFast(t, fakegithub.Token)
+	st := syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "issues", "create"))
 	if st[0].State != sdk.SubscriptionPolling || st[0].Mode != sdk.ModePoll {
 		t.Fatalf("state %+v", st[0])
 	}
-	time.Sleep(100 * time.Millisecond) // the first poll finds the position
+	waitCalls(t, fake, "GET /repos/octo/app/events", 2)
 	fake.AddEvent(fakegithub.AdminRepo, "2", "PushEvent")
 	fake.AddEvent(fakegithub.AdminRepo, "3", "IssuesEvent")
-	m, err := c.WaitNote(sdk.MethodEvent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ev sdk.Event
-	if err := json.Unmarshal(m.Params, &ev); err != nil {
-		t.Fatal(err)
-	}
+	fake.AddEvent(fakegithub.AdminRepo, "4", "CreateEvent")
+	ev := nextEvent(t, c)
 	if ev.ID != "poll:3" || ev.Type != "issues" || ev.Thread == nil || ev.Thread.ID != "7" {
 		t.Fatalf("event %+v: only the watched type, after the first poll", ev)
+	}
+	if ev := nextEvent(t, c); ev.ID != "poll:4" || ev.Type != "create" {
+		t.Fatalf("create event %+v", ev)
+	}
+}
+
+func TestPollRuns(t *testing.T) {
+	t.Parallel()
+	c, fake := startFast(t, fakegithub.Token)
+	syncSubs(t, c, sub("s1", fakegithub.AdminRepo, "workflow_run"))
+	waitCalls(t, fake, "GET /repos/octo/app/actions/runs", 2)
+	fake.SetRun(fakegithub.AdminRepo, 2, "queued", "")
+	ev := nextEvent(t, c)
+	if ev.ID != "poll:run:2:queued" || ev.Type != "workflow_run" || !strings.Contains(string(ev.Data), `"action":"requested"`) {
+		t.Fatalf("new run %+v %s", ev, ev.Data)
+	}
+	fake.SetRun(fakegithub.AdminRepo, 2, "in_progress", "")
+	time.Sleep(50 * time.Millisecond)
+	fake.SetRun(fakegithub.AdminRepo, 2, "completed", "failure")
+	ev = nextEvent(t, c)
+	if ev.ID != "poll:run:2:completed" || !strings.Contains(string(ev.Data), `"conclusion":"failure"`) {
+		t.Fatalf("an in-progress run sends nothing; the end sends one event: %+v %s", ev, ev.Data)
+	}
+	if n := count(fake.Calls(), "GET /repos/octo/app/actions/runs"); n < 5 {
+		t.Fatalf("runs read %d times", n)
 	}
 }
 
 func TestDeviceLogin(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	c, _, res := start(t, "", nil, WithLogin(config.NewLoginStore(dir), "app"))
+	c, _, res := start(t, "", nil, WithLogin(config.NewLoginStore(dir), "app", &ghToken{}))
 	if res.Account != nil {
 		t.Fatalf("init %+v", res)
 	}
 	var methods sdk.AuthMethodsResult
-	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 1 || methods.Methods[0].ID != LoginDevice || !methods.Methods[0].Available {
+	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 2 {
 		t.Fatalf("methods %+v %v", methods, err)
+	}
+	if m := methods.Methods[0]; m.ID != LoginGH || m.Type != sdk.LoginExisting || m.Available || !strings.Contains(m.Reason, "not logged in") {
+		t.Fatalf("gh method with no gh login %+v", m)
+	}
+	if m := methods.Methods[1]; m.ID != LoginDevice || m.Type != sdk.LoginBrowser || !m.Available {
+		t.Fatalf("device method %+v", m)
 	}
 	var begin sdk.AuthBeginResult
 	if err := c.Call(sdk.MethodAuthBegin, sdk.AuthBeginParams{Method: LoginDevice}, &begin); err != nil {
@@ -209,21 +353,62 @@ func TestDeviceLogin(t *testing.T) {
 	if err := json.Unmarshal(m.Params, &done); err != nil || !done.OK || done.Account == nil || done.Account.ID != "octo" {
 		t.Fatalf("done %+v %v", done, err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, config.AuthFile))
-	if err != nil || !strings.Contains(string(data), fakegithub.Token) {
-		t.Fatalf("auth.json %s %v", data, err)
+	rec, err := config.NewLoginStore(dir).Load()
+	if err != nil || rec.Source != config.SourceDevice || rec.Token != fakegithub.Token {
+		t.Fatalf("auth.json %+v %v", rec, err)
 	}
 }
 
-func TestDeviceLoginNeedsAnApp(t *testing.T) {
+func TestGHLogin(t *testing.T) {
 	t.Parallel()
-	c, _, _ := start(t, "", nil, WithLogin(config.NewLoginStore(t.TempDir()), ""))
+	dir := t.TempDir()
+	gh := &ghToken{token: fakegithub.Token}
+	c, fake, _ := start(t, "", nil, WithLogin(config.NewLoginStore(dir), "app", gh))
 	var methods sdk.AuthMethodsResult
-	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 1 || methods.Methods[0].Available || methods.Methods[0].Reason == "" {
+	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || !methods.Methods[0].Available {
+		t.Fatalf("methods %+v %v", methods, err)
+	}
+	done, err := c.LogIn(LoginGH)
+	if err != nil || done.Account == nil || done.Account.ID != "octo" {
+		t.Fatalf("login %+v %v", done, err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, config.AuthFile))
+	if err != nil || string(data) != `{"source":"gh"}` {
+		t.Fatalf("auth.json must keep no token: %s %v", data, err)
+	}
+
+	// gh logs in again with a new token: a 401 reads it again.
+	gh.set(fakegithub.Revoked)
+	c2, _ := startWith(t, fake, t.TempDir(), fakegithub.Revoked, nil, WithLogin(config.NewLoginStore(dir), "app", gh), WithSource(config.SourceGH))
+	gh.set(fakegithub.Token)
+	var st sdk.AuthStatusResult
+	if err := c2.Call(sdk.MethodAuthStatus, nil, &st); err != nil || st.State != sdk.StateConnected {
+		t.Fatalf("a 401 must read the gh login again: %+v %v", st, err)
+	}
+
+	// gh logs out: auth_required, and logout never runs gh.
+	gh.set("")
+	c3, _ := startWith(t, fake, t.TempDir(), "", nil, WithLogin(config.NewLoginStore(dir), "app", gh), WithSource(config.SourceGH))
+	if err := c3.Call(sdk.MethodAuthStatus, nil, &st); err != nil || st.State != sdk.StateAuthRequired {
+		t.Fatalf("gh logged out: %+v %v", st, err)
+	}
+	if err := c3.Call(sdk.MethodAuthLogout, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.AuthFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("logout must remove auth.json: %v", err)
+	}
+}
+
+func TestLoginNeedsAnApp(t *testing.T) {
+	t.Parallel()
+	c, _, _ := start(t, "", nil, WithLogin(config.NewLoginStore(t.TempDir()), "", &ghToken{}))
+	var methods sdk.AuthMethodsResult
+	if err := c.Call(sdk.MethodAuthMethods, nil, &methods); err != nil || len(methods.Methods) != 2 || methods.Methods[1].Available || methods.Methods[1].Reason == "" {
 		t.Fatalf("methods %+v %v", methods, err)
 	}
 	if err := c.Call(sdk.MethodAuthBegin, nil, nil); sdk.CodeOf(err) != sdk.CodeInvalid {
-		t.Fatalf("begin with no app: %v", err)
+		t.Fatalf("begin with no method: %v", err)
 	}
 }
 
@@ -236,5 +421,19 @@ func TestRevokedToken(t *testing.T) {
 	}
 	if s := syncSubs(t, c, sub("s1", fakegithub.AdminRepo)); s[0].State != sdk.SubscriptionError || s[0].Message != "Log in to GitHub again." {
 		t.Fatalf("state %+v", s[0])
+	}
+}
+
+func TestScopes(t *testing.T) {
+	t.Parallel()
+	fake := fakegithub.Start()
+	t.Cleanup(fake.Close)
+	for token, want := range map[string]string{fakegithub.Token: "repo,read:org,admin:repo_hook", fakegithub.FineGrained: ""} {
+		cl := client.New(token)
+		cl.API = fake.URL()
+		id, err := cl.Whoami(context.Background())
+		if err != nil || strings.Join(id.Scopes, ",") != want || id.Scoped != (want != "") {
+			t.Fatalf("%s: %+v %v", token, id, err)
+		}
 	}
 }

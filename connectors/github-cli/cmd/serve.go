@@ -43,10 +43,11 @@ func ServeCommand(version, clientID string) *cli.Command {
 				return errNoToken
 			}
 			if s.Login != nil {
-				opts = append(opts, serve.WithLogin(s.Login, clientID))
-			}
-			if s.Input {
-				opts = append(opts, serve.WithInputToken())
+				var gh serve.TokenSource = s.GH
+				if c.Bool("sandbox") {
+					gh = fakegithub.GHLogin{} // never read the gh login of the user
+				}
+				opts = append(opts, serve.WithLogin(s.Login, clientID, gh), serve.WithSource(s.Source))
 			}
 			a, err := serve.New(cl, version, t.StateDir, opts...)
 			if err != nil {

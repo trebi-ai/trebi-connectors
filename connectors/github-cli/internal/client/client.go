@@ -1,5 +1,6 @@
 // Package client is a small GitHub REST client: repositories, events,
-// repository webhooks, and the OAuth device flow.
+// Actions runs, notifications, repository webhooks, and the OAuth device
+// flow. Do calls any other API path.
 package client
 
 import (
@@ -68,6 +69,7 @@ type Repo struct {
 	Private     bool   `json:"private"`
 	Permissions struct {
 		Admin bool `json:"admin"`
+		Push  bool `json:"push"`
 	} `json:"permissions"`
 }
 
@@ -116,7 +118,11 @@ func (c *Client) do(ctx context.Context, method, base, path string, body, out an
 		}
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, base+path, r)
+	target := base + path
+	if strings.HasPrefix(path, base+"/") {
+		target = path // an API URL from an earlier answer
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, r)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +172,63 @@ func cmpOr(a, b string) string {
 	return b
 }
 
+// Do calls one API path, or an API URL from an earlier answer, and decodes
+// the JSON answer into out.
+func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
+	_, err := c.do(ctx, method, c.API, path, body, out, nil)
+	return err
+}
+
 // Me returns the account of the token.
 func (c *Client) Me(ctx context.Context) (User, error) {
-	var u User
-	_, err := c.do(ctx, http.MethodGet, c.API, "/user", nil, &u, nil)
-	return u, err
+	id, err := c.Whoami(ctx)
+	return id.User, err
+}
+
+// Identity is the account of a token and its OAuth scopes. Scoped is false
+// for a token that sends no X-OAuth-Scopes header, such as a fine-grained
+// token: its access shows only on the first call.
+type Identity struct {
+	User
+	Scopes []string `json:"scopes"`
+	Scoped bool     `json:"scoped"`
+}
+
+// Has reports whether the token has one of the scopes.
+func (id Identity) Has(scopes ...string) bool {
+	for _, s := range scopes {
+		for _, have := range id.Scopes {
+			if have == s {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Whoami returns the account and the scopes of the token.
+func (c *Client) Whoami(ctx context.Context) (Identity, error) {
+	var id Identity
+	resp, err := c.do(ctx, http.MethodGet, c.API, "/user", nil, &id.User, nil)
+	if err != nil {
+		return id, err
+	}
+	if v, ok := resp.Header["X-Oauth-Scopes"]; ok {
+		id.Scoped = true
+		for _, s := range strings.Split(strings.Join(v, ","), ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				id.Scopes = append(id.Scopes, s)
+			}
+		}
+	}
+	return id, nil
+}
+
+// Repo returns one repository with the permissions of the account.
+func (c *Client) Repo(ctx context.Context, repo string) (Repo, error) {
+	var r Repo
+	_, err := c.do(ctx, http.MethodGet, c.API, "/repos/"+repo, nil, &r, nil)
+	return r, err
 }
 
 // Repos lists one page of the repositories of the account, newest push
@@ -235,6 +293,91 @@ func (c *Client) Events(ctx context.Context, repo, etag string) (EventPage, erro
 	return page, nil
 }
 
+// Run is one Actions workflow run.
+type Run struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	Event      string `json:"event"`
+	HeadBranch string `json:"head_branch"`
+	HeadSHA    string `json:"head_sha"`
+	HTMLURL    string `json:"html_url"`
+	RunNumber  int    `json:"run_number"`
+	Actor      User   `json:"actor"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+// RunPage is one answer of the Actions runs API.
+type RunPage struct {
+	Runs        []Run
+	ETag        string
+	NotModified bool
+}
+
+// Runs reads the newest workflow runs of a repository. etag makes the read
+// conditional.
+func (c *Client) Runs(ctx context.Context, repo, etag string) (RunPage, error) {
+	hdr := http.Header{}
+	if etag != "" {
+		hdr.Set("If-None-Match", etag)
+	}
+	var body struct {
+		Runs []Run `json:"workflow_runs"`
+	}
+	resp, err := c.do(ctx, http.MethodGet, c.API, "/repos/"+repo+"/actions/runs?per_page=20", nil, &body, hdr)
+	if err != nil {
+		return RunPage{}, err
+	}
+	return RunPage{Runs: body.Runs, ETag: cmpOr(resp.Header.Get("ETag"), etag), NotModified: resp.StatusCode == http.StatusNotModified}, nil
+}
+
+// Notification is one thread of the notifications of the account.
+type Notification struct {
+	ID         string `json:"id"`
+	Reason     string `json:"reason"`
+	Unread     bool   `json:"unread"`
+	UpdatedAt  string `json:"updated_at"`
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+	Subject struct {
+		Title            string `json:"title"`
+		URL              string `json:"url"`
+		LatestCommentURL string `json:"latest_comment_url"`
+		Type             string `json:"type"`
+	} `json:"subject"`
+}
+
+// NotificationPage is one answer of the notifications API. NotModified is
+// a 304 for If-Modified-Since. Interval is X-Poll-Interval.
+type NotificationPage struct {
+	Items        []Notification
+	LastModified string
+	NotModified  bool
+	Interval     time.Duration
+}
+
+// Notifications reads the newest notification threads. since is the
+// Last-Modified of the last read.
+func (c *Client) Notifications(ctx context.Context, since string) (NotificationPage, error) {
+	hdr := http.Header{}
+	if since != "" {
+		hdr.Set("If-Modified-Since", since)
+	}
+	var page NotificationPage
+	resp, err := c.do(ctx, http.MethodGet, c.API, "/notifications?all=false&participating=false&per_page=50", nil, &page.Items, hdr)
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	page.NotModified = resp.StatusCode == http.StatusNotModified
+	page.LastModified = cmpOr(resp.Header.Get("Last-Modified"), since)
+	if n, err := strconv.Atoi(resp.Header.Get("X-Poll-Interval")); err == nil {
+		page.Interval = time.Duration(n) * time.Second
+	}
+	return page, nil
+}
+
 // DeviceCode is the start of a device flow.
 type DeviceCode struct {
 	DeviceCode      string `json:"device_code"`
@@ -246,6 +389,9 @@ type DeviceCode struct {
 
 // ErrPending is a device flow that waits for the user.
 var ErrPending = errors.New("authorization pending")
+
+// ErrSlowDown is a device flow that polls too fast. Add 5 s to the wait.
+var ErrSlowDown = errors.New("slow down")
 
 // StartDevice starts a device flow for an OAuth app.
 func (c *Client) StartDevice(ctx context.Context, clientID, scope string) (DeviceCode, error) {
@@ -272,8 +418,10 @@ func (c *Client) PollDevice(ctx context.Context, clientID, deviceCode string) (s
 			return "", errors.New("github gave no access token")
 		}
 		return out.AccessToken, nil
-	case "authorization_pending", "slow_down":
+	case "authorization_pending":
 		return "", ErrPending
+	case "slow_down":
+		return "", ErrSlowDown
 	default:
 		return "", errors.New(cmpOr(out.Description, out.Error))
 	}

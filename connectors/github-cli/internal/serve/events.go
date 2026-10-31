@@ -67,6 +67,8 @@ type payload struct {
 		Body    string      `json:"body"`
 		HTMLURL string      `json:"html_url"`
 		User    client.User `json:"user"`
+		Path    string      `json:"path"`
+		Line    *int        `json:"line"`
 	} `json:"comment"`
 	Release *struct {
 		TagName    string `json:"tag_name"`
@@ -74,14 +76,65 @@ type payload struct {
 		HTMLURL    string `json:"html_url"`
 		Prerelease bool   `json:"prerelease"`
 	} `json:"release"`
-	WorkflowRun *struct {
+	WorkflowRun *workflowRun `json:"workflow_run"`
+	// create and delete
+	RefType      string `json:"ref_type"`
+	MasterBranch string `json:"master_branch"`
+	// status
+	SHA         string `json:"sha"`
+	State       string `json:"state"`
+	Context     string `json:"context"`
+	Description string `json:"description"`
+	TargetURL   string `json:"target_url"`
+	Branches    []struct {
+		Name string `json:"name"`
+	} `json:"branches"`
+	CheckSuite *struct {
 		ID         int64  `json:"id"`
-		Name       string `json:"name"`
+		HeadBranch string `json:"head_branch"`
+		HeadSHA    string `json:"head_sha"`
 		Status     string `json:"status"`
 		Conclusion string `json:"conclusion"`
-		HeadBranch string `json:"head_branch"`
-		HTMLURL    string `json:"html_url"`
-	} `json:"workflow_run"`
+		App        struct {
+			Name string `json:"name"`
+		} `json:"app"`
+		PullRequests []struct {
+			Number int `json:"number"`
+		} `json:"pull_requests"`
+	} `json:"check_suite"`
+	Deployment *struct {
+		ID          int64  `json:"id"`
+		Ref         string `json:"ref"`
+		SHA         string `json:"sha"`
+		Environment string `json:"environment"`
+	} `json:"deployment"`
+	DeploymentStatus *struct {
+		State          string `json:"state"`
+		Environment    string `json:"environment"`
+		Description    string `json:"description"`
+		TargetURL      string `json:"target_url"`
+		EnvironmentURL string `json:"environment_url"`
+	} `json:"deployment_status"`
+	Discussion *struct {
+		Number   int         `json:"number"`
+		Title    string      `json:"title"`
+		State    string      `json:"state"`
+		HTMLURL  string      `json:"html_url"`
+		User     client.User `json:"user"`
+		Category struct {
+			Name string `json:"name"`
+		} `json:"category"`
+		AnswerHTMLURL string `json:"answer_html_url"`
+	} `json:"discussion"`
+}
+
+type workflowRun struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	HeadBranch string `json:"head_branch"`
+	HTMLURL    string `json:"html_url"`
 }
 
 // toEvent builds the event of one GitHub event. The room is the
@@ -168,6 +221,79 @@ func toEvent(id, typ, ts, repo string, sender client.User, self *client.User, p 
 			data["tag"], data["name"], data["url"], data["prerelease"] = r.TagName, r.Name, r.HTMLURL, r.Prerelease
 			ev.Text = fmt.Sprintf("%s %s release %s", who, p.Action, cmp.Or(r.Name, r.TagName))
 		}
+	case "pull_request_review_comment":
+		if pr := p.PullRequest; pr != nil {
+			thread(pr.Number, pr.Title)
+		}
+		if c := p.Comment; c != nil {
+			data["url"], data["author"], data["body"], data["path"] = c.HTMLURL, c.User.Login, c.Body, c.Path
+			if c.Line != nil {
+				data["line"] = *c.Line
+			}
+			ev.Text = fmt.Sprintf("%s commented on %s in #%v\n%s", who, c.Path, data["number"], c.Body)
+		}
+	case "check_suite":
+		if cs := p.CheckSuite; cs != nil {
+			data["suite_id"], data["app"], data["status"], data["conclusion"] = cs.ID, cs.App.Name, cs.Status, cs.Conclusion
+			data["branch"], data["head"] = cs.HeadBranch, cs.HeadSHA
+			data["url"] = "https://github.com/" + repo + "/commit/" + cs.HeadSHA + "/checks"
+			if len(cs.PullRequests) > 0 {
+				n := cs.PullRequests[0].Number
+				ev.Thread = &sdk.Thread{ID: strconv.Itoa(n)}
+				data["number"] = n
+			}
+			ev.Text = fmt.Sprintf("Checks of %s on %s: %s", cs.App.Name, cs.HeadBranch, cmp.Or(cs.Conclusion, cs.Status))
+		}
+	case "status":
+		branches := make([]string, 0, len(p.Branches))
+		for _, b := range p.Branches {
+			branches = append(branches, b.Name)
+		}
+		data["sha"], data["state"], data["context"], data["description"], data["branches"] = p.SHA, p.State, p.Context, p.Description, branches
+		if p.TargetURL != "" {
+			data["url"] = p.TargetURL
+		}
+		ev.Text = fmt.Sprintf("%s on %s: %s", p.Context, short(p.SHA), p.State)
+		if p.Description != "" {
+			ev.Text += " (" + p.Description + ")"
+		}
+	case "create", "delete":
+		data["ref"], data["ref_type"], data["author"] = p.Ref, p.RefType, who
+		verb := "created"
+		if typ == "delete" {
+			verb = "deleted"
+		} else {
+			data["url"] = "https://github.com/" + repo + "/tree/" + p.Ref
+		}
+		ev.Text = fmt.Sprintf("%s %s %s %s", who, verb, p.RefType, p.Ref)
+	case "deployment_status":
+		if d := p.Deployment; d != nil {
+			data["deployment_id"], data["ref"], data["sha"], data["environment"] = d.ID, d.Ref, d.SHA, d.Environment
+		}
+		if ds := p.DeploymentStatus; ds != nil {
+			data["state"], data["description"] = ds.State, ds.Description
+			data["environment"] = cmp.Or(ds.Environment, fmt.Sprint(data["environment"]))
+			if u := cmp.Or(ds.EnvironmentURL, ds.TargetURL); u != "" {
+				data["url"] = u
+			}
+			ev.Text = fmt.Sprintf("Deployment to %v: %s", data["environment"], ds.State)
+		}
+	case "discussion", "discussion_comment":
+		if d := p.Discussion; d != nil {
+			thread(d.Number, d.Title)
+			data["url"], data["category"] = d.HTMLURL, d.Category.Name
+			if typ == "discussion" {
+				data["author"], data["state"] = d.User.Login, d.State
+				if d.AnswerHTMLURL != "" {
+					data["answer_url"] = d.AnswerHTMLURL
+				}
+				ev.Text = fmt.Sprintf("%s %s discussion #%d: %s", who, p.Action, d.Number, d.Title)
+			}
+		}
+		if c := p.Comment; c != nil && typ == "discussion_comment" {
+			data["url"], data["author"], data["body"] = c.HTMLURL, c.User.Login, c.Body
+			ev.Text = c.Body
+		}
 	case "workflow_run":
 		if r := p.WorkflowRun; r != nil {
 			data["run_id"], data["name"], data["status"], data["conclusion"] = r.ID, r.Name, r.Status, r.Conclusion
@@ -178,6 +304,8 @@ func toEvent(id, typ, ts, repo string, sender client.User, self *client.User, p 
 	ev.Data, _ = json.Marshal(data) //nolint:errcheck // a map of plain values
 	return ev
 }
+
+func short(sha string) string { return sha[:min(len(sha), 7)] }
 
 func firstLine(s string) string {
 	line, _, _ := strings.Cut(s, "\n")
