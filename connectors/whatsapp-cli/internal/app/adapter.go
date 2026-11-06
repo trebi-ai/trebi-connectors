@@ -55,8 +55,9 @@ const LoginQR = "qr"
 
 // Adapter serves the trebi-connector/1 protocol over one WhatsApp session.
 type Adapter struct {
-	app   *App
-	fetch *http.Client
+	app     *App
+	fetch   *http.Client
+	decrypt *decryptWatch
 
 	mu    sync.Mutex
 	queue []any
@@ -70,7 +71,7 @@ type Adapter struct {
 // NewAdapter returns the protocol adapter of a. a must have an open
 // WhatsApp client.
 func NewAdapter(a *App) *Adapter {
-	return &Adapter{app: a, fetch: &http.Client{Timeout: 2 * time.Minute}, wake: make(chan struct{}, 1)}
+	return &Adapter{app: a, fetch: &http.Client{Timeout: 2 * time.Minute}, decrypt: newDecryptWatch(time.Now), wake: make(chan struct{}, 1)}
 }
 
 func (d *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.InitializeResult, error) {
@@ -98,7 +99,17 @@ func (d *Adapter) AuthStatus(ctx context.Context) (sdk.AuthState, error) {
 	case !d.app.wa.IsConnected():
 		return sdk.AuthState{State: sdk.StateConnecting, Account: d.account()}, nil
 	}
-	return sdk.AuthState{State: sdk.StateConnected, Account: d.account()}, nil
+	st := d.connectedStatus()
+	return sdk.AuthState{State: st.State, Account: st.Account}, nil
+}
+
+// connectedStatus is the status of a connected client. The decrypt error
+// changes it to error.
+func (d *Adapter) connectedStatus() sdk.Status {
+	if msg, ok := d.decrypt.Active(); ok {
+		return sdk.Status{State: sdk.StateError, Message: msg, Account: d.account()}
+	}
+	return sdk.Status{State: sdk.StateConnected, Account: d.account()}
 }
 
 // LoginMethods has the QR link. It is not available while a phone is
@@ -242,9 +253,25 @@ const (
 func (d *Adapter) handle(ctx context.Context, e sdk.Emitter, evt any) (runState, error) {
 	switch v := evt.(type) {
 	case *events.Message:
+		if !v.Info.IsFromMe && v.Info.Chat.Server != types.NewsletterServer && d.decrypt.Clear() {
+			if err := e.Status(d.connectedStatus()); err != nil {
+				return runSame, err
+			}
+		}
 		ev, ok := d.liveEvent(ctx, v)
 		if ok {
 			return runSame, e.Event(ev)
+		}
+	case *events.UndecryptableMessage:
+		if v.UnavailableType != "" || v.Info.IsFromMe {
+			break
+		}
+		chat := d.app.knownChatName(ctx, v.Info.Chat, v.Info.PushName)
+		if chat == "" {
+			chat = v.Info.Chat.String()
+		}
+		if d.decrypt.Fail(chat) {
+			return runSame, e.Status(d.connectedStatus())
 		}
 	case *events.HistorySync:
 		d.storeHistory(ctx, v)
@@ -256,7 +283,7 @@ func (d *Adapter) handle(ctx context.Context, e sdk.Emitter, evt any) (runState,
 		d.app.storeGroup(v.GroupInfo)
 	case *events.Connected:
 		d.refreshGroups(ctx)
-		return runConnected, e.Status(sdk.Status{State: sdk.StateConnected, Account: d.account()})
+		return runConnected, e.Status(d.connectedStatus())
 	case *events.Disconnected:
 		return runLost, e.Status(sdk.Status{State: sdk.StateConnecting, Message: "disconnected"})
 	case *events.LoggedOut:
