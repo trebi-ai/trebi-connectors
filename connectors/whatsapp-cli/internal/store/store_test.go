@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -390,5 +391,58 @@ func TestMessageReplyToID(t *testing.T) {
 	page, err := db.Page(PageParams{ChatJID: p.ChatJID})
 	if err != nil || len(page) != 1 || page[0].ReplyToID != "m1" {
 		t.Fatalf("page: %+v %v", page, err)
+	}
+}
+
+func TestMessageMentions(t *testing.T) {
+	db := openTestDB(t)
+	ts := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	group := "120363000000000001@g.us"
+	if err := db.UpsertChat(group, "group", "Family", ts); err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"id":"1@s.whatsapp.net","name":"Ana","me":false}]`
+	p := UpsertMessageParams{ChatJID: group, MsgID: "m1", Timestamp: ts, Text: "@Ana hi", Mentions: json.RawMessage(want)}
+	if err := db.UpsertMessage(p); err != nil {
+		t.Fatal(err)
+	}
+	p.Mentions = nil
+	if err := db.UpsertMessage(p); err != nil {
+		t.Fatal(err)
+	}
+	page, err := db.Page(PageParams{ChatJID: group})
+	if err != nil || len(page) != 1 || string(page[0].Mentions) != want {
+		t.Fatalf("page: %+v %v", page, err)
+	}
+	m, err := db.FindMessage("m1")
+	if err != nil || string(m.Mentions) != want {
+		t.Fatalf("find: %+v %v", m, err)
+	}
+}
+
+func TestLastSenderName(t *testing.T) {
+	db := openTestDB(t)
+	ts := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	group := "120363000000000001@g.us"
+	lid := "19503530426554@lid"
+	if err := db.UpsertChat(group, "group", "Family", ts); err != nil {
+		t.Fatal(err)
+	}
+	if name, err := db.LastSenderName(lid); err != nil || name != "" {
+		t.Fatalf("no message: %q %v", name, err)
+	}
+	for i, p := range []UpsertMessageParams{
+		{MsgID: "m1", SenderJID: lid, SenderName: "Pierre", Text: "a"},
+		{MsgID: "m2", SenderJID: lid, SenderName: "Pierre-Yves Brunet", Text: "b"},
+		{MsgID: "m3", SenderJID: lid, SenderName: "Mine", FromMe: true, Text: "c"},
+		{MsgID: "m4", SenderJID: lid, SenderName: "me", Text: "d"},
+	} {
+		p.ChatJID, p.Timestamp = group, ts.Add(time.Duration(i)*time.Minute)
+		if err := db.UpsertMessage(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if name, err := db.LastSenderName("1@s.whatsapp.net", lid); err != nil || name != "Pierre-Yves Brunet" {
+		t.Fatalf("name: %q %v", name, err)
 	}
 }

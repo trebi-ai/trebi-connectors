@@ -330,11 +330,17 @@ func (d *Adapter) storeHistory(ctx context.Context, v *events.HistorySync) {
 			if pm.ID == "" || pm.Chat.IsEmpty() {
 				continue
 			}
-			if err := d.app.storeParsedMessage(ctx, pm, historyMessage); err != nil {
+			if err := d.app.storeParsedMessage(ctx, &pm, historyMessage); err != nil {
 				slog.Warn("store history message", "id", pm.ID, "err", err)
 			}
 		}
 	}
+}
+
+// messageData is the data of a message event.
+type messageData struct {
+	PushName string       `json:"push_name,omitempty"`
+	Mentions []wa.Mention `json:"mentions,omitempty"`
 }
 
 // liveEvent stores a live message and maps it. It skips status updates,
@@ -349,7 +355,7 @@ func (d *Adapter) liveEvent(ctx context.Context, v *events.Message) (sdk.Event, 
 			pm.ReactionEmoji = r.GetText()
 		}
 	}
-	if err := d.app.storeParsedMessage(ctx, pm, liveMessage); err != nil {
+	if err := d.app.storeParsedMessage(ctx, &pm, liveMessage); err != nil {
 		slog.Warn("store message", "id", pm.ID, "err", err)
 	}
 	sender := v.Info.Sender
@@ -383,8 +389,12 @@ func (d *Adapter) liveEvent(ctx context.Context, v *events.Message) (sdk.Event, 
 	ev.Type = "message"
 	ev.Text = pm.Text
 	ev.ReplyTo = pm.ReplyToID
+	data := messageData{Mentions: pm.Mentions}
 	if s := strings.TrimSpace(pm.PushName); s != "" && !pm.FromMe {
-		ev.Data, _ = json.Marshal(map[string]string{"push_name": s}) //nolint:errcheck // strings always encode
+		data.PushName = s
+	}
+	if data.PushName != "" || len(data.Mentions) > 0 {
+		ev.Data, _ = json.Marshal(data) //nolint:errcheck // strings and bools always encode
 	}
 	if pm.Media != nil {
 		if pm.Media.Caption != "" && ev.Text == "" {
@@ -617,6 +627,12 @@ func (d *Adapter) storedEvent(m store.Message) sdk.Event {
 	}
 	if m.MediaType != "" {
 		ev.Attachments = []sdk.Attachment{{ID: m.MsgID, Name: m.Filename, Mime: m.MimeType, Size: int64(m.FileLength), Path: d.app.MediaPath(m.LocalPath)}}
+	}
+	if len(m.Mentions) > 0 {
+		var data messageData
+		if err := json.Unmarshal(m.Mentions, &data.Mentions); err == nil && len(data.Mentions) > 0 {
+			ev.Data, _ = json.Marshal(data) //nolint:errcheck // strings and bools always encode
+		}
 	}
 	return ev
 }

@@ -481,6 +481,37 @@ func (c *Client) Account() (types.JID, string) {
 	return c.client.Store.ID.ToNonAD(), c.client.Store.PushName
 }
 
+// AccountLID returns the LID of the linked account with no device part, or
+// an empty JID when it is not known.
+func (c *Client) AccountLID() types.JID {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client == nil || c.client.Store == nil {
+		return types.JID{}
+	}
+	return c.client.Store.GetLID().ToNonAD()
+}
+
+// PNForLID maps a LID to its phone JID from the local LID store. It makes
+// no network call. A JID that is not a LID comes back as is. A LID with no
+// mapping gives an empty JID.
+func (c *Client) PNForLID(ctx context.Context, lid types.JID) (types.JID, error) {
+	if lid.Server != types.HiddenUserServer {
+		return lid.ToNonAD(), nil
+	}
+	c.mu.Lock()
+	cli := c.client
+	c.mu.Unlock()
+	if cli == nil || cli.Store == nil || cli.Store.LIDs == nil {
+		return types.JID{}, fmt.Errorf("not initialized")
+	}
+	pn, err := cli.Store.LIDs.GetPNForLID(ctx, lid)
+	if err != nil {
+		return types.JID{}, err
+	}
+	return pn.ToNonAD(), nil
+}
+
 // SendReaction reacts to message id of sender in chat. An empty emoji
 // removes the reaction.
 func (c *Client) SendReaction(ctx context.Context, chat, sender types.JID, id types.MessageID, emoji string) (types.MessageID, error) {

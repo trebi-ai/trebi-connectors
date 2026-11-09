@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: whatsapp
 title: WhatsApp
 description: "Send and receive WhatsApp messages from your own account."
-version: 0.9.2
+version: 0.10.0
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

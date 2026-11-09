@@ -22,6 +22,7 @@ var schemaMigrations = []migration{
 	{version: 4, name: "relative media paths", up: migrateRelativeMediaPaths},
 	{version: 5, name: "clear chat names that are the jid", up: migrateClearJIDChatNames},
 	{version: 6, name: "messages reply_to_id column", up: migrateMessagesReplyTo},
+	{version: 7, name: "messages mentions_json column", up: migrateMessagesMentions},
 }
 
 // SchemaVersion is the newest schema that this program knows. The store
@@ -337,6 +338,19 @@ func migrateMessagesReplyTo(d *DB) error {
 	}
 	if _, err := d.sql.Exec(`ALTER TABLE messages ADD COLUMN reply_to_id TEXT`); err != nil {
 		return fmt.Errorf("add reply_to_id column: %w", err)
+	}
+	return nil
+}
+
+// migrateMessagesMentions keeps the people that a message names, so history
+// and replay send them again.
+func migrateMessagesMentions(d *DB) error {
+	has, err := d.tableHasColumn("messages", "mentions_json")
+	if err != nil || has {
+		return err
+	}
+	if _, err := d.sql.Exec(`ALTER TABLE messages ADD COLUMN mentions_json TEXT`); err != nil {
+		return fmt.Errorf("add mentions_json column: %w", err)
 	}
 	return nil
 }

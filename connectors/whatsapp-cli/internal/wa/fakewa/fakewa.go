@@ -37,6 +37,7 @@ var (
 	Ana   = types.JID{User: "5511911110001", Server: types.DefaultUserServer}
 	Bruno = types.JID{User: "5511911110002", Server: types.DefaultUserServer}
 	Group = types.JID{User: "120363000000000099", Server: types.GroupServer}
+	MeLID = types.JID{User: "100000000000001", Server: types.HiddenUserServer}
 )
 
 // Client implements app.WAClient in memory.
@@ -52,6 +53,7 @@ type Client struct {
 	connectEvents []interface{}
 
 	contacts map[types.JID]types.ContactInfo
+	lids     map[types.JID]types.JID // LID to phone JID
 	groups   map[types.JID]*types.GroupInfo
 	names    map[types.JID]string // the RememberGroup cache
 
@@ -77,6 +79,7 @@ func New() *Client {
 		authed:        true,
 		handlers:      map[uint32]func(interface{}){},
 		contacts:      map[types.JID]types.ContactInfo{},
+		lids:          map[types.JID]types.JID{MeLID: Me},
 		groups:        map[types.JID]*types.GroupInfo{},
 		names:         map[types.JID]string{},
 		nextHandlerID: 1,
@@ -162,6 +165,13 @@ func (f *Client) AddContact(jid types.JID, info types.ContactInfo) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.contacts[jid] = info
+}
+
+// AddLID maps a LID to a phone JID.
+func (f *Client) AddLID(lid, pn types.JID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lids[lid] = pn
 }
 
 // AddGroup adds a joined group.
@@ -536,6 +546,27 @@ func (f *Client) Account() (types.JID, string) {
 		return types.JID{}, ""
 	}
 	return Me, "Me"
+}
+
+// AccountLID returns MeLID when the fake is logged in.
+func (f *Client) AccountLID() types.JID {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.authed {
+		return types.JID{}
+	}
+	return MeLID
+}
+
+// PNForLID reads the mappings of AddLID. A JID that is not a LID comes back
+// as is.
+func (f *Client) PNForLID(ctx context.Context, lid types.JID) (types.JID, error) {
+	if lid.Server != types.HiddenUserServer {
+		return lid.ToNonAD(), nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lids[lid.ToNonAD()], nil
 }
 
 func (f *Client) SendReaction(ctx context.Context, chat, sender types.JID, id types.MessageID, emoji string) (types.MessageID, error) {

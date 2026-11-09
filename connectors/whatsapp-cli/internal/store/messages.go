@@ -1,6 +1,9 @@
 package store
 
 import (
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +29,7 @@ type UpsertMessageParams struct {
 	FileEncSHA256 []byte
 	FileLength    uint64
 	ReplyToID     string
+	Mentions      json.RawMessage
 }
 
 func (d *DB) UpsertMessage(p UpsertMessageParams) error {
@@ -33,8 +37,8 @@ func (d *DB) UpsertMessage(p UpsertMessageParams) error {
 		INSERT INTO messages(
 			chat_jid, chat_name, msg_id, sender_jid, sender_name, ts, from_me, text, display_text,
 			media_type, media_caption, filename, mime_type, direct_path,
-			media_key, file_sha256, file_enc_sha256, file_length, reply_to_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			media_key, file_sha256, file_enc_sha256, file_length, reply_to_id, mentions_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			chat_name=COALESCE(NULLIF(excluded.chat_name,''), messages.chat_name),
 			sender_jid=excluded.sender_jid,
@@ -52,10 +56,11 @@ func (d *DB) UpsertMessage(p UpsertMessageParams) error {
 			file_sha256=CASE WHEN excluded.file_sha256 IS NOT NULL AND length(excluded.file_sha256)>0 THEN excluded.file_sha256 ELSE messages.file_sha256 END,
 			file_enc_sha256=CASE WHEN excluded.file_enc_sha256 IS NOT NULL AND length(excluded.file_enc_sha256)>0 THEN excluded.file_enc_sha256 ELSE messages.file_enc_sha256 END,
 			file_length=CASE WHEN excluded.file_length>0 THEN excluded.file_length ELSE messages.file_length END,
-			reply_to_id=COALESCE(NULLIF(excluded.reply_to_id,''), messages.reply_to_id)
+			reply_to_id=COALESCE(NULLIF(excluded.reply_to_id,''), messages.reply_to_id),
+			mentions_json=COALESCE(NULLIF(excluded.mentions_json,''), messages.mentions_json)
 	`, p.ChatJID, nullIfEmpty(p.ChatName), p.MsgID, nullIfEmpty(p.SenderJID), nullIfEmpty(p.SenderName), unix(p.Timestamp), boolToInt(p.FromMe), nullIfEmpty(p.Text), nullIfEmpty(p.DisplayText),
 		nullIfEmpty(p.MediaType), nullIfEmpty(p.MediaCaption), nullIfEmpty(p.Filename), nullIfEmpty(p.MimeType), nullIfEmpty(p.DirectPath),
-		p.MediaKey, p.FileSHA256, p.FileEncSHA256, int64(p.FileLength), nullIfEmpty(p.ReplyToID),
+		p.MediaKey, p.FileSHA256, p.FileEncSHA256, int64(p.FileLength), nullIfEmpty(p.ReplyToID), nullIfEmpty(string(p.Mentions)),
 	)
 	return err
 }
@@ -231,7 +236,8 @@ type PageParams struct {
 
 const pageColumns = `m.chat_jid, COALESCE(c.name,''), m.msg_id, COALESCE(m.sender_jid,''), m.ts, m.from_me, COALESCE(m.text,''),
 	COALESCE(m.display_text,''), COALESCE(m.media_type,''), COALESCE(m.sender_name,''), COALESCE(m.filename,''),
-	COALESCE(m.mime_type,''), COALESCE(m.file_length,0), COALESCE(m.local_path,''), COALESCE(m.reply_to_id,'')`
+	COALESCE(m.mime_type,''), COALESCE(m.file_length,0), COALESCE(m.local_path,''), COALESCE(m.reply_to_id,''),
+	COALESCE(m.mentions_json,'')`
 
 // Page lists messages in a stable order for history and replay.
 func (d *DB) Page(p PageParams) ([]Message, error) {
@@ -282,9 +288,13 @@ func scanPageRow(r interface{ Scan(...any) error }) (Message, error) {
 	var m Message
 	var ts, fileLen int64
 	var fromMe int
+	var mentions string
 	if err := r.Scan(&m.ChatJID, &m.ChatName, &m.MsgID, &m.SenderJID, &ts, &fromMe, &m.Text, &m.DisplayText, &m.MediaType,
-		&m.SenderName, &m.Filename, &m.MimeType, &fileLen, &m.LocalPath, &m.ReplyToID); err != nil {
+		&m.SenderName, &m.Filename, &m.MimeType, &fileLen, &m.LocalPath, &m.ReplyToID, &mentions); err != nil {
 		return Message{}, err
+	}
+	if mentions != "" {
+		m.Mentions = json.RawMessage(mentions)
 	}
 	m.Timestamp = fromUnix(ts)
 	m.FromMe = fromMe != 0
@@ -292,4 +302,28 @@ func scanPageRow(r interface{ Scan(...any) error }) (Message, error) {
 		m.FileLength = uint64(fileLen)
 	}
 	return m, nil
+}
+
+// LastSenderName returns the sender name of the newest message from one of
+// jids. It skips own messages and the name "me". It returns "" when no
+// message has a name.
+func (d *DB) LastSenderName(jids ...string) (string, error) {
+	var keep []any
+	for _, j := range jids {
+		if j != "" {
+			keep = append(keep, j)
+		}
+	}
+	if len(keep) == 0 {
+		return "", nil
+	}
+	var name string
+	err := d.sql.QueryRow(`SELECT sender_name FROM messages
+		WHERE sender_jid IN (?`+strings.Repeat(",?", len(keep)-1)+`) AND from_me = 0
+			AND COALESCE(sender_name,'') NOT IN ('', 'me')
+		ORDER BY ts DESC LIMIT 1`, keep...).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }

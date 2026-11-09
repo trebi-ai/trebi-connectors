@@ -2,7 +2,7 @@ package app
 
 import (
 	"encoding/json"
-	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +13,8 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 	"github.com/trebi-ai/trebi-connectors/sdk/sdktest"
 )
@@ -108,6 +110,9 @@ func TestAdapterEvents(t *testing.T) {
 	if msg.ID != "M1" || msg.Type != "message" || msg.Text != "Any news?" || msg.Room.ID != peer.String() || msg.Room.Kind != "dm" ||
 		msg.Sender.ID != peer.String() || msg.Sender.Self || msg.TS != "2026-09-28T08:00:00.000000Z" {
 		t.Fatalf("message: %+v", msg)
+	}
+	if data := string(msg.Data); data != `{"push_name":"Sam"}` {
+		t.Fatalf("message data: %s", data)
 	}
 	react := waitEvent(t, c)
 	if react.Type != "reaction" || !strings.Contains(string(react.Data), `"message_id":"M1"`) ||
@@ -242,4 +247,48 @@ func TestAdapterLogin(t *testing.T) {
 	if st := waitStatus(t, c, sdk.StateAuthRequired); st.Reason != sdk.ReasonLoggedOut {
 		t.Fatalf("logout: %+v", st)
 	}
+}
+
+func TestAdapterGroupMentions(t *testing.T) {
+	f := fakewa.New()
+	lid := types.JID{User: "19503530426554", Server: types.HiddenUserServer}
+	pn := types.JID{User: "33612345678", Server: types.DefaultUserServer}
+	f.AddLID(lid, pn)
+	f.AddContact(pn, types.ContactInfo{Found: true, FullName: "Pierre-Yves Brunet"})
+	c, _ := startAdapter(t, f)
+	waitStatus(t, c, sdk.StateConnected)
+
+	ts := time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
+	f.Emit(live("G0", group, peer, ts, &waE2E.Message{Conversation: proto.String("Hello all")}))
+	waitEvent(t, c)
+	f.Emit(live("G1", group, peer, ts.Add(time.Second), &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text:        proto.String("@19503530426554 do we have it?"),
+		ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{lid.String()}},
+	}}))
+
+	const wantText = "@Pierre-Yves Brunet do we have it?"
+	wantMentions := []wa.Mention{{ID: pn.String(), Name: "Pierre-Yves Brunet"}}
+	check := func(what string, ev sdk.Event, pushName string) {
+		t.Helper()
+		var data messageData
+		if err := json.Unmarshal(ev.Data, &data); err != nil {
+			t.Fatalf("%s data: %s %v", what, ev.Data, err)
+		}
+		if ev.ID != "G1" || ev.Text != wantText || data.PushName != pushName || !reflect.DeepEqual(data.Mentions, wantMentions) {
+			t.Fatalf("%s: %+v %s", what, ev, ev.Data)
+		}
+		if !strings.Contains(string(ev.Data), `"me":false`) {
+			t.Fatalf("%s data has no me field: %s", what, ev.Data)
+		}
+	}
+	check("live", waitEvent(t, c), "Sam")
+
+	var rep sdk.ReplayResult
+	if err := c.Call(sdk.MethodEventsReplay, sdk.ReplayParams{After: "G0", Limit: 10}, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Events) != 1 {
+		t.Fatalf("replay: %+v", rep.Events)
+	}
+	check("replay", rep.Events[0], "")
 }

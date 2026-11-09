@@ -128,7 +128,7 @@ whatsapp-cli --json messages search "keyword" | jq .
 
 ## Read a conversation
 
-Read the earlier messages of a chat with `messages list`. WhatsApp has no threads. A conversation is a DM, or a reply chain in a group. `--before` and `--after` take a time.
+Read the earlier messages of a chat with `messages list`. WhatsApp has no threads. A conversation is a DM or a group. A reply quotes an earlier message of the same chat. In Trebi, the messages of one group go to the same run while that run is live. `--before` and `--after` take a time.
 
 ```bash
 whatsapp-cli --json messages list --chat <JID> --limit 50
@@ -137,6 +137,18 @@ whatsapp-cli messages show --chat <JID> --id <MSG_ID>
 ```
 
 In the JSON output, `ReplyToID` is the id of the quoted message. Use `messages show` with that id to read the quoted message. When the local store has no older messages, run `history backfill --chat <JID>` first, then read again.
+
+## Mentions in a group
+
+In Trebi, a message event can have `data.mentions`. It lists each person that the message names as `{id, name, me}`. The text shows each person as `@<name>`. `me` is true for the account of this connection. When the name is not known, the text keeps `@<number>`.
+
+A group message that names other people and does not name you is not for you. Do not reply by default.
+
+Reply only to add useful context that the named person possibly does not know, for example a correction or a fact from your records. Keep the reply short. Start the reply with the name of the person that it is for.
+
+You can still record the facts of the message.
+
+A message that names you is for you. For a message that names nobody, decide as usual.
 
 ## Send
 

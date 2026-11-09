@@ -52,6 +52,8 @@ type WAClient interface {
 	Logout(ctx context.Context) error
 
 	Account() (types.JID, string)
+	AccountLID() types.JID
+	PNForLID(ctx context.Context, lid types.JID) (types.JID, error)
 	SendReaction(ctx context.Context, chat, sender types.JID, id types.MessageID, emoji string) (types.MessageID, error)
 }
 

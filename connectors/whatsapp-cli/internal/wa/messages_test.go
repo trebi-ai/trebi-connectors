@@ -142,3 +142,39 @@ func TestParseLiveMessageReply(t *testing.T) {
 		t.Fatalf("expected ReplyToDisplay to be quoted, got %q", pm.ReplyToDisplay)
 	}
 }
+
+func TestParseLiveMessageMentions(t *testing.T) {
+	group, _ := types.ParseJID("120363000000000001@g.us")
+	sender, _ := types.ParseJID("sender@s.whatsapp.net")
+	live := func(m *waE2E.Message) *events.Message {
+		return &events.Message{
+			Info:    types.MessageInfo{MessageSource: types.MessageSource{Chat: group, Sender: sender, IsGroup: true}, ID: "mid"},
+			Message: m,
+		}
+	}
+	const lid = "19503530426554@lid"
+
+	pm := ParseLiveMessage(live(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text:        proto.String("@19503530426554 do we have it?"),
+		ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{lid, lid, "", " "}},
+	}}))
+	if len(pm.MentionedJIDs) != 1 || pm.MentionedJIDs[0] != lid || pm.Mentions != nil {
+		t.Fatalf("extended text: %+v %+v", pm.MentionedJIDs, pm.Mentions)
+	}
+
+	img := &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+		Caption:     proto.String("@19503530426554 look"),
+		ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{lid}},
+	}}
+	if pm := ParseLiveMessage(live(img)); len(pm.MentionedJIDs) != 1 || pm.MentionedJIDs[0] != lid {
+		t.Fatalf("caption: %+v", pm.MentionedJIDs)
+	}
+
+	hist := ParseHistoryMessage(group.String(), &waWeb.WebMessageInfo{
+		Key:     &waCommon.MessageKey{ID: proto.String("hid"), Participant: proto.String(sender.String())},
+		Message: img,
+	})
+	if len(hist.MentionedJIDs) != 1 || hist.MentionedJIDs[0] != lid {
+		t.Fatalf("history: %+v", hist.MentionedJIDs)
+	}
+}

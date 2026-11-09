@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -105,7 +106,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 					}
 				}
 			}
-			if err := a.storeParsedMessage(ctx, pm, liveMessage); err == nil {
+			if err := a.storeParsedMessage(ctx, &pm, liveMessage); err == nil {
 				messagesStored.Add(1)
 			}
 			if opts.DownloadMedia && pm.Media != nil && pm.ID != "" {
@@ -132,7 +133,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 					if pm.ID == "" || pm.Chat.IsEmpty() {
 						continue
 					}
-					if err := a.storeParsedMessage(ctx, pm, historyMessage); err == nil {
+					if err := a.storeParsedMessage(ctx, &pm, historyMessage); err == nil {
 						messagesStored.Add(1)
 					}
 					if opts.DownloadMedia && pm.Media != nil && pm.ID != "" {
@@ -281,7 +282,10 @@ const (
 	historyMessage
 )
 
-func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage, origin msgOrigin) error {
+// storeParsedMessage resolves the mentions of pm, then stores it. The
+// caller sees the changed text.
+func (a *App) storeParsedMessage(ctx context.Context, pm *wa.ParsedMessage, origin msgOrigin) error {
+	a.resolveMentions(ctx, pm)
 	chatJID := pm.Chat.String()
 	if origin == liveMessage && pm.Chat.Server == types.GroupServer {
 		a.storeGroupInfo(ctx, pm.Chat)
@@ -349,7 +353,11 @@ func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage, origi
 		fileLen = pm.Media.FileLength
 	}
 
-	displayText := a.buildDisplayText(ctx, pm)
+	displayText := a.buildDisplayText(ctx, *pm)
+	var mentions json.RawMessage
+	if len(pm.Mentions) > 0 {
+		mentions, _ = json.Marshal(pm.Mentions) //nolint:errcheck // strings and bools always encode
+	}
 
 	return a.db.UpsertMessage(store.UpsertMessageParams{
 		ChatJID:       chatJID,
@@ -371,6 +379,7 @@ func (a *App) storeParsedMessage(ctx context.Context, pm wa.ParsedMessage, origi
 		FileEncSHA256: fileEncSha,
 		FileLength:    fileLen,
 		ReplyToID:     pm.ReplyToID,
+		Mentions:      mentions,
 	})
 }
 

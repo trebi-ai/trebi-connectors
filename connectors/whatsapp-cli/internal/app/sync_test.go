@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
+	"strings"
 	"testing"
 	"time"
 
@@ -255,5 +256,59 @@ func TestSyncOnceIdleExit(t *testing.T) {
 	}
 	if time.Since(start) > 1500*time.Millisecond {
 		t.Fatalf("expected to exit quickly on idle, took %s", time.Since(start))
+	}
+}
+
+func TestSyncStoresMentions(t *testing.T) {
+	a := newTestApp(t)
+	f := fakewa.New()
+	a.wa = f
+
+	group := types.JID{User: "120363000000000001", Server: types.GroupServer}
+	sender := types.JID{User: "5511999999999", Server: types.DefaultUserServer}
+	ana := types.JID{User: "5511900000001", Server: types.DefaultUserServer}
+	f.AddContact(ana, types.ContactInfo{Found: true, FullName: "Ana Maria"})
+	mention := func(text string) *waE2E.Message {
+		return &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String(text), ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{ana.String()}},
+		}}
+	}
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	live := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: group, Sender: sender, IsGroup: true},
+			ID:            "m-live", Timestamp: base.Add(2 * time.Second), PushName: "Sam",
+		},
+		Message: mention("@5511900000001 hello"),
+	}
+	history := &events.HistorySync{Data: &waHistorySync.HistorySync{
+		SyncType: waHistorySync.HistorySync_FULL.Enum(),
+		Conversations: []*waHistorySync.Conversation{{
+			ID: proto.String(group.String()),
+			Messages: []*waHistorySync.HistorySyncMsg{{Message: &waWeb.WebMessageInfo{
+				Key:              &waCommon.MessageKey{RemoteJID: proto.String(group.String()), ID: proto.String("m-hist"), Participant: proto.String(sender.String())},
+				MessageTimestamp: proto.Uint64(uint64(base.Add(time.Second).Unix())),
+				Message:          mention("older @5511900000001"),
+			}}},
+		}},
+	}}
+	f.SetConnectEvents(live, history)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	if _, err := a.Sync(ctx, SyncOptions{Mode: SyncModeFollow}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	want := `[{"id":"5511900000001@s.whatsapp.net","name":"Ana Maria","me":false}]`
+	for id, text := range map[string]string{"m-live": "@Ana Maria hello", "m-hist": "older @Ana Maria"} {
+		m, err := a.db.FindMessage(id)
+		if err != nil || m.Text != text || !strings.Contains(m.DisplayText, "@Ana Maria") || string(m.Mentions) != want {
+			t.Fatalf("%s: %+v %s %v", id, m, m.Mentions, err)
+		}
 	}
 }

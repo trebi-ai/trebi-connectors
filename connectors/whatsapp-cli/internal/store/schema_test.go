@@ -30,10 +30,44 @@ func TestOpenCreatesExpectedSchema(t *testing.T) {
 		"display_text",
 		"local_path",
 		"downloaded_at",
+		"mentions_json",
 	} {
 		if !cols[want] {
 			t.Fatalf("expected messages column %q to exist", want)
 		}
+	}
+	var v int
+	if err := db.sql.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != 7 || SchemaVersion != 7 {
+		t.Fatalf("user_version %d (known %d) %v", v, SchemaVersion, err)
+	}
+}
+
+func TestMessagesMentionsMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "whatsapp-cli.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make the store look like version 6.
+	if _, err := db.sql.Exec(`ALTER TABLE messages DROP COLUMN mentions_json; DELETE FROM schema_migrations WHERE version = 7; PRAGMA user_version = 6`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.sql.Exec(`INSERT INTO chats(jid, kind) VALUES('c', 'dm'); INSERT INTO messages(chat_jid, msg_id, ts, from_me, text) VALUES('c', 'old', 1, 0, 'hi')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	if db, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	m, err := db.FindMessage("old")
+	if err != nil || m.Text != "hi" || m.Mentions != nil {
+		t.Fatalf("old row: %+v %v", m, err)
+	}
+	var v int
+	if err := db.sql.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != 7 {
+		t.Fatalf("user_version %d %v", v, err)
 	}
 }
 

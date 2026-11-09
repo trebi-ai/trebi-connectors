@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -62,6 +63,7 @@ type Message struct {
 	MimeType   string
 	FileLength uint64
 	LocalPath  string
+	Mentions   json.RawMessage `json:",omitempty"`
 }
 
 type MessageInfo struct {

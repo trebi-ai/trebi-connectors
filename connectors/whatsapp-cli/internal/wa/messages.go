@@ -35,6 +35,17 @@ type ParsedMessage struct {
 	ReplyToDisplay string
 	ReactionToID   string
 	ReactionEmoji  string
+	MentionedJIDs  []string
+	// Mentions stays nil until the app resolves MentionedJIDs.
+	Mentions []Mention
+}
+
+// Mention is one person that a message names. ID is the phone JID when it is
+// known, else the JID as WhatsApp sends it. Me is true for the own account.
+type Mention struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+	Me   bool   `json:"me"`
 }
 
 // PeerPushName is the push name of the other person. It is "" for an own
@@ -203,6 +214,15 @@ func extractWAProto(m *waE2E.Message, pm *ParsedMessage) {
 		}
 		if quoted := ctx.GetQuotedMessage(); quoted != nil {
 			pm.ReplyToDisplay = strings.TrimSpace(displayTextForProto(quoted))
+		}
+		seen := map[string]bool{}
+		for _, jid := range ctx.GetMentionedJID() {
+			jid = strings.TrimSpace(jid)
+			if jid == "" || seen[jid] {
+				continue
+			}
+			seen[jid] = true
+			pm.MentionedJIDs = append(pm.MentionedJIDs, jid)
 		}
 	}
 }

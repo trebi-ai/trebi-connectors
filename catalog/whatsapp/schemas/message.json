@@ -6,6 +6,28 @@
     "push_name": {
       "type": "string",
       "description": "The name that the sender set in WhatsApp."
+    },
+    "mentions": {
+      "type": "array",
+      "description": "The people that the message names.",
+      "items": {
+        "type": "object",
+        "required": ["id", "me"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The user JID: the phone form when known."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the person; empty when it is not known."
+          },
+          "me": {
+            "type": "boolean",
+            "description": "True for the account of this connection."
+          }
+        }
+      }
     }
   }
 }

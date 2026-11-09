@@ -13,6 +13,8 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/store"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
@@ -130,5 +132,85 @@ func TestGroupInfoEventRenames(t *testing.T) {
 	}
 	if got := d.app.wa.KnownChatName(ctx, group, ""); got != "New" {
 		t.Fatalf("cache: %q", got)
+	}
+}
+
+func TestRewriteMentions(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, want string
+		ms               []wa.Mention
+	}{
+		{"longer number stays", "@123 and @1234", "@Ana and @1234", []wa.Mention{{Name: "Ana"}}},
+		{"empty name stays", "@123 hi", "@123 hi", []wa.Mention{{}}},
+		{"end and punctuation", "hi @123, see @123", "hi @Ana, see @Ana", []wa.Mention{{Name: "Ana"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rewriteMentions(tc.text, []string{"123@lid"}, tc.ms); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveMentions(t *testing.T) {
+	a := newTestApp(t)
+	f := fakewa.New()
+	a.wa = f
+	ts := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	jid := func(user, server string) types.JID { return types.JID{User: user, Server: server} }
+
+	anaLID, anaPN := jid("200000000000001", types.HiddenUserServer), jid("5511900000001", types.DefaultUserServer)
+	f.AddLID(anaLID, anaPN)
+	f.AddContact(anaPN, types.ContactInfo{Found: true, FullName: "Ana Maria"})
+
+	boss := jid("5511900000002", types.DefaultUserServer)
+	f.AddContact(boss, types.ContactInfo{Found: true, FullName: "Carlos Silva"})
+	if err := a.db.UpsertContact(boss.String(), boss.User, "", "Carlos Silva", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.db.SetAlias(boss.String(), "Boss"); err != nil {
+		t.Fatal(err)
+	}
+
+	pierreLID, pierrePN := jid("19503530426554", types.HiddenUserServer), jid("5511900000003", types.DefaultUserServer)
+	f.AddLID(pierreLID, pierrePN)
+	if err := a.db.UpsertChat(group.String(), "group", "Family", ts); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.db.UpsertMessage(store.UpsertMessageParams{ChatJID: group.String(), MsgID: "P1", SenderJID: pierrePN.String(), SenderName: "Pierre-Yves Brunet", Timestamp: ts, Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+
+	nobody := jid("5511900000004", types.DefaultUserServer)
+	unknownLID := jid("300000000000009", types.HiddenUserServer)
+
+	for _, tc := range []struct {
+		name string
+		raw  types.JID
+		want wa.Mention
+	}{
+		{"lid to contact", anaLID, wa.Mention{ID: anaPN.String(), Name: "Ana Maria"}},
+		{"own lid", fakewa.MeLID, wa.Mention{ID: fakewa.Me.String(), Name: "Me", Me: true}},
+		{"own phone", fakewa.Me, wa.Mention{ID: fakewa.Me.String(), Name: "Me", Me: true}},
+		{"alias wins", boss, wa.Mention{ID: boss.String(), Name: "Boss"}},
+		{"stored push name", pierreLID, wa.Mention{ID: pierrePN.String(), Name: "Pierre-Yves Brunet"}},
+		{"phone only", nobody, wa.Mention{ID: nobody.String(), Name: "+" + nobody.User}},
+		{"unknown lid", unknownLID, wa.Mention{ID: unknownLID.String()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text := "@" + tc.raw.User + " can you check?"
+			pm := wa.ParsedMessage{Text: text, MentionedJIDs: []string{tc.raw.String()}}
+			a.resolveMentions(context.Background(), &pm)
+			if len(pm.Mentions) != 1 || pm.Mentions[0] != tc.want {
+				t.Fatalf("mentions: %+v, want %+v", pm.Mentions, tc.want)
+			}
+			want := text
+			if tc.want.Name != "" {
+				want = "@" + tc.want.Name + " can you check?"
+			}
+			if pm.Text != want {
+				t.Fatalf("text: %q, want %q", pm.Text, want)
+			}
+		})
 	}
 }
