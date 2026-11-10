@@ -19,6 +19,28 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
+## Install a CLI with `go install`
+
+With Go 1.26 or newer, install a CLI from the public repository:
+
+```bash
+go install github.com/trebi-ai/trebi-connectors/connectors/slack-cli@latest
+```
+
+Replace `slack-cli` with the folder of another CLI in the table. The program goes to `$(go env GOPATH)/bin`, usually `~/go/bin`. Add that folder to `PATH` if it is not there:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+```
+
+`@latest` builds the newest commit, because the CLIs have no release tags. Use `@<sha>` to pin a commit.
+
+`slack-cli` also needs `slack-op` for its operations. `go install` does not create it:
+
+```bash
+cp "$(go env GOPATH)/bin/slack-cli" "$(go env GOPATH)/bin/slack-op"
+```
+
 ## Install a CLI on this computer
 
 `install.sh <cli>` builds one CLI to `<cli>/build/<cli>` and links it into `/usr/local/bin`. Set `BIN_DIR` to use another folder. The script always builds again, so run it again after a `git pull` to update the CLI. It makes the link only when no file has that name. It does not replace a file or a link to another build.
