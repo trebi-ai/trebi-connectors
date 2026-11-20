@@ -1,6 +1,7 @@
 package sdk_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -9,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -848,5 +850,19 @@ func TestLoginMethodGuards(t *testing.T) {
 	}
 	if err := c.Call(sdk.MethodAuthBegin, nil, nil); sdk.CodeOf(err) != sdk.CodeUnsupported {
 		t.Fatalf("auth/begin with no login: %v", err)
+	}
+}
+
+func TestServeStartedLine(t *testing.T) {
+	old := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(old) })
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(sdk.NewLogHandler(&buf, true, nil)))
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"` + sdk.Protocol + `"}}` + "\n")
+	if err := sdk.Serve(context.Background(), bare{}, sdk.WithIO(in, io.Discard), sdk.WithStateDir("")); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, `msg="serve started" logger=trebi_sdk`) {
+		t.Fatalf("got %q", got)
 	}
 }

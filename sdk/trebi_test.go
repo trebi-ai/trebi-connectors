@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
 	"github.com/trebi-ai/trebi-connectors/sdk/sdktest"
@@ -230,5 +234,119 @@ func TestSandboxState(t *testing.T) {
 	var page sdk.EventPage
 	if err := c2.Call(sdk.MethodMessagesHistory, sdk.HistoryQuery{Room: "sandbox-general", Limit: 10}, &page); err != nil || len(page.Events) != 1 || page.Events[0].Text != "edited" || !strings.HasPrefix(page.Events[0].Attachments[0].Path, moved) {
 		t.Fatalf("history after restore %+v: %v", page, err)
+	}
+}
+
+func TestNewLogHandlerTrebi(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	slog.New(sdk.NewLogHandler(&buf, true, nil)).Warn("x", "k", 1)
+	if got := buf.String(); got != "level=WARN msg=x k=1\n" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestNewLogHandlerStandalone(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	h := sdk.NewLogHandler(&buf, false, nil)
+	slog.New(h).Warn("x", "k", 1)
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} level=WARN msg=x k=1\n$`)
+	if !re.MatchString(buf.String()) {
+		t.Fatalf("got %q", buf.String())
+	}
+
+	buf.Reset()
+	at := time.Date(2026, 11, 17, 14, 28, 54, 0, time.UTC)
+	r := slog.NewRecord(at, slog.LevelWarn, "x", 0)
+	r.AddAttrs(slog.Int("k", 1))
+	if err := h.Handle(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if want := at.Local().Format(time.DateTime) + " level=WARN msg=x k=1\n"; buf.String() != want {
+		t.Fatalf("got %q, want %q", buf.String(), want)
+	}
+
+	// Derived handlers keep the prefix, and each record is one line.
+	buf.Reset()
+	l := slog.New(h).With("a", 1).WithGroup("g")
+	l.Info("y", "b", 2)
+	l.Info("z")
+	lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %q", buf.String())
+	}
+	for _, ln := range lines {
+		if len(ln) < 20 || ln[19] != ' ' || !strings.Contains(ln, "level=INFO") || !strings.Contains(ln, "a=1") {
+			t.Fatalf("bad line %q", ln)
+		}
+	}
+	if !strings.HasSuffix(lines[0], "msg=y a=1 g.b=2") {
+		t.Fatalf("group lost: %q", lines[0])
+	}
+}
+
+func TestNewLogHandlerOptions(t *testing.T) {
+	t.Parallel()
+	for _, trebi := range []bool{true, false} {
+		var buf bytes.Buffer
+		var keys []string
+		h := sdk.NewLogHandler(&buf, trebi, &slog.HandlerOptions{
+			Level: slog.LevelWarn,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				keys = append(keys, a.Key)
+				if a.Key == "k" {
+					a.Value = slog.StringValue("replaced")
+				}
+				return a
+			},
+		})
+		l := slog.New(h)
+		l.Info("dropped")
+		if buf.Len() != 0 {
+			t.Fatalf("trebi=%v: Info passed the level: %q", trebi, buf.String())
+		}
+		l.Warn("x", "k", 1)
+		if !strings.HasSuffix(buf.String(), "level=WARN msg=x k=replaced\n") {
+			t.Fatalf("trebi=%v: got %q", trebi, buf.String())
+		}
+		for _, k := range keys {
+			if k == slog.TimeKey {
+				t.Fatalf("trebi=%v: ReplaceAttr saw the time key", trebi)
+			}
+		}
+	}
+}
+
+func TestSetDefaultLoggerMode(t *testing.T) {
+	old := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(old) })
+	oldStderr := os.Stderr
+	t.Cleanup(func() { os.Stderr = oldStderr })
+
+	read := func() string {
+		pr, pw, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stderr = pw
+		sdk.SetDefaultLogger(nil)
+		slog.Warn("x", "k", 1)
+		pw.Close() //nolint:errcheck // test pipe
+		os.Stderr = oldStderr
+		b, err := io.ReadAll(pr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	t.Setenv(sdk.EnvStateDir, t.TempDir())
+	if got := read(); got != "level=WARN msg=x k=1\n" {
+		t.Fatalf("Trebi mode: %q", got)
+	}
+	t.Setenv(sdk.EnvStateDir, "")
+	if got := read(); !regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} level=WARN msg=x k=1\n$`).MatchString(got) {
+		t.Fatalf("standalone: %q", got)
 	}
 }

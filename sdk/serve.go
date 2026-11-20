@@ -173,7 +173,7 @@ func WithStateDir(dir string) Option { return func(c *config) { c.stateDir = dir
 // WithCacheDir replaces TREBI_CACHE_DIR.
 func WithCacheDir(dir string) Option { return func(c *config) { c.cacheDir = dir } }
 
-// WithLogger replaces the stderr logger.
+// WithLogger replaces the logger. The default is slog.Default().
 func WithLogger(l *slog.Logger) Option { return func(c *config) { c.log = l } }
 
 var (
@@ -196,7 +196,7 @@ func Serve(ctx context.Context, a Adapter, opts ...Option) error {
 		o(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+		cfg.log = slog.Default()
 	}
 	if fu, ok := a.(FolderUser); ok {
 		if err := fu.UseFolders(Trebi{StateDir: cfg.stateDir, CacheDir: cfg.cacheDir}); err != nil {
@@ -208,6 +208,7 @@ func Serve(ctx context.Context, a Adapter, opts ...Option) error {
 		return err
 	}
 	s := &session{a: a, out: cfg.out, log: cfg.log.With("logger", "trebi_sdk"), sent: sent, flows: map[string]*flow{}, sending: map[string]chan struct{}{}}
+	s.log.Info("serve started")
 	return s.run(ctx, cfg.in)
 }
 

@@ -145,6 +145,7 @@ func (echo) Run(ctx context.Context, e sdk.Emitter) error {
 }
 
 func main() {
+	sdk.SetDefaultLogger(nil)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := sdk.Serve(ctx, echo{}); err != nil {
@@ -154,6 +155,12 @@ func main() {
 ```
 
 Stdout belongs to the protocol. Write logs to stderr only. The daemon puts stderr in the stream log of the connector.
+
+## Logs
+
+The daemon stamps each stderr line with its own time. So a line in Trebi mode (`TREBI_STATE_DIR` set) has no time: `level=WARN msg=x k=1`. Outside Trebi, a line starts with the local time as `YYYY-MM-DD HH:mm:ss`: `2026-11-17 11:28:54 level=WARN msg=x k=1`.
+
+`sdk.SetDefaultLogger(opts)` sets `slog.Default` to a handler with this format and returns the logger. Call it first in `main`, before a constructor reads `slog.Default`. `sdk.NewLogHandler(w, trebi, opts)` gives the same handler for another writer. `Serve` logs through `slog.Default` and writes one `serve started` line at each start. `WithLogger` replaces the logger.
 
 ## The reference sandbox
 
