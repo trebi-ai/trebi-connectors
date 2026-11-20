@@ -12,11 +12,13 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/cmd"
 	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/slack-cli/internal/spec"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 var version = "dev"
 
 func main() {
+	sdk.SetDefaultLogger(nil)
 	args := os.Args
 	if filepath.Base(args[0]) == "slack-op" {
 		// The operations of the Trebi manifest run as slack-op <name>.

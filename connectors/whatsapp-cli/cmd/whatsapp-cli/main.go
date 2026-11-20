@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
@@ -12,6 +13,7 @@ import (
 )
 
 func main() {
+	sdk.SetDefaultLogger(nil)
 	applyDeviceLabel()
 	if err := execute(os.Args[1:]); err != nil {
 		os.Exit(1)

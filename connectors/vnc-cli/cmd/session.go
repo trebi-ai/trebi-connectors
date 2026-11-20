@@ -17,6 +17,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/session"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // errTrebiSession is a session command that Trebi does for the connection.
@@ -159,7 +160,7 @@ func (r *Runner) runHolder(ctx context.Context, report *os.File) (err error) {
 	if r.verbose {
 		level = slog.LevelDebug
 	}
-	log := slog.New(slog.NewTextHandler(r.stderr, &slog.HandlerOptions{Level: level}))
+	log := slog.New(sdk.NewLogHandler(r.stderr, r.settings.Trebi, &slog.HandlerOptions{Level: level}))
 	h := session.NewHolder(r.dialer(r.settings.Password), r.settings.Server, r.settings.User, r.settings.IdleTimeout, log)
 	cctx, cancel := context.WithTimeout(ctx, connectWait)
 	err = h.Connect(cctx)

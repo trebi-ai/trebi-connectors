@@ -13,6 +13,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/github-cli/internal/ghshim"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 var version = "dev"
@@ -64,6 +65,7 @@ func newApp() *cli.App {
 }
 
 func main() {
+	sdk.SetDefaultLogger(nil)
 	args := os.Args
 	switch filepath.Base(args[0]) {
 	case "gh":

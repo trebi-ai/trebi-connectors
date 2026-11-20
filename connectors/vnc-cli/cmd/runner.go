@@ -22,6 +22,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/session"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // remote is a connection to one screen: in this process or in a holder.
@@ -194,7 +195,7 @@ func (r *Runner) before(ctx context.Context, c *cli.Command) (context.Context, e
 		}
 	}
 	if r.verbose = c.Bool("verbose"); r.verbose {
-		r.opts.Logger = slog.New(slog.NewTextHandler(r.stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		r.opts.Logger = slog.New(sdk.NewLogHandler(r.stderr, r.settings.Trebi, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 	return ctx, nil
 }

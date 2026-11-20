@@ -11,6 +11,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/cmd"
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 var version = "dev"
@@ -56,6 +57,7 @@ func newApp() *cli.App {
 }
 
 func main() {
+	sdk.SetDefaultLogger(nil)
 	if err := newApp().Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

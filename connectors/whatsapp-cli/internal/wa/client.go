@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -19,10 +20,13 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 type Options struct {
 	StorePath string
+	Trebi     bool
 }
 
 type Client struct {
@@ -53,13 +57,26 @@ func New(opts Options) (*Client, error) {
 	return c, nil
 }
 
+// newBaseLogger returns the logger of the client. In Trebi mode a line has no
+// time, because Trebi adds it.
+func newBaseLogger(w io.Writer, trebi bool) zerolog.Logger {
+	cw := zerolog.ConsoleWriter{Out: w, NoColor: true}
+	if trebi {
+		cw.PartsExclude = []string{zerolog.TimestampFieldName}
+		return zerolog.New(cw)
+	}
+	cw.TimeFormat = sdk.LogTimeLayout
+	cw.TimeLocation = time.Local
+	return zerolog.New(cw).With().Timestamp().Logger()
+}
+
 func (c *Client) init() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	ctx := context.Background()
 	// Stdout carries JSON output and the serve protocol, so logs go to stderr.
-	base := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: true, TimeFormat: time.RFC3339}).With().Timestamp().Logger()
+	base := newBaseLogger(os.Stderr, c.opts.Trebi)
 	dbLog := waLog.Zerolog(base.Level(zerolog.ErrorLevel).With().Str("module", "Database").Logger())
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL", c.opts.StorePath))
 	if err != nil {

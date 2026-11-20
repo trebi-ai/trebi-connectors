@@ -16,6 +16,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/session"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/watch"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 var errWatchDone = errors.New("watch done")
@@ -166,7 +167,7 @@ func (r *Runner) watcher(ctx context.Context, stop context.CancelCauseFunc) (wat
 	if r.verbose {
 		level = slog.LevelDebug
 	}
-	log := slog.New(slog.NewTextHandler(r.stderr, &slog.HandlerOptions{Level: level}))
+	log := slog.New(sdk.NewLogHandler(r.stderr, r.settings.Trebi, &slog.HandlerOptions{Level: level}))
 	var h *session.Holder
 	_, err := r.withPassword(func(pw string) (remote, error) {
 		h = session.NewHolder(r.dialer(pw), r.settings.Server, r.settings.User, 0, log)

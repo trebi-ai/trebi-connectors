@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: slack
 title: Slack
 description: "Messages, mentions, and reactions from your Slack workspaces. Search and read the history."
-version: 0.3.0
+version: 0.3.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

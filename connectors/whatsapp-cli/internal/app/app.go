@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/store"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
 	"go.mau.fi/whatsmeow"
@@ -98,6 +99,7 @@ func (a *App) OpenWA() error {
 	sessionPath := filepath.Join(a.opts.StoreDir, "session.db")
 	cli, err := wa.New(wa.Options{
 		StorePath: sessionPath,
+		Trebi:     config.Trebi(),
 	})
 	if err != nil {
 		return err

@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +18,39 @@ import (
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
+// lockedBuffer collects stderr of a run that writes from many goroutines.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+var logTime = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}|time=)`)
+
+// checkNoLogTime fails on a line that starts with a time.
+func checkNoLogTime(t *testing.T, stderr string) {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+		if logTime.MatchString(line) {
+			t.Errorf("log line has a time: %q", line)
+		}
+	}
+}
+
 func TestServeSandbox(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	standalone(t)
 	state, err := os.MkdirTemp("/tmp", "vt")
 	if err != nil {
@@ -29,7 +64,8 @@ func TestServeSandbox(t *testing.T) {
 
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
-	r := NewRunner(inR, outW, io.Discard)
+	var stderr lockedBuffer
+	r := NewRunner(inR, outW, &stderr)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
@@ -87,4 +123,39 @@ func TestServeSandbox(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("serve: %v", err)
 	}
+	checkNoLogTime(t, stderr.String())
+	if !strings.Contains(stderr.String(), `msg="serve started"`) {
+		t.Errorf("no serve started line: %q", stderr.String())
+	}
+}
+
+func TestServeMissingInputLog(t *testing.T) {
+	standalone(t)
+	t.Setenv("TREBI_STATE_DIR", t.TempDir())
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	var stderr lockedBuffer
+	r := NewRunner(inR, outW, &stderr)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- r.App("test").Run(ctx, []string{"vnc-cli", "serve"})
+		outW.Close()
+	}()
+	go io.Copy(io.Discard, outR)
+	io.WriteString(inW, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":"`+sdk.Protocol+`"}}`+"\n")
+	io.WriteString(inW, `{"jsonrpc":"2.0","method":"initialized","params":{}}`+"\n")
+	time.Sleep(200 * time.Millisecond)
+	inW.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if !strings.Contains(stderr.String(), `msg="serve started"`) {
+		t.Errorf("no serve started line: %q", stderr.String())
+	}
+	checkNoLogTime(t, stderr.String())
 }

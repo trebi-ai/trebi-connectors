@@ -1,7 +1,9 @@
 package wa
 
 import (
+	"bytes"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"go.mau.fi/whatsmeow/types"
@@ -61,5 +63,24 @@ func TestRenewKeepsHandlers(t *testing.T) {
 	c.client.DangerousInternals().DispatchEvent(&events.Connected{})
 	if len(got) != 1 {
 		t.Fatalf("handler got %d events after renew", len(got))
+	}
+}
+
+func TestBaseLoggerTrebiMode(t *testing.T) {
+	var buf bytes.Buffer
+	l := newBaseLogger(&buf, true)
+	l.Warn().Msg("x")
+	if regexp.MustCompile(`\d{2}:\d{2}`).MatchString(buf.String()) || regexp.MustCompile(`\d{4}-\d{2}-\d{2}`).MatchString(buf.String()) {
+		t.Fatalf("Trebi mode line has a time: %q", buf.String())
+	}
+	if want := "WRN x"; !regexp.MustCompile(want).MatchString(buf.String()) {
+		t.Fatalf("line %q lacks %q", buf.String(), want)
+	}
+
+	buf.Reset()
+	l = newBaseLogger(&buf, false)
+	l.Warn().Msg("x")
+	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} `).MatchString(buf.String()) {
+		t.Fatalf("standalone line has no time: %q", buf.String())
 	}
 }

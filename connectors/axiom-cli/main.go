@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/axiom-cli/cmd"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 	"github.com/urfave/cli/v2"
 )
 
@@ -21,6 +22,7 @@ func init() {
 }
 
 func main() {
+	sdk.SetDefaultLogger(nil)
 	app := &cli.App{
 		Name:    "axiom-cli",
 		Usage:   "Query and inspect Axiom (axiom.co) via its REST API",

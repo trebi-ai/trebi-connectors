@@ -34,6 +34,12 @@ jobs on the socket in the state folder.`,
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			s := r.settings
+			level := slog.LevelInfo
+			if r.verbose {
+				level = slog.LevelDebug
+			}
+			log := slog.New(sdk.NewLogHandler(r.stderr, s.Trebi, &slog.HandlerOptions{Level: level}))
+			slog.SetDefault(log)
 			if c.Bool("sandbox") {
 				fake := vnctest.New(vnctest.Options{Width: 320, Height: 200, Name: "Sandbox"})
 				addr, err := fake.Listen()
@@ -90,12 +96,6 @@ jobs on the socket in the state folder.`,
 			if err != nil {
 				return err
 			}
-			level := slog.LevelInfo
-			if r.verbose {
-				level = slog.LevelDebug
-			}
-			log := slog.New(slog.NewTextHandler(r.stderr, &slog.HandlerOptions{Level: level}))
-			slog.SetDefault(log)
 			h := session.NewHolder(r.dialer(s.Password), s.Server, s.User, 0, log)
 			return sdk.Serve(ctx, serve.New(h, ln, s, version), sdk.WithIO(r.stdin, r.stdout), sdk.WithStateDir(dir))
 		},
