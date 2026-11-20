@@ -215,7 +215,7 @@ The program is a JSON-RPC 2.0 server on stdin and stdout, one message per line. 
 | `<cli> serve --sandbox` | Runs the real adapter over a fake service, with no account and no network. The conformance check uses it. |
 | `<cli> --version` | Prints the version. `install.version_command` uses it. |
 
-The program obeys the adapter folder contract in `CLAUDE.md`: durable data in `TREBI_STATE_DIR`, temp data in `TREBI_CACHE_DIR`, logs to stderr, one writer, and a clean stop on `shutdown`.
+The program obeys the adapter folder contract in `CLAUDE.md`: durable data in `TREBI_STATE_DIR`, temp data in `TREBI_CACHE_DIR`, logs to stderr with no time stamp in Trebi mode, one writer, and a clean stop on `shutdown`.
 
 ### Write a good event
 
@@ -335,6 +335,7 @@ A channel adds the `channel` block. Each feature in `channel.features` must matc
 - [ ] Each type that the program sends is in `events.types` with a `description`.
 - [ ] An entry with `events.subscriptions` lists `poll` or `stream` in `modes`, so it works with no Trebi Cloud link.
 - [ ] The program needs no prompt from a person and writes no file outside the two Trebi folders.
+- [ ] In Trebi mode, no log line starts with a time stamp. Conformance shows no `warn` row for `protocol / log time`.
 - [ ] `scripts/validate.sh <name>` passes.
 - [ ] For an entry with events or a channel, `scripts/validate.sh --conformance <name>` passes. It needs a `trebi` on `PATH` that has the `connector conformance` command.
 

@@ -40,11 +40,11 @@ An author who does not publish to the catalog can share a connector as a GitHub 
 
 ## Adapter folder contract
 
-These rules are for every connector program. They are copied word for word from the Trebi plan for connector connections. `.claude/skills/connector-authoring/SKILL.md` has the full steps and the checklist before a PR.
+These rules are for every connector program. `docs/trebi/backend-0808.md` §3.14 points here. This list is the owner of the contract. `.claude/skills/connector-authoring/SKILL.md` has the full steps and the checklist before a PR.
 
 1. **Durable data goes in `TREBI_STATE_DIR`.** This is the login session, the message store, the dedupe files, and downloaded attachments that the user can refer to later. The program writes no durable data to another place when this variable is set.
 2. **Data that can be built again goes in `TREBI_CACHE_DIR`.** This is temp files, thumbnails, and indexes that the program can make from the state. The daemon can delete this folder when the process is stopped.
-3. **Logs go to stderr.** The daemon writes them to `logs/stream.jsonl`, shows them in the UI, and applies rotation. The program writes no log files. Stdout is for the protocol only.
+3. **Logs go to stderr.** The daemon writes them to `logs/stream.jsonl`, shows them in the UI, and applies rotation. The program writes no log files. Stdout is for the protocol only. In Trebi mode a log line has no time stamp: the daemon adds the time to each line, and Trebi shows it as `YYYY-MM-DD HH:mm:ss` in the local time of the user. Outside Trebi, a line starts with the local time as `YYYY-MM-DD HH:mm:ss`. `sdk.SetDefaultLogger` does both; call it first in `main`. The conformance check warns on a line that starts with a time stamp, and the catalog check fails on it.
 4. **Paths in state are relative.** A file in the state folder never holds an absolute path. A restore can put the folder under a different home. A path in an event (for example an attachment `path`) can be absolute, because the daemon uses it at once.
 5. **Empty state is normal.** A new connection and a restore without state start with an empty folder. The program then sends `status` `auth_required` (or `connecting` when it needs no login). It does not fail.
 6. **Old state is normal.** A restore can give state from an older version of the program. The program upgrades its own state format at start. State from a newer version gives `status` `error` with a clear message. It does not delete data.

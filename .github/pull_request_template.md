@@ -18,6 +18,7 @@ CI has no credentials for a live system. A fork PR gets no secrets. Test against
 
 - [ ] `scripts/validate.sh <name>` passes.
 - [ ] For an entry with events or a channel, `scripts/validate.sh --conformance <name>` passes.
+- [ ] No log line starts with a time stamp in Trebi mode (no `log time` warn in conformance).
 - [ ] `version` is new for a change to an entry that exists.
 - [ ] I ran the changed commands against the real system with my own account.
 - [ ] Each difference between the real system and the fake system is now in the fake system and has a test.

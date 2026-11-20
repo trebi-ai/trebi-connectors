@@ -6,7 +6,8 @@
 # --conformance runs "trebi connector conformance --manifest catalog/<name>"
 # for each entry. When connectors/<bin> has the program of the entry, it
 # builds the program first and puts it on PATH. It needs a trebi on PATH
-# that has the conformance command. The fakes in scripts/fakes (for example
+# that has the conformance command. For a program in connectors/, it adds
+# --strict, so a warn row also fails. The fakes in scripts/fakes (for example
 # psql) go on PATH first, so an entry that wraps a system program needs no
 # server.
 #
@@ -43,6 +44,10 @@ if ! command -v trebi >/dev/null || ! trebi connector conformance --help >/dev/n
   echo "FAIL trebi on PATH has no \"connector conformance\" command; install a newer trebi release" >&2
   exit 1
 fi
+if [[ "$(trebi connector conformance --help 2>&1)" != *--strict* ]]; then
+  echo "FAIL trebi on PATH has no --strict; install a newer trebi release" >&2
+  exit 1
+fi
 
 bin="$(mktemp -d)"
 trap 'rm -rf "$bin"' EXIT
@@ -57,6 +62,7 @@ while IFS=$'\t' read -r name version cli; do
     "$root/connectors/$cli/scripts/build.sh" "$version" "$bin/$cli" >/dev/null
   fi
   suites=()
+  if [ -n "$cli" ] && [ -d "$root/connectors/$cli" ]; then suites+=(--strict); fi
   if [ -z "$cli" ] && [ "$external_cli" = 0 ]; then
     echo "note $name: the catalog builds no CLI, so the actions.cli suite is skipped"
     for s in manifest install inputs actions.mcp events.lines protocol folder; do suites+=(--suite "$s"); done

@@ -75,6 +75,7 @@ return sdk.Serve(ctx, a)
 - A required input that is not set gives `sdk.MissingInput{Name: "EXAMPLE_TOKEN", Label: "API token"}` from `Initialize`. Never look for the value in another place. The SDK sends `status` `auth_required` with reason `missing_input`, and the process stays alive.
 - Return typed errors: `sdk.NotFound` for an unknown room or message, `sdk.Invalid` for bad params, `sdk.Transient` for a network error.
 - Stdout is for the protocol only. Write logs to stderr. Write no log file.
+- Call `sdk.SetDefaultLogger(nil)` first in `main`, before a constructor reads `slog.Default()`. In Trebi mode it prints no time; standalone it prints `YYYY-MM-DD HH:mm:ss` local.
 - The SDK keeps the send dedupe file in `TREBI_STATE_DIR`. Do not write your own.
 - An adapter that implements `sdk.FolderUser` gets both folders before the first request.
 
@@ -172,6 +173,7 @@ Bump `version` in `catalog/<name>/trebi-connector.yaml` in the same PR as each c
 
 - Durable data is only in `TREBI_STATE_DIR`. Temp data is only in `TREBI_CACHE_DIR`.
 - No log file. Stderr only.
+- No time stamp in a log line in Trebi mode; `--conformance` shows no `log time` warn.
 - No absolute path in a state file.
 - An empty state folder gives `auth_required` or `connecting`, not a crash.
 - State from the previous version loads.
@@ -199,4 +201,4 @@ scripts/validate.sh
 scripts/validate.sh --conformance <name>
 ```
 
-`--conformance` needs a `trebi` on `PATH` that has the `connector conformance` command. It builds the program, puts it on `PATH`, and runs `trebi connector conformance --manifest catalog/<name>`. Every suite must pass.
+`--conformance` needs a `trebi` on `PATH` that has the `connector conformance` command. It builds the program, puts it on `PATH`, and runs `trebi connector conformance --manifest catalog/<name>`. For a program in `connectors/`, it adds `--strict`, so a `warn` row also fails. Every suite must pass.
