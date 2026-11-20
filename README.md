@@ -9,7 +9,7 @@ Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the 
 | `catalog/` | One folder per connector: `trebi-connector.yaml`, `skill/`, and event schemas. Trebi writes and reviews every entry. |
 | `schema/` | The manifest JSON Schema. It is vendored byte-identical from `trebi/internal/connectors/manifest/schema.json`. Do not edit it here. |
 | `sdk/` | The Go SDK for `trebi-connector/1` (module `github.com/trebi-ai/trebi-connectors/sdk`). See `sdk/README.md`. |
-| `connectors/` | The source of the programs that the catalog builds and hosts: `whatsapp-cli`, `discord-cli`, `github-cli`, `linear-cli`, `notion-cli`, `microsoft-todo-cli`, `mailbox`, `web-cli`, `host-cli`, `axiom-cli`, and `slack-cli`. Each is a normal CLI plus a `serve` command that speaks the protocol. See `connectors/README.md`. |
+| `connectors/` | The source of the programs that the catalog builds and hosts: `whatsapp-cli`, `discord-cli`, `github-cli`, `linear-cli`, `notion-cli`, `microsoft-todo-cli`, `mailbox`, `web-cli`, `host-cli`, `axiom-cli`, `slack-cli`, `vnc-cli`, and `plane-cli`. Each is a normal CLI plus a `serve` command that speaks the protocol. See `connectors/README.md`. |
 | `tools/catalogctl/` | Validates the entries, builds the snapshots, and writes and signs `index.json`. |
 | `scripts/` | `validate.sh` checks the catalog. `publish.sh` uploads the catalog to R2. |
 
@@ -47,7 +47,7 @@ An entry with `install: {catalog: true, bin: <cli>}` gets its program from the c
 
 1. Change the code in `connectors/<cli>/` and bump `version` in `catalog/<name>/trebi-connector.yaml` in the same PR.
 2. On `main`, the `plan` job of `catalog.yml` lists each `install.catalog` entry whose version is not in the published index.
-3. The `build` job runs once for each platform that has pending builds, and builds all pending programs of that platform. It tries the artifact upload a second time when the first one fails. It stamps the entry version into the program. The archive holds each file that `build.sh` writes in the output folder, so a helper program such as `slack-op` ships next to the program.
+3. The `build` job runs once for each platform that has pending builds, and builds all pending programs of that platform. It tries the artifact upload a second time when the first one fails. It stamps the entry version into the program. The archive holds each file that `build.sh` writes in the output folder, so a helper program such as `slack-op` or `plane-op` ships next to the program.
 4. The `publish` job puts the archives in `v1/bin/`, and the index lists the digest of each archive. The daemon checks that digest before it installs the program.
 
 There are no release tags and no GitHub releases for these programs. A published archive is immutable, like a snapshot.
@@ -74,7 +74,7 @@ The CLIs in `connectors/` require the SDK by its tag `sdk/vX.Y.Z`. The committed
 (cd sdk && go test ./...)
 (cd connectors/discord-cli && go test ./...)
 (cd connectors/whatsapp-cli && CGO_ENABLED=1 go test -tags sqlite_fts5 ./...)
-for c in github-cli linear-cli notion-cli microsoft-todo-cli mailbox web-cli host-cli axiom-cli slack-cli; do (cd connectors/$c && go test ./...); done
+for c in github-cli linear-cli notion-cli microsoft-todo-cli mailbox web-cli host-cli axiom-cli slack-cli plane-cli; do (cd connectors/$c && go test ./...); done
 (cd tools/catalogctl && GOWORK=off go test ./...)
 scripts/validate.sh --conformance
 ```

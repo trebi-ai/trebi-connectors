@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of an intake item that a person marked as a duplicate.",
+  "required": [
+    "workspace",
+    "project",
+    "intake_id",
+    "name",
+    "status"
+  ],
+  "properties": {
+    "workspace": {
+      "type": "string",
+      "description": "The workspace slug, for example acme."
+    },
+    "project": {
+      "type": "string",
+      "description": "The project identifier, for example ENG. The room id of the event is <workspace>/<project>."
+    },
+    "intake_id": {
+      "type": "string",
+      "description": "The Plane id of the intake item."
+    },
+    "work_item_id": {
+      "type": "string",
+      "description": "The Plane id of the work item of the intake item."
+    },
+    "identifier": {
+      "type": "string",
+      "description": "The key of the work item, for example ENG-42. It is empty when it is not known."
+    },
+    "name": {
+      "type": "string",
+      "description": "The name of the intake item."
+    },
+    "url": {
+      "type": "string",
+      "description": "The link to the work item in Plane. It is empty when the key is not known."
+    },
+    "status": {
+      "const": "duplicate",
+      "description": "The status of the intake item: pending, accepted, declined, duplicate, or snoozed."
+    },
+    "source": {
+      "type": "string",
+      "description": "Where the intake item came from, for example IN_APP."
+    },
+    "priority": {
+      "type": "string",
+      "description": "The priority: urgent, high, medium, low, or none."
+    },
+    "field": {
+      "const": "status"
+    },
+    "new": {
+      "type": "string",
+      "description": "The status after the change. It is the same as status."
+    },
+    "old": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The status before the change."
+    },
+    "duplicate_to": {
+      "type": "string",
+      "description": "The Plane id of the work item that the intake item is a duplicate of."
+    }
+  }
+}

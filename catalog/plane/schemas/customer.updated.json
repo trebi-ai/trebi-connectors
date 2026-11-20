@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a new or changed customer. The room of the event is the workspace.",
+  "required": [
+    "workspace",
+    "customer_id",
+    "name",
+    "created"
+  ],
+  "properties": {
+    "workspace": {
+      "type": "string",
+      "description": "The workspace slug, for example acme."
+    },
+    "customer_id": {
+      "type": "string",
+      "description": "The Plane id of the customer."
+    },
+    "name": {
+      "type": "string",
+      "description": "The name of the customer."
+    },
+    "domain": {
+      "type": "string",
+      "description": "The web domain of the customer."
+    },
+    "stage": {
+      "type": "string",
+      "description": "The stage of the customer."
+    },
+    "contract_status": {
+      "type": "string",
+      "description": "The contract status of the customer."
+    },
+    "created": {
+      "type": "boolean",
+      "description": "True for a new customer, false for a change."
+    }
+  }
+}

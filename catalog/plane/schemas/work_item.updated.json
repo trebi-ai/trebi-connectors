@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "The data of a work item change, other than a move to another state.",
+  "required": [
+    "workspace",
+    "project",
+    "work_item_id",
+    "identifier",
+    "name",
+    "field"
+  ],
+  "properties": {
+    "workspace": {
+      "type": "string",
+      "description": "The workspace slug, for example acme."
+    },
+    "project": {
+      "type": "string",
+      "description": "The project identifier, for example ENG. The room id of the event is <workspace>/<project>."
+    },
+    "work_item_id": {
+      "type": "string",
+      "description": "The Plane id of the work item."
+    },
+    "identifier": {
+      "type": "string",
+      "description": "The work item key, for example ENG-42."
+    },
+    "name": {
+      "type": "string",
+      "description": "The name of the work item."
+    },
+    "url": {
+      "type": "string",
+      "description": "The link to the work item in Plane. It is empty when the address is not known."
+    },
+    "state": {
+      "type": "string",
+      "description": "The name of the state of the work item, for example In Progress."
+    },
+    "state_group": {
+      "type": "string",
+      "description": "The state group: backlog, unstarted, started, completed, cancelled, or triage."
+    },
+    "labels": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "The label names of the work item, in sorted order."
+    },
+    "priority": {
+      "type": "string",
+      "description": "The priority: urgent, high, medium, low, or none."
+    },
+    "field": {
+      "type": "string",
+      "description": "The first field that changed, or empty when Plane does not tell the field."
+    },
+    "old": {
+      "description": "The value of the first field before the change, or null."
+    },
+    "new": {
+      "description": "The value of the first field after the change, or null."
+    },
+    "changes": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "The name of the field."
+          },
+          "old": {
+            "description": "The value before the change, or null."
+          },
+          "new": {
+            "description": "The value after the change, or null."
+          }
+        }
+      },
+      "description": "Each field that changed, with its old and new value."
+    }
+  }
+}

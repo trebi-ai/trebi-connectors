@@ -1,0 +1,107 @@
+schema: trebi-connector/1
+name: plane
+title: Plane
+description: "Start work when a work item, a comment, or an intake item changes in Plane, and read work items."
+version: 0.2.0
+publisher: trebi
+source: github.com/trebi-ai/trebi-connectors
+license: MIT
+platforms: [darwin/arm64, darwin/amd64, linux/arm64, linux/amd64]
+install:
+  catalog: true
+  bin: plane-cli
+  version_command: plane-cli --version
+setup:
+  login:
+    - id: key
+      type: key
+      label: Paste an API key
+      input: PLANE_API_KEY
+      test: 'plane-cli auth status >/dev/null'
+  inputs:
+    - name: PLANE_API_KEY
+      label: API key
+      help: "In Plane, open your profile settings, then Personal access tokens, and make a token. A key works only in the workspace that made it, so add one connection for each workspace."
+      url: https://app.plane.so/
+      secret: true
+      required: true
+    - name: PLANE_PROJECTS
+      label: Projects
+      help: "The projects to watch, as workspace/project and separated by commas, for example acme/ENG, acme/WEB. Type acme/* to watch all projects of the workspace acme."
+      required: true
+    - name: PLANE_HOST
+      label: Plane address
+      help: Leave it empty for Plane Cloud. Set it for a Plane server of your own.
+    - name: PLANE_POLL_INTERVAL
+      label: Check every
+      help: "The time between two checks, for example 60s or 5m. Plane allows about 60 requests each minute."
+      default: 60s
+actions:
+  cli: {commands: [plane-cli]}
+  operations:
+    # plane-op is a copy of plane-cli: an operation program must not also be a run command.
+    - name: search
+      label: Search work items
+      description: Find work items by text. Returns the key, the name, and the link of each one.
+      readonly: true
+      default: on
+      command: [plane-op, search]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          query: {type: string, maxLength: 200, description: The text to find.}
+          workspace: {type: string, maxLength: 100, description: The workspace. The default is the first workspace of the connection.}
+          project: {type: string, maxLength: 20, description: "The project identifier, for example ENG."}
+          limit: {type: integer, minimum: 1, maximum: 100, description: The maximum number of work items. The default is 20.}
+        required: [query]
+    - name: get
+      label: Get a work item
+      description: Read one work item by its key, with its state, labels, and assignees.
+      readonly: true
+      default: on
+      command: [plane-op, get]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          key: {type: string, maxLength: 40, description: "The work item key, for example ENG-42."}
+          workspace: {type: string, maxLength: 100, description: The workspace. The default is the first workspace of the connection.}
+        required: [key]
+    - name: list
+      label: List work items
+      description: List the work items of one project. The newest change comes first.
+      readonly: true
+      default: on
+      command: [plane-op, list]
+      stdin: json
+      output: json
+      timeout: 30s
+      input:
+        type: object
+        properties:
+          project: {type: string, maxLength: 20, description: "The project identifier, for example ENG."}
+          workspace: {type: string, maxLength: 100, description: The workspace. The default is the first workspace of the connection.}
+          state_group: {type: string, enum: [backlog, unstarted, started, completed, cancelled, triage], description: Only the work items in this state group.}
+          label: {type: string, maxLength: 100, description: Only the work items with this label.}
+          limit: {type: integer, minimum: 1, maximum: 200, description: The maximum number of work items. The default is 50.}
+        required: [project]
+events:
+  protocol: trebi-connector/1
+  command: plane-cli serve
+  restart: always
+  types:
+    - {type: work_item.created, description: A new work item, schema: schemas/work_item.created.json}
+    - {type: work_item.updated, description: "A work item changed: the name, the priority, the labels, the assignees, or another field", schema: schemas/work_item.updated.json}
+    - {type: work_item.state_changed, description: A work item moved to another state, schema: schemas/work_item.state_changed.json}
+    - {type: comment.created, description: A new comment on a work item, schema: schemas/comment.created.json}
+    - {type: intake.created, description: A new intake item, schema: schemas/intake.created.json}
+    - {type: intake.accepted, description: An intake item became a work item, schema: schemas/intake.accepted.json}
+    - {type: intake.declined, description: A person declined an intake item, schema: schemas/intake.declined.json}
+    - {type: intake.duplicate, description: A person marked an intake item as a duplicate, schema: schemas/intake.duplicate.json}
+    - {type: intake.snoozed, description: A person snoozed an intake item, schema: schemas/intake.snoozed.json}
+    - {type: customer.updated, description: A person added or changed a customer, schema: schemas/customer.updated.json}

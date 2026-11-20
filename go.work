@@ -14,6 +14,7 @@ use (
 	./connectors/axiom-cli
 	./connectors/slack-cli
 	./connectors/vnc-cli
+	./connectors/plane-cli
 )
 
 // The CLIs build against the SDK in this commit, also before its tag

@@ -1,6 +1,6 @@
 # connectors
 
-The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. `slack-cli` reads Slack: it sends events and has read-only operations, but it does not send messages. `vnc-cli` controls the screen of another computer and watches it for changes. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
+The source of the programs that the catalog builds and hosts. `whatsapp-cli` and `discord-cli` are channels: they send and receive messages. `github-cli`, `linear-cli`, `notion-cli`, and `microsoft-todo-cli` watch things: they have subscriptions and webhooks, and send no messages. `mailbox` is an operations program: the daemon runs its `op` commands for agents and live sources, and its `serve` reports only the health of the account. `web-cli`, `host-cli`, and `axiom-cli` watch state by poll: a feed or a page, a Linux server over SSH, and the Axiom monitors. They send `state.changed` and `state.recovered` and have no channel. `slack-cli` reads Slack: it sends events and has read-only operations, but it does not send messages. `vnc-cli` controls the screen of another computer and watches it for changes. `plane-cli` watches Plane by poll: it sends work item, comment, intake, and customer changes, and has read-only operations. Each one is a normal CLI with its own commands, plus a `serve` command that speaks `trebi-connector/1` on stdin and stdout. The Trebi daemon starts `serve` from the `events.command` of the catalog entry. The SDK in `../sdk` does the protocol work. The skill of each CLI is in its catalog entry.
 
 | CLI | Module | Catalog entry |
 |---|---|---|
@@ -16,6 +16,7 @@ The source of the programs that the catalog builds and hosts. `whatsapp-cli` and
 | `axiom-cli` | `github.com/trebi-ai/trebi-connectors/connectors/axiom-cli` | `catalog/axiom` |
 | `slack-cli` | `github.com/trebi-ai/trebi-connectors/connectors/slack-cli` | `catalog/slack` |
 | `vnc-cli` | `github.com/trebi-ai/trebi-connectors/connectors/vnc-cli` | `catalog/vnc` |
+| `plane-cli` | `github.com/trebi-ai/trebi-connectors/connectors/plane-cli` | `catalog/plane` |
 
 Each CLI has `scripts/build.sh [version] [output]`. The catalog workflow runs it on each platform. The root `go.work` builds each CLI against the SDK in the same commit.
 
@@ -35,10 +36,11 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 `@latest` builds the newest commit, because the CLIs have no release tags. Use `@<sha>` to pin a commit.
 
-`slack-cli` also needs `slack-op` for its operations. `go install` does not create it:
+`slack-cli` also needs `slack-op` for its operations, and `plane-cli` needs `plane-op`. `go install` does not create them:
 
 ```bash
 cp "$(go env GOPATH)/bin/slack-cli" "$(go env GOPATH)/bin/slack-op"
+cp "$(go env GOPATH)/bin/plane-cli" "$(go env GOPATH)/bin/plane-op"
 ```
 
 ## Install a CLI on this computer
@@ -50,7 +52,7 @@ connectors/install.sh vnc-cli
 BIN_DIR=~/bin connectors/install.sh discord-cli
 ```
 
-`slack-cli` also writes `slack-op` next to the program. The script does not link it.
+`slack-cli` also writes `slack-op` next to the program, and `plane-cli` writes `plane-op`. The script does not link them.
 
 ## serve
 
@@ -102,6 +104,16 @@ Warning: whatsapp-cli uses the WhatsApp Web protocol. WhatsApp can ban an accoun
 - `serve --sandbox` runs the adapter over `internal/fakeslack`, a fake Web API and socket in the same process.
 
 Warning: slack-cli uses the session of the Slack app on this computer. Slack does not support this officially.
+
+## plane-cli
+
+- Login: the "API key" input (`PLANE_API_KEY`), a Plane personal access token. A key works only in the workspace that made it, so one connection watches one workspace. A missing key or a missing "Projects" input gives `auth_required` with reason `missing_input`. A key that Plane rejects gives reason `revoked`.
+- The input `PLANE_PROJECTS` selects the projects as `<workspace>/<project>`, separated by commas. `<workspace>/*` selects every project of the workspace. `PLANE_HOST` is the address of a Plane server of your own. `PLANE_POLL_INTERVAL` is the time between two checks (default 60s).
+- Events: `work_item.created`, `work_item.updated`, `work_item.state_changed`, `comment.created`, `intake.created`, `intake.accepted`, `intake.declined`, `intake.duplicate`, `intake.snoozed`, and `customer.updated`. The room id is `<workspace>/<project>`. A customer event has the workspace as its room.
+- Features: none. The connector does not send messages.
+- Operations: `search`, `get`, and `list`, as `plane-op <name>` with a JSON input on stdin. `plane-op` is a copy of `plane-cli` that `scripts/build.sh` writes next to the program, because an operation program must not also be a run command.
+- The first start saves the current state and sends no event. `plane-state.json` in the state folder keeps the cursors.
+- `serve --sandbox` runs the adapter over `internal/fakeplane`, a fake Plane API in the same process with one scripted change each second.
 
 ## Connectors that watch things
 
@@ -161,6 +173,7 @@ cd connectors/whatsapp-cli && CGO_ENABLED=1 go test -tags sqlite_fts5 ./...
 cd connectors/github-cli && go test -race ./...
 cd connectors/mailbox && go test -race ./...
 cd connectors/slack-cli && go test -race ./...
+cd connectors/plane-cli && go test -race ./...
 ```
 
 ## Release
