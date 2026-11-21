@@ -17,7 +17,6 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/output"
-	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // AuthCommand returns the `auth` command tree.
@@ -42,7 +41,8 @@ Config: ~/.cli-tools/plane-cli/config.toml (mode 0600).
 Resolution order on every call: flag → env var → workspace entry → top-level config value.
 
 With TREBI_STATE_DIR set, Trebi sets the key and the host. The CLI reads no
-config file, and login, logout, and workspace add and remove fail.`,
+config file, and login, logout, and workspace add and remove fail.
+With PLANE_MANAGED_BY set (OverSire), the same rules hold.`,
 		Commands: []*cli.Command{
 			savesSetting(authLoginCommand()),
 			authStatusCommand(),
@@ -53,13 +53,13 @@ config file, and login, logout, and workspace add and remove fail.`,
 	}
 }
 
-// savesSetting makes a command that writes the config fail in Trebi mode:
-// the settings come from the connection.
+// savesSetting makes a command that writes the config fail in Trebi and
+// managed mode: the host app sets the settings.
 func savesSetting(c *cli.Command) *cli.Command {
 	action := c.Action
 	c.Action = func(ctx context.Context, c *cli.Command) error {
-		if config.Trebi() {
-			return sdk.ErrSetInTrebi
+		if err := config.RefuseSave(); err != nil {
+			return err
 		}
 		return action(ctx, c)
 	}

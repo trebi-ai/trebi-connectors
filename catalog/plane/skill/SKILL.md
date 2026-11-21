@@ -56,6 +56,8 @@ API reference: <https://developers.plane.so/api-reference/introduction>.
 
 In a Trebi connection (`TREBI_STATE_DIR` is set), Trebi sets the key (`PLANE_API_KEY`) and the address (`PLANE_HOST`). The CLI reads no config file: `~/.cli-tools/plane-cli` and `PLANE_CONFIG` are not read. `--api-key` and `--host` fail with "Trebi sets this value". `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in Trebi". The default workspace is the first workspace of `PLANE_PROJECTS`; use `-w <slug>` for another one.
 
+Managed mode (OverSire): when `PLANE_MANAGED_BY=OverSire` is set, OverSire sets `PLANE_API_KEY`, `PLANE_HOST`, `PLANE_WORKSPACE`, and `PLANE_PROJECT`. The CLI reads no config file: `~/.cli-tools/plane-cli` and `PLANE_CONFIG` are not read. `--api-key` and `--host` fail with "OverSire sets this value". `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in OverSire". `listen` and `serve` fail with "OverSire does not run listen" and "OverSire does not run serve". `-w` and `-p` still work.
+
 ## Identifiers
 
 - A project is a UUID or its identifier (`ENG`).

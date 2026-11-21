@@ -111,6 +111,16 @@ Trebi starts `plane-cli serve` with `TREBI_STATE_DIR` set. In this mode:
 - Only `serve` writes the state: `plane-state.json` in `TREBI_STATE_DIR`.
 - A key works only in the workspace that made it. Add one connection for each workspace.
 
+## Managed mode (OverSire)
+
+OverSire runs `plane-cli` with `PLANE_MANAGED_BY=OverSire`. In this mode:
+
+- The settings come only from the env: `PLANE_API_KEY`, `PLANE_HOST`, `PLANE_WORKSPACE`, and `PLANE_PROJECT`. The CLI does not read `~/.cli-tools/plane-cli/config.toml` or `PLANE_CONFIG`.
+- `--api-key` and `--host` fail with "OverSire sets this value".
+- `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in OverSire".
+- `listen` and `serve` fail with "OverSire does not run listen" and "OverSire does not run serve".
+- `--workspace` and `--project` still work.
+
 ## Regenerate the spec
 
 ```

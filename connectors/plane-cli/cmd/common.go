@@ -43,7 +43,7 @@ func (a *AppContext) Workspace() (string, error) {
 	if ws := strings.TrimSpace(a.Config.Workspace); ws != "" {
 		return ws, nil
 	}
-	if config.Trebi() {
+	if config.ManagedBy() != "" {
 		return "", fmt.Errorf("no workspace set: pass --workspace/-w")
 	}
 	return "", fmt.Errorf("no workspace set: pass --workspace/-w, set PLANE_WORKSPACE, or run `plane-cli config set workspace <slug>`")

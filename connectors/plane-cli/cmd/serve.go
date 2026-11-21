@@ -43,7 +43,12 @@ change each second (for conformance checks).`,
 			&cli.DurationFlag{Name: "interval", Sources: cli.EnvVars("PLANE_POLL_INTERVAL"), Usage: "Time between polls (default 60s; 1s with --sandbox)"},
 			&cli.BoolFlag{Name: "sandbox", Usage: "Run against a fake Plane in this process (for conformance checks)"},
 		},
-		Action: runServe,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if err := config.RefuseLongRun("serve"); err != nil {
+				return err
+			}
+			return runServe(ctx, c)
+		},
 	}
 }
 

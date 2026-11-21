@@ -51,7 +51,7 @@ func home(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("HOME", h)
-	for _, k := range []string{"TREBI_STATE_DIR", "TREBI_CACHE_DIR", "PLANE_API_KEY", "PLANE_HOST", "PLANE_WORKSPACE", "PLANE_PROJECT", "PLANE_PROJECTS"} {
+	for _, k := range []string{"TREBI_STATE_DIR", "TREBI_CACHE_DIR", "PLANE_API_KEY", "PLANE_HOST", "PLANE_WORKSPACE", "PLANE_PROJECT", "PLANE_PROJECTS", "PLANE_MANAGED_BY"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k) //nolint:errcheck // t.Setenv restores it
 	}
@@ -92,6 +92,15 @@ func TestTrebiMode(t *testing.T) {
 		}
 	}
 
+	for _, cmd := range []string{"listen", "serve"} {
+		if err := config.RefuseLongRun(cmd); err != nil {
+			t.Fatalf("Trebi mode must keep %s: %v", cmd, err)
+		}
+	}
+	if config.ManagedBy() != "Trebi" {
+		t.Fatalf("ManagedBy in Trebi mode: %q", config.ManagedBy())
+	}
+
 	t.Setenv("PLANE_API_KEY", "key-from-input")
 	t.Setenv("PLANE_PROJECTS", "zeta/*, acme/ENG")
 	out, err = runMode(t, "auth", "show")
@@ -122,5 +131,97 @@ func TestStandalone(t *testing.T) {
 	out, err = runMode(t, "auth", "show")
 	if err != nil || !strings.Contains(out, "API key:     key-...vars") {
 		t.Fatalf("PLANE_API_KEY wins over the file: %q %v", out, err)
+	}
+}
+
+// managed puts the CLI in managed mode, as OverSire does.
+func managed(t *testing.T) {
+	t.Helper()
+	home(t)
+	t.Setenv("PLANE_MANAGED_BY", "OverSire")
+}
+
+func TestManagedRefusesKeyAndHostFlags(t *testing.T) {
+	managed(t)
+	for _, args := range [][]string{
+		{"--api-key", "k", "auth", "show"},
+		{"-k", "k", "auth", "show"},
+		{"--host", "https://plane.example.com", "auth", "show"},
+	} {
+		if _, err := runMode(t, args...); err == nil || err.Error() != "OverSire sets this value" {
+			t.Fatalf("%v in managed mode: %v", args, err)
+		}
+	}
+}
+
+func TestManagedReadsNoConfigFile(t *testing.T) {
+	managed(t)
+	out, err := runMode(t, "auth", "show")
+	if err != nil || strings.Contains(out, "home") || strings.Contains(out, "-env") || strings.Contains(out, "fromfile") {
+		t.Fatalf("auth show must not read the home or PLANE_CONFIG file: %q %v", out, err)
+	}
+	if _, err := runMode(t, "auth", "status"); err == nil || !strings.Contains(err.Error(), "set the API key in OverSire") {
+		t.Fatalf("auth status with no key: %v", err)
+	}
+	t.Setenv("PLANE_API_KEY", "key-from-managed")
+	out, err = runMode(t, "auth", "show")
+	if err != nil || !strings.Contains(out, "API key:     key-...aged") {
+		t.Fatalf("the env key must win: %q %v", out, err)
+	}
+}
+
+func TestManagedRefusesSaves(t *testing.T) {
+	managed(t)
+	h := os.Getenv("HOME")
+	before, err := os.ReadFile(filepath.Join(h, ".cli-tools", "plane-cli", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"auth", "login", "--api-key", "k"},
+		{"auth", "logout"},
+		{"auth", "workspace", "add", "acme", "--api-key", "k", "--no-verify"},
+		{"auth", "workspace", "remove", "acme"},
+		{"config", "set", "workspace", "acme"},
+	} {
+		if _, err := runMode(t, args...); err == nil || err.Error() != "Set this value in OverSire" {
+			t.Fatalf("%v in managed mode: %v", args, err)
+		}
+	}
+	after, _ := os.ReadFile(filepath.Join(h, ".cli-tools", "plane-cli", "config.toml"))
+	if string(before) != string(after) {
+		t.Fatal("a managed command changed the config file")
+	}
+	c, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err == nil || c.File() != "" {
+		t.Fatalf("Save must refuse with an empty path: %v %q", err, c.File())
+	}
+}
+
+func TestManagedRefusesListenAndServe(t *testing.T) {
+	managed(t)
+	for _, name := range []string{"listen", "serve"} {
+		if _, err := runMode(t, name); err == nil || err.Error() != "OverSire does not run "+name {
+			t.Fatalf("%s in managed mode: %v", name, err)
+		}
+	}
+}
+
+func TestManagedWorkspaceAndProjectFromEnv(t *testing.T) {
+	managed(t)
+	t.Setenv("PLANE_API_KEY", "key-from-managed")
+	t.Setenv("PLANE_HOST", "https://plane.example.com")
+	t.Setenv("PLANE_WORKSPACE", "acme")
+	t.Setenv("PLANE_PROJECT", "ENG")
+	out, err := runMode(t, "auth", "show")
+	if err != nil || !strings.Contains(out, "Workspace:   acme\n") || !strings.Contains(out, "Project:     ENG\n") || !strings.Contains(out, "https://plane.example.com") {
+		t.Fatalf("auth show must use the env: %q %v", out, err)
+	}
+	out, err = runMode(t, "-w", "beta", "-p", "OPS", "auth", "show")
+	if err != nil || !strings.Contains(out, "Workspace:   beta\n") || !strings.Contains(out, "Project:     OPS\n") {
+		t.Fatalf("--workspace and --project stay open: %q %v", out, err)
 	}
 }

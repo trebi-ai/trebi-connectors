@@ -15,6 +15,7 @@ import (
 
 	cli "github.com/urfave/cli/v3"
 
+	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/listen"
 )
 
@@ -60,7 +61,12 @@ Examples:
 			&cli.BoolFlag{Name: "activities", Usage: "Poll: add the activity rows of each change (one more request per change)"},
 			&cli.StringSliceFlag{Name: "filter", Aliases: []string{"q"}, Usage: "Poll: extra query parameter for the work item list, as key=value (repeatable)"},
 		},
-		Action: runListen,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if err := config.RefuseLongRun("listen"); err != nil {
+				return err
+			}
+			return runListen(ctx, c)
+		},
 	}
 }
 

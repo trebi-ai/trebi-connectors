@@ -1,7 +1,9 @@
 // Package config loads and saves the plane-cli config file. It is the only
-// code that picks between the two modes. In Trebi mode (TREBI_STATE_DIR is
+// code that picks between the modes. In Trebi mode (TREBI_STATE_DIR is
 // set) the settings come only from the connection inputs PLANE_API_KEY and
-// PLANE_HOST, and the home folder and PLANE_CONFIG are not read.
+// PLANE_HOST, and the home folder and PLANE_CONFIG are not read. In managed
+// mode (PLANE_MANAGED_BY is set, for example by OverSire) the host app sets
+// the values in the env and the CLI reads no config file.
 package config
 
 import (
@@ -21,6 +23,49 @@ import (
 func Trebi() bool {
 	_, ok := sdk.FromEnv()
 	return ok
+}
+
+// ManagedBy gives the name of the host app that manages the settings: "Trebi"
+// in Trebi mode, the value of PLANE_MANAGED_BY in managed mode, else "".
+func ManagedBy() string {
+	if Trebi() {
+		return "Trebi"
+	}
+	return strings.TrimSpace(os.Getenv("PLANE_MANAGED_BY"))
+}
+
+// RefuseFlag gives the error for a flag that selects a credential or a host
+// when the host app manages the settings. It gives nil outside managed mode.
+func RefuseFlag() error {
+	if Trebi() {
+		return sdk.ErrTrebiSets
+	}
+	if by := ManagedBy(); by != "" {
+		return fmt.Errorf("%s sets this value", by)
+	}
+	return nil
+}
+
+// RefuseSave gives the error for a command that writes a setting when the
+// host app manages the settings. It gives nil outside managed mode.
+func RefuseSave() error {
+	if Trebi() {
+		return sdk.ErrSetInTrebi
+	}
+	if by := ManagedBy(); by != "" {
+		return fmt.Errorf("Set this value in %s", by) //nolint:staticcheck // a sentence for the user
+	}
+	return nil
+}
+
+// RefuseLongRun gives the error for a command that does not end (listen,
+// serve) when a host app other than Trebi manages the settings. Trebi starts
+// serve itself. It gives nil in the other modes.
+func RefuseLongRun(command string) error {
+	if by := ManagedBy(); by != "" && !Trebi() {
+		return fmt.Errorf("%s does not run %s", by, command)
+	}
+	return nil
 }
 
 // DefaultHost is the Plane Cloud API host. Self-hosted instances use their own URL.
@@ -51,9 +96,9 @@ type Workspace struct {
 }
 
 // Path returns ~/.cli-tools/plane-cli/config.toml. PLANE_CONFIG overrides it.
-// Trebi mode has no config file: Path returns "".
+// Trebi and managed mode have no config file: Path returns "".
 func Path() (string, error) {
-	if Trebi() {
+	if ManagedBy() != "" {
 		return "", nil
 	}
 	if p := os.Getenv("PLANE_CONFIG"); p != "" {
@@ -177,8 +222,8 @@ func (c *Config) File() string { return c.path }
 
 // Save writes the config with mode 0600 through a temp file and a rename.
 func (c *Config) Save() error {
-	if Trebi() {
-		return sdk.ErrSetInTrebi
+	if err := RefuseSave(); err != nil {
+		return err
 	}
 	if c.path == "" {
 		p, err := Path()
@@ -199,8 +244,8 @@ func (c *Config) Save() error {
 
 // Delete removes the config file. A missing file is not an error.
 func (c *Config) Delete() error {
-	if Trebi() {
-		return sdk.ErrSetInTrebi
+	if err := RefuseSave(); err != nil {
+		return err
 	}
 	if c.path == "" {
 		return nil
@@ -226,8 +271,8 @@ func (c *Config) Redacted() *Config {
 // Validate checks that an API key is present.
 func (c *Config) Validate() error {
 	if strings.TrimSpace(c.APIKey) == "" {
-		if Trebi() {
-			return errors.New("no API key in this connection: set the API key in Trebi")
+		if by := ManagedBy(); by != "" {
+			return fmt.Errorf("no API key in this connection: set the API key in %s", by)
 		}
 		return errors.New("no api_key configured (run `plane-cli auth login` or set PLANE_API_KEY)")
 	}
