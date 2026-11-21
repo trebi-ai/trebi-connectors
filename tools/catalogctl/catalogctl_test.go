@@ -447,3 +447,36 @@ func TestEntriesNames(t *testing.T) {
 		t.Fatal("unknown name must fail")
 	}
 }
+
+func TestSkillCopy(t *testing.T) {
+	schema, err := LoadSchema(schemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, copy, want string
+	}{
+		{"same bytes", goodSkill, ""},
+		{"other bytes", goodSkill + "More.\n", "connectors/prog-cli/internal/skill/SKILL.md differs from skill/SKILL.md; run go generate ./internal/skill in connectors/prog-cli"},
+		{"no copy", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSource(t, root, "prog-cli")
+			if tc.copy != "" {
+				write(t, filepath.Join(root, "connectors", "prog-cli", SkillCopy), tc.copy)
+			}
+			e, err := LoadEntry(writeEntry(t, root, "prog", progManifest, goodSkill))
+			if err != nil {
+				t.Fatal(err)
+			}
+			errs := errors.Join(e.Validate(schema)...)
+			switch {
+			case tc.want == "" && errs != nil:
+				t.Fatalf("want no error, got %v", errs)
+			case tc.want != "" && (errs == nil || !strings.Contains(errs.Error(), tc.want)):
+				t.Fatalf("want %q, got %v", tc.want, errs)
+			}
+		})
+	}
+}

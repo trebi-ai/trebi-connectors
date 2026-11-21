@@ -16,7 +16,7 @@ Connectors for [Trebi](https://github.com/trebi-ai/trebi) that live outside the 
 ## Add or change a catalog entry
 
 1. Add or edit `catalog/<name>/trebi-connector.yaml`. The folder name is the `name` field.
-2. Put the skill in `catalog/<name>/skill/SKILL.md`. This is the only copy of the skill, also for a CLI in `connectors/`.
+2. Put the skill in `catalog/<name>/skill/SKILL.md`. This is the only copy of the skill that you edit, also for a CLI in `connectors/`. A program with a `skill` command keeps a byte-identical copy in `connectors/<cli>/internal/skill/SKILL.md`, and `scripts/validate.sh` fails when it differs.
 3. Bump `version` for each change. A published version is immutable.
 4. Run `scripts/validate.sh`. Add `--conformance` to run `trebi connector conformance --manifest catalog/<name>` on each entry. It needs a `trebi` with that command on `PATH`.
 

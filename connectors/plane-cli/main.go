@@ -42,7 +42,7 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("load spec: %w", err)
 	}
 
-	commands := []*cli.Command{cmd.AuthCommand(), cmd.ConfigCommand(), cmd.APICommand(), cmd.ListenCommand(), cmd.ServeCommand(), cmd.OpCommand()}
+	commands := []*cli.Command{cmd.AuthCommand(), cmd.ConfigCommand(), cmd.APICommand(), cmd.ListenCommand(), cmd.ServeCommand(), cmd.OpCommand(), cmd.SkillCommand()}
 	commands = append(commands, cmd.ResourceCommands(s, cmd.UploadCommands(s))...)
 
 	app := &cli.Command{

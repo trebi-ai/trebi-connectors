@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/skill"
 )
 
 // runMode runs the CLI as main does and returns what it prints on stdout.
@@ -223,5 +224,48 @@ func TestManagedWorkspaceAndProjectFromEnv(t *testing.T) {
 	out, err = runMode(t, "-w", "beta", "-p", "OPS", "auth", "show")
 	if err != nil || !strings.Contains(out, "Workspace:   beta\n") || !strings.Contains(out, "Project:     OPS\n") {
 		t.Fatalf("--workspace and --project stay open: %q %v", out, err)
+	}
+}
+
+func TestSkillStandalone(t *testing.T) {
+	home(t)
+	out, err := runMode(t, "skill")
+	if err != nil || !strings.Contains(out, "auth login") || !strings.Contains(out, "## Trebi connector") || strings.Contains(out, "<!-- managed") || strings.HasPrefix(out, "---") {
+		t.Fatalf("standalone skill: %v\n%s", err, out)
+	}
+}
+
+func TestSkillManaged(t *testing.T) {
+	managed(t)
+	out, err := runMode(t, "skill")
+	if err != nil || !strings.Contains(out, "Managed mode (OverSire)") || !strings.Contains(out, "## Identifiers") {
+		t.Fatalf("managed skill: %v\n%s", err, out)
+	}
+	for _, s := range []string{"auth login", "config.toml", "PLANE_CONFIG", "--api-key", "## Listen to changes", "## Trebi connector"} {
+		if strings.Contains(out, s) {
+			t.Errorf("managed skill has %q", s)
+		}
+	}
+}
+
+func TestSkillTrebiMode(t *testing.T) {
+	home(t)
+	state := t.TempDir()
+	t.Setenv("TREBI_STATE_DIR", state)
+	t.Setenv("PLANE_MANAGED_BY", "OverSire")
+	out, err := runMode(t, "skill")
+	if err != nil || !strings.Contains(out, "auth login") || !strings.Contains(out, "## Trebi connector") {
+		t.Fatalf("Trebi mode must print the full text: %v\n%s", err, out)
+	}
+	if entries, _ := os.ReadDir(state); len(entries) != 0 {
+		t.Fatalf("skill wrote the state folder: %v", entries)
+	}
+}
+
+func TestSkillRaw(t *testing.T) {
+	managed(t)
+	out, err := runMode(t, "skill", "--raw")
+	if err != nil || out != string(skill.Raw()) || !strings.HasPrefix(out, "---\n") {
+		t.Fatalf("skill --raw: %v", err)
 	}
 }

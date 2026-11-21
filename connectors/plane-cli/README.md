@@ -75,6 +75,8 @@ plane-cli page list -W                       # workspace pages, also when a proj
 plane-cli api GET 'workspaces/{workspace}/members/'
 plane-cli listen -p ENG                      # poll: work item changes as JSON lines
 plane-cli listen --tunnel                    # webhook through a cloudflared quick tunnel
+plane-cli skill                              # this reference as Markdown; needs no API key
+plane-cli skill --raw                        # SKILL.md as it is, with the frontmatter
 ```
 
 - A work item key (`ENG-42`) also sets the project.
@@ -120,6 +122,7 @@ OverSire runs `plane-cli` with `PLANE_MANAGED_BY=OverSire`. In this mode:
 - `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in OverSire".
 - `listen` and `serve` fail with "OverSire does not run listen" and "OverSire does not run serve".
 - `--workspace` and `--project` still work.
+- `skill` prints the reference without the login and config parts.
 
 ## Regenerate the spec
 

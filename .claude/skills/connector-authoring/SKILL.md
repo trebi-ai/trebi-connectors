@@ -48,7 +48,7 @@ channel:
 - `channel.features` and `channel.limits` must match what `initialize` returns. The adapter must not promise more than the manifest.
 - List every type that the program sends in `events.types`, with a short `description`. The user selects the types to receive on the Events tab. Trebi drops an event of a type that is not in the list, and the conformance check fails on it.
 - Use one type for each kind of event. Keep a busy type apart from a rare one, so that the user can skip the busy one alone. Do not filter events in the program; the user chooses.
-- Put the skill for the agent in `catalog/<name>/skill/SKILL.md`. It is the only copy.
+- Put the skill for the agent in `catalog/<name>/skill/SKILL.md`. It is the only copy that you edit. A program with a `skill` command keeps a byte-identical copy in `connectors/<cli>/internal/skill/SKILL.md`, and `scripts/validate.sh` fails when it differs.
 
 ## 2. The config package: two modes in one place
 

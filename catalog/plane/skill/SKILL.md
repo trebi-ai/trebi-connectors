@@ -27,11 +27,12 @@ API reference: <https://developers.plane.so/api-reference/introduction>.
 
 ## Auth and defaults
 
+<!-- managed:omit -->
+
 - Token: Plane → Profile Settings → Personal Access Tokens. It goes in the `X-Api-Key` header.
 - `plane-cli auth login` — interactive. Or pass `--api-key`, `--host`, `--workspace`, `--project`.
   Saved to `~/.cli-tools/plane-cli/config.toml` (mode 0600).
-- `plane-cli auth status` — calls `GET /api/v2/users/me/`.
-- `plane-cli auth logout`, `plane-cli auth show`.
+- `plane-cli auth logout`.
 - `plane-cli config show|path|set <key> [value]` — keys: `workspace`, `project`, `host`, `api_key`.
 - A token works only in the workspace that made it. For a second workspace, save its key:
   `plane-cli auth workspace add <slug>` (hidden prompt; or `--api-key K`, `--api-key -` for stdin, `--host`).
@@ -41,10 +42,13 @@ API reference: <https://developers.plane.so/api-reference/introduction>.
   (a wrong slug gives 404).
 - Order of precedence: flag → env → `[workspaces.<slug>]` entry → top-level config value.
 
+<!-- /managed:omit -->
+
+- `plane-cli auth status` — calls `GET /api/v2/users/me/`.
+- `plane-cli auth show` — prints the settings in use. The key is masked.
+
 | Global flag | Env | Meaning |
 |---|---|---|
-| `--api-key/-k` | `PLANE_API_KEY` | Token |
-| `--host` | `PLANE_HOST` | Default `https://api.plane.so`. Set it for self-hosted. |
 | `--workspace/-w` | `PLANE_WORKSPACE` | Workspace slug (from the URL) |
 | `--project/-p` | `PLANE_PROJECT` | Project UUID or identifier (for example `ENG`) |
 | `--workspace-scope/-W` | | Use the workspace variant of a command that has a workspace and a project variant |
@@ -52,11 +56,26 @@ API reference: <https://developers.plane.so/api-reference/introduction>.
 | `--columns/-c` | | Table columns, comma-separated. Dotted paths are allowed (`state.name`). |
 | `--verbose/-V` | `PLANE_DEBUG` | Print HTTP details to stderr. `PLANE_DUMP_BODY=1` also prints bodies. |
 
+<!-- managed:omit -->
+
+| Login flag | Env | Meaning |
+|---|---|---|
+| `--api-key/-k` | `PLANE_API_KEY` | Token |
+| `--host` | `PLANE_HOST` | Default `https://api.plane.so`. Set it for self-hosted. |
+
 `PLANE_CONFIG` changes the config file path.
 
 In a Trebi connection (`TREBI_STATE_DIR` is set), Trebi sets the key (`PLANE_API_KEY`) and the address (`PLANE_HOST`). The CLI reads no config file: `~/.cli-tools/plane-cli` and `PLANE_CONFIG` are not read. `--api-key` and `--host` fail with "Trebi sets this value". `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in Trebi". The default workspace is the first workspace of `PLANE_PROJECTS`; use `-w <slug>` for another one.
 
-Managed mode (OverSire): when `PLANE_MANAGED_BY=OverSire` is set, OverSire sets `PLANE_API_KEY`, `PLANE_HOST`, `PLANE_WORKSPACE`, and `PLANE_PROJECT`. The CLI reads no config file: `~/.cli-tools/plane-cli` and `PLANE_CONFIG` are not read. `--api-key` and `--host` fail with "OverSire sets this value". `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in OverSire". `listen` and `serve` fail with "OverSire does not run listen" and "OverSire does not run serve". `-w` and `-p` still work.
+<!-- /managed:omit -->
+
+Managed mode (OverSire): when `PLANE_MANAGED_BY=OverSire` is set, OverSire sets `PLANE_API_KEY`, `PLANE_HOST`, `PLANE_WORKSPACE`, and `PLANE_PROJECT`. The CLI reads no config file. `-w` and `-p` still work in the CLI. The host app can refuse them.
+
+<!-- managed:omit -->
+
+In managed mode, `~/.cli-tools/plane-cli` and `PLANE_CONFIG` are not read. `--api-key` and `--host` fail with "OverSire sets this value". `auth login`, `auth logout`, `auth workspace add`, `auth workspace remove`, and `config set` fail with "Set this value in OverSire". `listen` and `serve` fail with "OverSire does not run listen" and "OverSire does not run serve".
+
+<!-- /managed:omit -->
 
 ## Identifiers
 
@@ -170,9 +189,8 @@ group-sync config: get update
 group-sync workspace-mapping | project-mapping: list get create update delete
 project-label: list¹ get¹ create¹ update¹ delete¹
 sticky: list get create update delete
-listen: --poll (default) | --tunnel | --public-url   (JSON lines, see "Listen to changes")
-serve: --projects --interval --sandbox   (Trebi connector, see "Trebi connector")
 op: search get list   (JSON on stdin; plane-op is the same)
+skill: --raw   (print this reference as Markdown; needs no API key)
 asset: list get create confirm delete upload
 user: me
   asset: list get create confirm delete upload
@@ -182,6 +200,17 @@ role | permission-scheme: list get
 permission: me*
 workspace features: get update
 ```
+
+<!-- managed:omit -->
+
+Commands that run until you stop them:
+
+```
+listen: --poll (default) | --tunnel | --public-url   (JSON lines, see "Listen to changes")
+serve: --projects --interval --sandbox   (Trebi connector, see "Trebi connector")
+```
+
+<!-- /managed:omit -->
 
 ## Uploads
 
@@ -207,6 +236,8 @@ plane-cli asset download <id> [<id>...] -d ./files       # workspace assets (ids
 ```
 
 Flags: `-d/--dir` (default `.`), `-O/--out` (one file only; `-` is stdout), `-f/--force` (overwrite). With `-j`, it prints `[{id,name,size,path}]`.
+
+<!-- managed:omit -->
 
 ## Listen to changes
 
@@ -276,6 +307,8 @@ Each input also takes `workspace`. When `PLANE_PROJECTS` is set, a project outsi
 `scripts/build.sh` also writes `plane-op` (a copy of the program): `plane-op get` is `plane-cli op get`. Trebi does not let an operation program also be a run command.
 
 The catalog entry is `catalog/plane`. Check it from the repository root with `scripts/validate.sh --conformance plane`.
+
+<!-- /managed:omit -->
 
 ## Raw requests
 

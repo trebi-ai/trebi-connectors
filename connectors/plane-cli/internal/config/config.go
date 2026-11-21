@@ -34,6 +34,12 @@ func ManagedBy() string {
 	return strings.TrimSpace(os.Getenv("PLANE_MANAGED_BY"))
 }
 
+// Managed reports whether a host app other than Trebi manages the settings
+// (PLANE_MANAGED_BY is set and Trebi mode is off).
+func Managed() bool {
+	return !Trebi() && strings.TrimSpace(os.Getenv("PLANE_MANAGED_BY")) != ""
+}
+
 // RefuseFlag gives the error for a flag that selects a credential or a host
 // when the host app manages the settings. It gives nil outside managed mode.
 func RefuseFlag() error {

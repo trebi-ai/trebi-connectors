@@ -116,7 +116,7 @@ Each item of `setup.inputs` is one value that the user gives when they add a con
 
 ### The skill
 
-`skill/SKILL.md` teaches an agent to use the commands. It is the only copy of the skill. Trebi puts it in the run when a job names the connection.
+`skill/SKILL.md` teaches an agent to use the commands. It is the only copy of the skill that you edit. A program with a `skill` command keeps a byte-identical copy in `connectors/<cli>/internal/skill/SKILL.md`, and `scripts/validate.sh` fails when it differs. Trebi puts it in the run when a job names the connection.
 
 ```markdown
 ---

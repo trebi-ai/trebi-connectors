@@ -304,6 +304,7 @@ func (e *Entry) Validate(schema *jsonschema.Resolved) []error {
 		}
 	}
 	e.checkSkill(add)
+	e.checkSkillCopy(add)
 	e.checkTree(add)
 	return errs
 }
@@ -355,6 +356,34 @@ func (e *Entry) checkSkill(add func(string, ...any)) {
 		if s, _ := fm[k].(string); strings.TrimSpace(s) == "" {
 			add("skill: %s: frontmatter needs %s", rel, k)
 		}
+	}
+}
+
+// SkillCopy is the copy of the skill in the source folder of a program with
+// a skill command. go:embed cannot read the entry folder.
+const SkillCopy = "internal/skill/SKILL.md"
+
+// checkSkillCopy checks that a skill copy in the source folder is
+// byte-identical to the skill of the entry. No copy is not an error.
+func (e *Entry) checkSkillCopy(add func(string, ...any)) {
+	bin := e.Manifest.CatalogBin()
+	if bin == "" {
+		return
+	}
+	got, err := os.ReadFile(filepath.Join(e.SourceDir(), SkillCopy))
+	if errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		add("skill: %v", err)
+		return
+	}
+	want, err := os.ReadFile(filepath.Join(e.Dir, e.Manifest.SkillDir(), "SKILL.md"))
+	if err != nil {
+		return // checkSkill reports a missing skill
+	}
+	if !bytes.Equal(got, want) {
+		add("skill: connectors/%s/%s differs from %s/SKILL.md; run go generate ./internal/skill in connectors/%s", bin, SkillCopy, e.Manifest.SkillDir(), bin)
 	}
 }
 

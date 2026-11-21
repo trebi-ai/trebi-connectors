@@ -28,7 +28,7 @@ The daemon owns the protocol, the manifest schema, and the conformance checks. T
 ## Rules for a catalog entry
 
 - The folder name is the `name` field of the manifest.
-- `skill/SKILL.md` is the only copy of the skill, also for a program in `connectors/`.
+- `skill/SKILL.md` is the only copy of the skill that you edit, also for a program in `connectors/`. A program with a `skill` command keeps a byte-identical copy in `connectors/<cli>/internal/skill/SKILL.md`, and `scripts/validate.sh` fails when it differs.
 - Bump `version` for each change to the entry or to its program. A published version is immutable.
 - A required input has a `label`. The label is the name that the user sees, not an env var name.
 - Run `scripts/validate.sh` before a PR. For an entry with a program, also run `scripts/validate.sh --conformance <name>`.
