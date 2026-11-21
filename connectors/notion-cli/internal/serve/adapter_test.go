@@ -1,10 +1,14 @@
 package serve
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +27,7 @@ func start(t *testing.T, hook *sdk.Webhook, opts ...Option) (*sdktest.Conn, *fak
 	t.Cleanup(fake.Close)
 	cl := client.New("secret_test")
 	cl.BaseURL = fake.URL()
-	a, err := New(cl, "test", "", opts...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := sdktest.Start(a, sdk.WithStateDir(t.TempDir()))
+	c := sdktest.Start(New(cl, "test", opts...), sdk.WithStateDir(t.TempDir()))
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck,gosec // the test checks the calls
 	res, err := c.Initialize(sdk.InitializeParams{Webhook: hook})
 	if err != nil {
@@ -186,11 +186,7 @@ func TestSandboxSubscribe(t *testing.T) {
 	hook := sink.URL
 	cl := client.New("sandbox")
 	cl.BaseURL = fake.URL()
-	a, err := New(cl, "test", "", WithSandbox(fake.SubscribeURL()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := sdktest.Start(a, sdk.WithStateDir(t.TempDir()))
+	c := sdktest.Start(New(cl, "test", WithSandbox(fake.SubscribeURL())), sdk.WithStateDir(t.TempDir()))
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck,gosec // the test checks the calls
 	if _, err := c.Initialize(sdk.InitializeParams{Webhook: &sdk.Webhook{URL: hook}}); err != nil {
 		t.Fatal(err)
@@ -231,11 +227,7 @@ func TestEmptySync(t *testing.T) {
 
 func TestMissingSecret(t *testing.T) {
 	t.Parallel()
-	a, err := New(client.New(""), "test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := sdktest.Start(a, sdk.WithStateDir(t.TempDir()))
+	c := sdktest.Start(New(client.New(""), "test"), sdk.WithStateDir(t.TempDir()))
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck,gosec // the test checks the calls
 	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
 		t.Fatal(err)
@@ -250,5 +242,44 @@ func TestMissingSecret(t *testing.T) {
 	}
 	if st.State != sdk.StateAuthRequired || st.Reason != sdk.ReasonMissingInput || !strings.Contains(st.Message, "Integration secret") {
 		t.Fatalf("status %+v", st)
+	}
+}
+
+func TestNewerStateIsStatusError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, stateFile)
+	newer := []byte(fmt.Sprintf(`{"version": %d}`, stateVersion+1))
+	if err := os.WriteFile(path, newer, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := sdktest.Start(New(client.New("secret_test"), "test"), sdk.WithStateDir(dir))
+	if _, err := c.Initialize(sdk.InitializeParams{Webhook: &sdk.Webhook{URL: hookURL}}); err != nil {
+		t.Fatal(err)
+	}
+	var st sdk.Status
+	for range 4 {
+		m, err := c.WaitNote(sdk.MethodStatus)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(m.Params, &st); err != nil {
+			t.Fatal(err)
+		}
+		if st.State != sdk.StateError {
+			t.Fatalf("status %+v", st)
+		}
+		if st.Message != "" {
+			break
+		}
+	}
+	if !strings.Contains(st.Message, "newer notion-cli") {
+		t.Fatalf("status %+v", st)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, newer) {
+		t.Fatalf("state changed: %q %v", got, err)
 	}
 }

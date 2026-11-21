@@ -83,6 +83,7 @@ type Adapter struct {
 	asked      bool // the sandbox fake has the hook URL
 	self       *client.User
 	revoked    bool
+	stateErr   error // the state is from a newer program
 }
 
 // Option changes the adapter.
@@ -95,10 +96,10 @@ func WithPollInterval(d time.Duration) Option { return func(a *Adapter) { a.inte
 // --sandbox` sets it.
 func WithSandbox(subscribeURL string) Option { return func(a *Adapter) { a.subscribe = subscribeURL } }
 
-// New builds the adapter. stateDir keeps the webhook token and the poll
-// cursor; empty keeps them in memory. A client with no token makes
-// Initialize report the missing input.
-func New(api *client.Client, version, stateDir string, opts ...Option) (*Adapter, error) {
+// New builds the adapter. UseFolders gives it the state folder; without
+// one, the webhook token and the poll cursor stay in memory. A client with
+// no token makes Initialize report the missing input.
+func New(api *client.Client, version string, opts ...Option) *Adapter {
 	a := &Adapter{
 		api: api, version: version, interval: pollEvery,
 		post: &http.Client{Timeout: 10 * time.Second},
@@ -107,20 +108,20 @@ func New(api *client.Client, version, stateDir string, opts ...Option) (*Adapter
 	for _, o := range opts {
 		o(a)
 	}
-	return a, a.UseFolders(sdk.Trebi{StateDir: stateDir})
+	return a
 }
 
-// UseFolders reads the state of the folder. Old state is upgraded; state
-// from a newer version is an error.
+// UseFolders reads the state of the folder. Old state is upgraded. State
+// from a newer version stays on disk and makes the status an error.
 func (a *Adapter) UseFolders(t sdk.Trebi) error {
 	if t.StateDir == "" || t.StateDir == a.stateDir {
 		return nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.stateDir = t.StateDir
 	data, err := os.ReadFile(filepath.Join(t.StateDir, stateFile))
 	if errors.Is(err, os.ErrNotExist) {
+		a.stateDir = t.StateDir
 		return nil
 	}
 	if err != nil {
@@ -131,8 +132,10 @@ func (a *Adapter) UseFolders(t sdk.Trebi) error {
 		return fmt.Errorf("parse state: %w", err)
 	}
 	if st.Version > stateVersion {
-		return fmt.Errorf("state version %d is newer than this program (%d): update notion-cli", st.Version, stateVersion)
+		a.stateErr = fmt.Errorf("the state is from a newer notion-cli (version %d); update notion-cli", st.Version)
+		return nil
 	}
+	a.stateDir = t.StateDir
 	st.Version = stateVersion
 	a.st = st
 	return nil
@@ -160,6 +163,10 @@ func (a *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.
 		Features: Features,
 	}
 	a.mu.Lock()
+	if a.stateErr != nil {
+		a.mu.Unlock()
+		return res, nil
+	}
 	a.hook = in.Webhook
 	if in.Webhook != nil && in.Webhook.URL != a.st.HookURL {
 		a.st.HookURL = in.Webhook.URL
@@ -195,6 +202,9 @@ func (a *Adapter) Initialize(ctx context.Context, in sdk.InitializeParams) (sdk.
 func (a *Adapter) AuthStatus(context.Context) (sdk.AuthState, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.stateErr != nil {
+		return sdk.AuthState{State: sdk.StateError}, nil
+	}
 	if a.revoked || a.self == nil {
 		return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonRevoked}, nil
 	}
@@ -461,6 +471,12 @@ func (a *Adapter) webhookEvent(ctx context.Context, d delivery) (sdk.Event, erro
 // Run polls Notion search while a subscription exists and Trebi gives no
 // hook.
 func (a *Adapter) Run(ctx context.Context, e sdk.Emitter) error {
+	a.mu.Lock()
+	stateErr := a.stateErr
+	a.mu.Unlock()
+	if stateErr != nil {
+		return e.Status(sdk.Status{State: sdk.StateError, Message: stateErr.Error()})
+	}
 	t := time.NewTicker(a.interval)
 	defer t.Stop()
 	for {

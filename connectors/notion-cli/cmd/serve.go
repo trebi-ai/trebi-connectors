@@ -29,7 +29,6 @@ func ServeCommand(version string) *cli.Command {
 		Action: func(c *cli.Context) error {
 			ctx, stop := signal.NotifyContext(c.Context, os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			t, _ := sdk.FromEnv()
 			s := settingsFromCtx(c)
 			var opts []serve.Option
 			var cl *client.Client
@@ -52,11 +51,7 @@ func ServeCommand(version string) *cli.Command {
 					return err
 				}
 			}
-			a, err := serve.New(cl, version, t.StateDir, opts...)
-			if err != nil {
-				return err
-			}
-			return sdk.Serve(ctx, a)
+			return sdk.Serve(ctx, serve.New(cl, version, opts...))
 		},
 	}
 }
