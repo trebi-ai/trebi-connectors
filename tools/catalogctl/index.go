@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"crypto/ed25519"
@@ -12,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -118,7 +120,7 @@ func (b *Builder) Build(ctx context.Context, entries []*Entry) (*Output, error) 
 		key := "snapshots/" + m.Name + "/" + m.Version + ".tar.gz"
 		ie := byName[m.Name]
 		ie.Name, ie.Title, ie.Description = m.Name, m.Title, m.Description
-		ie.Publisher = cmpOr(m.Publisher, "community")
+		ie.Publisher = cmp.Or(m.Publisher, "community")
 		ie.Capabilities = m.Capabilities()
 		ie.Runs, ie.Login = m.Runs(), m.LoginLabel()
 		ie.IconURL = ""
@@ -158,7 +160,7 @@ func (b *Builder) Build(ctx context.Context, entries []*Entry) (*Output, error) 
 		byName[m.Name] = ie
 	}
 	idx := Index{GeneratedAt: b.Now.UTC().Format(time.RFC3339), Entries: []IndexEntry{}}
-	for _, name := range slices.Sorted(mapKeys(byName)) {
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
 		ie := byName[name]
 		slices.SortFunc(ie.Versions, func(x, y IndexVersion) int { return CompareSemver(x.Version, y.Version) })
 		ie.Latest = latest(ie.Versions)
@@ -234,7 +236,7 @@ func latest(vs []IndexVersion) string {
 			best = v.Version
 		}
 	}
-	return cmpOr(best, bestPre)
+	return cmp.Or(best, bestPre)
 }
 
 // Write writes the output under dir/v1 and signs the index with key.
@@ -297,7 +299,7 @@ func CompareSemver(a, b string) int {
 		x, _ := strconv.Atoi(at(as, i))
 		y, _ := strconv.Atoi(at(bs, i))
 		if x != y {
-			return cmpInt(x, y)
+			return cmp.Compare(x, y)
 		}
 	}
 	switch {
@@ -318,7 +320,7 @@ func comparePre(a, b string) int {
 		y, yerr := strconv.Atoi(bs[i])
 		switch {
 		case xerr == nil && yerr == nil && x != y:
-			return cmpInt(x, y)
+			return cmp.Compare(x, y)
 		case xerr == nil && yerr != nil:
 			return -1
 		case xerr != nil && yerr == nil:
@@ -327,7 +329,7 @@ func comparePre(a, b string) int {
 			return strings.Compare(as[i], bs[i])
 		}
 	}
-	return cmpInt(len(as), len(bs))
+	return cmp.Compare(len(as), len(bs))
 }
 
 func at(s []string, i int) string {
@@ -335,33 +337,6 @@ func at(s []string, i int) string {
 		return s[i]
 	}
 	return "0"
-}
-
-func cmpInt(a, b int) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	}
-	return 0
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
-func mapKeys[V any](m map[string]V) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
 }
 
 // Has reports whether the index lists the version of the connector. A nil

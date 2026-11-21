@@ -10,12 +10,16 @@ on:
       - "scripts/validate.sh"
       - "scripts/publish.sh"
       - "scripts/changed.sh"
+      - "scripts/go-build.sh"
+      - "scripts/fakes/**"
       - ".github/workflows/catalog.yml"
   push:
     branches: [main]
     paths:
       - "catalog/**"
       - "schema/**"
+      - "scripts/go-build.sh"
+      - "scripts/fakes/**"
   workflow_dispatch:
 
 permissions:
@@ -60,7 +64,7 @@ jobs:
           set -euo pipefail
           changed="$(scripts/changed.sh "$BASE")"
           all=false
-          if grep -qE '^(\*$|schema/|tools/catalogctl/|scripts/(validate|changed)\.sh|\.github/workflows/catalog\.yml)' <<<"$changed"; then
+          if grep -qE '^(\*$|schema/|tools/catalogctl/|scripts/(validate|changed|go-build)\.sh|scripts/fakes/|\.github/workflows/catalog\.yml)' <<<"$changed"; then
             all=true
           fi
           names=()

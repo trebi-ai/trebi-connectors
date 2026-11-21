@@ -58,7 +58,6 @@ type Manifest struct {
 	} `yaml:"actions"`
 	Events *struct {
 		Protocol string `yaml:"protocol"`
-		Command  string `yaml:"command"`
 		Types    []struct {
 			Type   string `yaml:"type"`
 			Schema string `yaml:"schema"`

@@ -30,7 +30,10 @@ for a in "$@"; do
   esac
 done
 
-(cd "$root/tools/catalogctl" && GOWORK=off go run . validate --root "$root" ${flags[@]+"${flags[@]}"} ${names[@]+"${names[@]}"})
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+(cd "$root/tools/catalogctl" && GOWORK=off go build -o "$tmp/catalogctl" .)
+"$tmp/catalogctl" validate --root "$root" ${flags[@]+"${flags[@]}"} ${names[@]+"${names[@]}"}
 
 # The schema is vendored from trebi. Compare it when a sibling checkout exists.
 upstream="$root/../trebi/internal/connectors/manifest/schema.json"
@@ -49,15 +52,14 @@ if [[ "$(trebi connector conformance --help 2>&1)" != *--strict* ]]; then
   exit 1
 fi
 
-bin="$(mktemp -d)"
-trap 'rm -rf "$bin"' EXIT
+bin="$tmp/bin"
+mkdir "$bin"
 cp "$root"/scripts/fakes/* "$bin"/
 export PATH="$bin:$PATH"
 failed=()
-entries="$(cd "$root/tools/catalogctl" && GOWORK=off go run . entries --root "$root")"
+entries="$("$tmp/catalogctl" entries --root "$root" ${names[@]+"${names[@]}"})"
 while IFS=$'\t' read -r name version cli; do
   [ -n "$name" ] || continue
-  if [ ${#names[@]} -gt 0 ] && [[ ! " ${names[*]} " =~ " $name " ]]; then continue; fi
   if [ -n "$cli" ] && [ -d "$root/connectors/$cli" ] && [ ! -x "$bin/$cli" ]; then
     "$root/connectors/$cli/scripts/build.sh" "$version" "$bin/$cli" >/dev/null
   fi

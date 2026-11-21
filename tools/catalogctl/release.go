@@ -48,10 +48,7 @@ func (r ReleaseChecker) Check(ctx context.Context, m Manifest) error {
 		return nil
 	}
 	gh := m.Install.GitHubRelease
-	platforms := m.Platforms
-	if len(platforms) == 0 {
-		platforms = DefaultPlatforms
-	}
+	platforms := m.Targets()
 	base := strings.TrimSuffix(r.GitHubURL, "/") + "/" + gh.Repo + "/releases/download/"
 	var sums map[string]string
 	for _, p := range platforms {

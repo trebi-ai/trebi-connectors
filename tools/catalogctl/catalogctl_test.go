@@ -431,3 +431,19 @@ func TestReleaseChecker(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 }
+
+func TestEntriesNames(t *testing.T) {
+	root := t.TempDir()
+	writeEntry(t, root, "a", strings.Replace(goodManifest, "name: demo", "name: a", 1), goodSkill)
+	writeEntry(t, root, "b", strings.Replace(goodManifest, "name: demo", "name: b", 1), goodSkill)
+	var out bytes.Buffer
+	if err := run(context.Background(), []string{"entries", "--root", root, "a"}, &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Fields(out.String()); len(got) == 0 || got[0] != "a" || strings.Contains(out.String(), "b\t") {
+		t.Fatalf("entries a: %q", out.String())
+	}
+	if err := run(context.Background(), []string{"entries", "--root", root, "nope"}, &out, io.Discard); err == nil {
+		t.Fatal("unknown name must fail")
+	}
+}

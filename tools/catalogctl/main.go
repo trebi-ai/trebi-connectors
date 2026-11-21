@@ -116,7 +116,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	case "entries":
 		// One line per entry: the name, the version, and the program that
 		// the catalog builds ("" when it builds none).
-		entries, err := loadEntries(*root, nil)
+		entries, err := loadEntries(*root, fs.Args())
 		if err != nil {
 			return err
 		}
