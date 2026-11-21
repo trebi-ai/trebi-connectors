@@ -2,13 +2,11 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -343,49 +341,6 @@ func (c *Client) Get(ctx context.Context, u string) (*http.Response, error) {
 	return resp, nil
 }
 
-// PostMultipart sends a method as multipart/form-data. files maps a field
-// name to a local file path.
-func (c *Client) PostMultipart(ctx context.Context, method string, params url.Values, files map[string]string) (json.RawMessage, error) {
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	if c.Session() {
-		params.Set("token", c.token)
-	}
-	for k, vs := range params {
-		for _, v := range vs {
-			mw.WriteField(k, v)
-		}
-	}
-	for field, path := range files {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		part, err := mw.CreateFormFile(field, baseName(path))
-		if err == nil {
-			_, err = io.Copy(part, f)
-		}
-		f.Close()
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err := mw.Close(); err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+method, &buf)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	c.authorize(req)
-	body, status, _, err := c.send(req)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", method, err)
-	}
-	return checkBody(method, status, body)
-}
-
 // Upload sends raw bytes to an upload URL from files.getUploadURLExternal.
 func (c *Client) Upload(ctx context.Context, uploadURL string, r io.Reader, size int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, r)
@@ -405,13 +360,6 @@ func (c *Client) Upload(ctx context.Context, uploadURL string, r io.Reader, size
 		return fmt.Errorf("upload: HTTP %d: %s", resp.StatusCode, snippet(b))
 	}
 	return nil
-}
-
-func baseName(p string) string {
-	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
-		return p[i+1:]
-	}
-	return p
 }
 
 // Verify checks the token with auth.test and fills the team and user of w.

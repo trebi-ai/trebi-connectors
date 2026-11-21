@@ -240,12 +240,6 @@ func (d *Directory) ensureChannels(ctx context.Context) error {
 	return nil
 }
 
-// LookupUser returns a cached user by id.
-func (d *Directory) LookupUser(id string) (User, bool) {
-	u, ok := d.Users[id]
-	return u, ok
-}
-
 // UserName returns the label of a user id, loading one user when missing.
 func (d *Directory) UserName(ctx context.Context, id string) string {
 	if id == "" {
@@ -298,14 +292,6 @@ func (d *Directory) Channel(ctx context.Context, id string) (Channel, bool) {
 		d.Channels[c.ID] = c
 	}
 	return c, ok
-}
-
-// ChannelName returns the name of a channel id from the cache.
-func (d *Directory) ChannelName(id string) string {
-	if c, ok := d.Channels[id]; ok && c.Name != "" {
-		return "#" + c.Name
-	}
-	return id
 }
 
 // AllUsers loads and returns every user.

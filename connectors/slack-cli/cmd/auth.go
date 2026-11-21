@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -172,7 +173,7 @@ func importSessions(ctx context.Context, a *AppContext, c *cli.Command, sessions
 		}
 		a.Config.Set(name, ws)
 		names = append(names, name)
-		fmt.Fprintf(w, "✓ %s  %s (%s)  as %s\n", name, ws.TeamName, ws.TeamID, firstNonEmpty(ws.User, ws.Kind()))
+		fmt.Fprintf(w, "✓ %s  %s (%s)  as %s\n", name, ws.TeamName, ws.TeamID, cmp.Or(ws.User, ws.Kind()))
 	}
 	if len(names) == 0 {
 		return errors.New("imported no workspaces")
@@ -189,7 +190,7 @@ func importSessions(ctx context.Context, a *AppContext, c *cli.Command, sessions
 
 // importName picks a stable workspace name.
 func importName(cfg *config.Config, ws config.Workspace, s localauth.Session) string {
-	ws.Domain, ws.TeamID = firstNonEmpty(ws.Domain, s.Domain), firstNonEmpty(ws.TeamID, s.TeamID)
+	ws.Domain, ws.TeamID = cmp.Or(ws.Domain, s.Domain), cmp.Or(ws.TeamID, s.TeamID)
 	return cfg.NameFor(ws)
 }
 
@@ -247,7 +248,7 @@ workspace by its domain unless you pass a name.`,
 			}
 			name := strings.TrimSpace(c.Args().First())
 			if name == "" {
-				name = firstNonEmpty(ws.Domain, ws.TeamID, "workspace")
+				name = cmp.Or(ws.Domain, ws.TeamID, "workspace")
 			}
 			a.Config.Set(name, ws)
 			if c.Bool("set-default") || a.Config.Workspace == "" {
@@ -400,15 +401,6 @@ func authShowCommand() *cli.Command {
 			return nil
 		},
 	}
-}
-
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func readSecret() (string, error) {

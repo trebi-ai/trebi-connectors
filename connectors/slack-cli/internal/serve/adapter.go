@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -67,11 +68,11 @@ func (t *Team) Listen(w config.Workspace, wsURL string) {
 	}
 }
 
-func (t *Team) label() string { return cmpOr(t.Title, t.Workspace) }
+func (t *Team) label() string { return cmp.Or(t.Title, t.Workspace) }
 
 // state is the account row of the team.
 func (t *Team) state() sdk.AccountState {
-	st := sdk.AccountState{ID: cmpOr(t.ID, t.Workspace), Name: t.label(), State: sdk.StateConnected}
+	st := sdk.AccountState{ID: cmp.Or(t.ID, t.Workspace), Name: t.label(), State: sdk.StateConnected}
 	switch {
 	case t.revoked:
 		st.State, st.Message = sdk.StateAuthRequired, fmt.Sprintf(rejectFmt, t.label())
@@ -115,17 +116,10 @@ func (t *Team) check(ctx context.Context) error {
 		return err
 	}
 	t.revoked = false
-	t.SelfID = cmpOr(t.SelfID, who.UserID)
-	t.ID = cmpOr(t.ID, who.TeamID)
-	t.Title = cmpOr(t.Title, who.Team)
+	t.SelfID = cmp.Or(t.SelfID, who.UserID)
+	t.ID = cmp.Or(t.ID, who.TeamID)
+	t.Title = cmp.Or(t.Title, who.Team)
 	return nil
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 // Options are the parts of the adapter that the command picks: the real
@@ -261,7 +255,7 @@ func (a *Adapter) account() *sdk.Account {
 	var id string
 	var names []string
 	for _, t := range a.sorted() {
-		id = cmpOr(id, t.SelfID)
+		id = cmp.Or(id, t.SelfID)
 		names = append(names, t.label())
 	}
 	if len(names) == 0 {

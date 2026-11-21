@@ -92,7 +92,7 @@ do not need to stop the listener.`,
 				ctx, cancel := withTimeout(context.Background(), flags)
 				defer cancel()
 
-				a, lk, err := newApp(ctx, flags, true, false)
+				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
 				}

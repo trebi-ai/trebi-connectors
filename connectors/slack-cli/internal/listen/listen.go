@@ -2,6 +2,7 @@
 package listen
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -84,7 +85,7 @@ func parseEvent(workspace, teamID string, raw json.RawMessage) (Event, bool) {
 	}
 	ev := Event{
 		Workspace: workspace, TeamID: teamID, Type: e.Type, Subtype: e.Subtype,
-		Channel: channelID(e.Channel), User: e.User, TS: firstNonEmpty(e.TS, e.EventTS),
+		Channel: channelID(e.Channel), User: e.User, TS: cmp.Or(e.TS, e.EventTS),
 		ThreadTS: e.ThreadTS, Text: e.Text, Time: time.Now(), Raw: raw,
 	}
 	return ev, true
@@ -142,13 +143,4 @@ func (f Filter) Match(e Event) bool {
 		return false
 	}
 	return true
-}
-
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

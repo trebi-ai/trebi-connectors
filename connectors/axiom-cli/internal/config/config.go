@@ -166,7 +166,7 @@ func Clear() error {
 // value is masked.
 func Mask(token string) string {
 	if len(token) <= 8 {
-		return repeat("*", len(token))
+		return strings.Repeat("*", len(token))
 	}
 	last4 := token[len(token)-4:]
 	// Find the prefix segment up to the first '-'. Many Axiom tokens look like
@@ -185,17 +185,6 @@ func Mask(token string) string {
 		prefix = token[:4] + "-"
 	}
 	return prefix + "************" + last4
-}
-
-func repeat(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	out := make([]byte, 0, n*len(s))
-	for i := 0; i < n; i++ {
-		out = append(out, s...)
-	}
-	return string(out)
 }
 
 // ResolveInput captures the inputs needed to apply the precedence rules.

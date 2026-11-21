@@ -33,7 +33,7 @@ func newSendFileCmd(flags *rootFlags) *cobra.Command {
 				Cmd: "send_file", To: to, Path: filePath,
 				Filename: filename, Caption: caption, Mime: mimeOverride,
 			}, func() error {
-				a, lk, err := newApp(ctx, flags, true, false)
+				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
 				}

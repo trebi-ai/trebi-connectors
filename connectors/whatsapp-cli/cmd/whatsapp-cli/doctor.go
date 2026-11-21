@@ -23,7 +23,7 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			storeDir := resolveStoreDir(flags)
+			storeDir := flags.storeDir
 
 			var lockHeld bool
 			var lockInfo string
@@ -36,7 +36,7 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 				lockHeld = true
 			}
 
-			a, lk, err := newApp(ctx, flags, connect, true)
+			a, lk, err := flags.newApp(connect)
 			if err != nil {
 				return err
 			}

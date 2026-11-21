@@ -31,10 +31,7 @@ func newContactsSearchCmd(flags *rootFlags) *cobra.Command {
 		Short: "Search contacts (from synced metadata)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -76,10 +73,8 @@ func newContactsShowCmd(flags *rootFlags) *cobra.Command {
 			if strings.TrimSpace(jid) == "" {
 				return fmt.Errorf("--jid is required")
 			}
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
 
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -122,7 +117,7 @@ func newContactsRefreshCmd(flags *rootFlags) *cobra.Command {
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			a, lk, err := newApp(ctx, flags, true, true)
+			a, lk, err := flags.newApp(true)
 			if err != nil {
 				return err
 			}
@@ -173,9 +168,7 @@ func newContactsAliasCmd(flags *rootFlags) *cobra.Command {
 			if strings.TrimSpace(jid) == "" || strings.TrimSpace(alias) == "" {
 				return fmt.Errorf("--jid and --alias are required")
 			}
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -198,9 +191,7 @@ func newContactsAliasCmd(flags *rootFlags) *cobra.Command {
 			if strings.TrimSpace(jid) == "" {
 				return fmt.Errorf("--jid is required")
 			}
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -235,9 +226,7 @@ func newContactsTagsCmd(flags *rootFlags) *cobra.Command {
 			if strings.TrimSpace(jid) == "" || strings.TrimSpace(tag) == "" {
 				return fmt.Errorf("--jid and --tag are required")
 			}
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -261,9 +250,7 @@ func newContactsTagsCmd(flags *rootFlags) *cobra.Command {
 			if strings.TrimSpace(jid) == "" || strings.TrimSpace(tag) == "" {
 				return fmt.Errorf("--jid and --tag are required")
 			}
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}

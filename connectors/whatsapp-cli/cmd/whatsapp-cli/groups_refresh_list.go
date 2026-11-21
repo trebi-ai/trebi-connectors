@@ -19,7 +19,7 @@ func newGroupsRefreshCmd(flags *rootFlags) *cobra.Command {
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			a, lk, err := newApp(ctx, flags, true, false)
+			a, lk, err := flags.newApp(true)
 			if err != nil {
 				return err
 			}
@@ -61,10 +61,7 @@ func newGroupsListCmd(flags *rootFlags) *cobra.Command {
 		Use:   "list",
 		Short: "List known groups (from local DB; run sync to populate)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}

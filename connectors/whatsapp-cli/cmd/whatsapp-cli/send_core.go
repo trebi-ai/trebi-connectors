@@ -314,7 +314,7 @@ func sendPresenceCore(ctx context.Context, a sendApp, state string) (string, err
 // (whether the send succeeded or not — check resp.OK), or (_, false) if no live
 // daemon is reachable, in which case the caller sends directly.
 func forwardSend(flags *rootFlags, req ipc.Request) (ipc.Response, bool) {
-	storeDir := resolveStoreDir(flags)
+	storeDir := flags.storeDir
 
 	conn, err := ipc.Dial(storeDir)
 	if err != nil {

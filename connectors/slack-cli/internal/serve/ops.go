@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"net/url"
@@ -63,7 +64,7 @@ func (t *Team) History(ctx context.Context, q HistoryQuery) (Page, error) {
 		if json.Unmarshal(raw, &m) != nil || m.TS == "" {
 			continue
 		}
-		oldest, newest = cmpOr(oldest, m.TS), m.TS
+		oldest, newest = cmp.Or(oldest, m.TS), m.TS
 		page.Messages = append(page.Messages, t.message(ctx, q.Channel, m, raw))
 	}
 	if resp.HasMore {

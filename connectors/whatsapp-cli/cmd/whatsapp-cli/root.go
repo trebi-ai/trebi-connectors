@@ -72,17 +72,10 @@ func execute(args []string) error {
 	return nil
 }
 
-// resolveStoreDir returns the store folder that PersistentPreRunE chose.
-func resolveStoreDir(flags *rootFlags) string {
-	return flags.storeDir
-}
-
-func newApp(ctx context.Context, flags *rootFlags, needLock bool, allowUnauthed bool) (*app.App, *lock.Lock, error) {
+func (f *rootFlags) newApp(needLock bool) (*app.App, *lock.Lock, error) {
 	return openApp(app.Options{
-		StoreDir:      resolveStoreDir(flags),
-		Version:       version,
-		JSON:          flags.asJSON,
-		AllowUnauthed: allowUnauthed,
+		StoreDir: f.storeDir,
+		Version:  version,
 	}, needLock)
 }
 

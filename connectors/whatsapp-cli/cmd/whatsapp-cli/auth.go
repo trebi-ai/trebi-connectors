@@ -24,7 +24,7 @@ func newAuthCmd(flags *rootFlags) *cobra.Command {
 			ctx, stop := signalContext()
 			defer stop()
 
-			a, lk, err := newApp(ctx, flags, true, true)
+			a, lk, err := flags.newApp(true)
 			if err != nil {
 				return err
 			}
@@ -80,10 +80,7 @@ func newAuthStatusCmd(flags *rootFlags) *cobra.Command {
 		Use:   "status",
 		Short: "Show authentication status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, true)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -117,7 +114,7 @@ func newAuthLogoutCmd(flags *rootFlags) *cobra.Command {
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			a, lk, err := newApp(ctx, flags, true, true)
+			a, lk, err := flags.newApp(true)
 			if err != nil {
 				return err
 			}

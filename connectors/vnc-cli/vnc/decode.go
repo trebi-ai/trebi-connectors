@@ -96,9 +96,6 @@ func (c *Conn) setEncodings() error {
 	for i, e := range list {
 		binary.BigEndian.PutUint32(b[4+4*i:], uint32(e))
 	}
-	c.mu.Lock()
-	c.encs = list
-	c.mu.Unlock()
 	return c.write(b)
 }
 
@@ -119,18 +116,6 @@ func (c *Conn) pseudoEncodings() []int32 {
 	}
 	return append(out, EncDesktopSize, EncExtendedDesktopSize, EncLastRect, EncFence,
 		EncContinuousUpdates, EncQEMUExtKey, EncExtendedClipboard)
-}
-
-// offered is true when the client sent encoding e.
-func (c *Conn) offered(e int32) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, x := range c.encs {
-		if x == e {
-			return true
-		}
-	}
-	return false
 }
 
 // fits checks that a pixel rectangle is inside the framebuffer.
@@ -175,25 +160,12 @@ func (r *reader) read(p []byte) error {
 
 func (r *reader) u8() (uint8, error) { return r.br.ReadByte() }
 
-func (r *reader) u16() (uint16, error) {
-	b, err := r.bytes(2)
-	if err != nil {
-		return 0, err
-	}
-	return binary.BigEndian.Uint16(b), nil
-}
-
 func (r *reader) u32() (uint32, error) {
 	b, err := r.bytes(4)
 	if err != nil {
 		return 0, err
 	}
 	return binary.BigEndian.Uint32(b), nil
-}
-
-func (r *reader) discard(n int) error {
-	_, err := r.br.Discard(n)
-	return err
 }
 
 type rawDecoder struct{}

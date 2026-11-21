@@ -44,7 +44,7 @@ func runListen(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter
 // runAnchor attempts to become the anchor. It returns a lock.ErrLocked-wrapped
 // error (via newApp) if another process already holds the store.
 func runAnchor(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter, maxReconnect time.Duration, presence string) error {
-	a, lk, err := newApp(ctx, flags, true, false)
+	a, lk, err := flags.newApp(true)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ var errNoAnchor = errors.New("no anchor listening")
 // runSecondary attaches to a running anchor and streams filtered events to
 // stdout until the anchor closes the connection or ctx is cancelled.
 func runSecondary(ctx context.Context, flags *rootFlags, filter appPkg.ListenFilter) error {
-	storeDir := resolveStoreDir(flags)
+	storeDir := flags.storeDir
 
 	conn, err := ipc.Dial(storeDir)
 	if err != nil {

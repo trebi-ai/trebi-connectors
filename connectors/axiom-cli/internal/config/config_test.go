@@ -74,3 +74,16 @@ func TestEvery(t *testing.T) {
 		t.Fatal("want an error")
 	}
 }
+
+func TestMask(t *testing.T) {
+	for token, want := range map[string]string{
+		"":                "",
+		"xaat-1":          "******",
+		"12345678":        "********",
+		"xaat-abcdef1234": "xaat-************1234",
+	} {
+		if got := config.Mask(token); got != want {
+			t.Errorf("Mask(%q) = %q, want %q", token, got, want)
+		}
+	}
+}

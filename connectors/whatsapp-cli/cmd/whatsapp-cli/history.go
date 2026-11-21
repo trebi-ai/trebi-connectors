@@ -37,7 +37,7 @@ func newHistoryBackfillCmd(flags *rootFlags) *cobra.Command {
 			ctx, stop := signalContext()
 			defer stop()
 
-			a, lk, err := newApp(ctx, flags, true, false)
+			a, lk, err := flags.newApp(true)
 			if err != nil {
 				return err
 			}

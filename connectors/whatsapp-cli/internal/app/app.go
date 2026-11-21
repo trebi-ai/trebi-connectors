@@ -59,11 +59,9 @@ type WAClient interface {
 }
 
 type Options struct {
-	StoreDir      string
-	Version       string
-	JSON          bool
-	AllowUnauthed bool
-	WA            WAClient // nil opens session.db on OpenWA
+	StoreDir string
+	Version  string
+	WA       WAClient // nil opens session.db on OpenWA
 }
 
 type App struct {
@@ -133,11 +131,10 @@ func (a *App) EnsureAuthed() error {
 	return fmt.Errorf("not authenticated; run `whatsapp-cli auth`")
 }
 
-func (a *App) WA() WAClient        { return a.wa }
-func (a *App) DB() *store.DB       { return a.db }
-func (a *App) StoreDir() string    { return a.opts.StoreDir }
-func (a *App) Version() string     { return a.opts.Version }
-func (a *App) AllowUnauthed() bool { return a.opts.AllowUnauthed }
+func (a *App) WA() WAClient     { return a.wa }
+func (a *App) DB() *store.DB    { return a.db }
+func (a *App) StoreDir() string { return a.opts.StoreDir }
+func (a *App) Version() string  { return a.opts.Version }
 
 func (a *App) Connect(ctx context.Context, allowQR bool, qrWriter func(string)) error {
 	if err := a.OpenWA(); err != nil {

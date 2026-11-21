@@ -66,7 +66,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 				Cmd: "send_receipt", Chat: chat, MessageIDs: ids,
 				ReceiptType: receiptType, Sender: sender, At: at,
 			}, func() error {
-				a, lk, err := newApp(ctx, flags, true, false)
+				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
 				}
@@ -119,7 +119,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 			return sendDispatch(flags, ipc.Request{
 				Cmd: "send_presence", State: state,
 			}, func() error {
-				a, lk, err := newApp(ctx, flags, true, false)
+				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
 				}
@@ -174,7 +174,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 			return sendDispatch(flags, ipc.Request{
 				Cmd: "send_chat_presence", To: to, State: state, Media: media,
 			}, func() error {
-				a, lk, err := newApp(ctx, flags, true, false)
+				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
 				}
@@ -221,7 +221,7 @@ func newSendTextCmd(flags *rootFlags) *cobra.Command {
 			// (it holds the single live WhatsApp connection). Otherwise send
 			// directly, acquiring the store lock ourselves.
 			return sendDispatch(flags, ipc.Request{Cmd: "send_text", To: to, Message: message}, func() error {
-				a, lk, err := newApp(ctx, flags, true, false)
+				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
 				}

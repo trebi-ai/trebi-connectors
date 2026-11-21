@@ -121,7 +121,6 @@ type Conn struct {
 	lastReq  time.Time
 	pending  bool // an incremental request is out
 	features map[string]bool
-	encs     []int32
 	cursor   *Cursor
 	pointer  image.Point
 	movedAt  time.Time // of the last Pointer call

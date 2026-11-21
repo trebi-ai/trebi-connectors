@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -149,7 +150,7 @@ func (l *Login) pickStep(method string) (sdk.Step, []sdk.Choice, error) {
 	var choices []sdk.Choice
 	var picked, all sdk.Value
 	for _, w := range ws {
-		choices = append(choices, sdk.Choice{Value: w.TeamID, Label: cmpOr(w.TeamName, w.TeamID), Description: host(w)})
+		choices = append(choices, sdk.Choice{Value: w.TeamID, Label: cmp.Or(w.TeamName, w.TeamID), Description: host(w)})
 		all = append(all, w.TeamID)
 		if saved[w.TeamID] {
 			picked = append(picked, w.TeamID)
@@ -220,7 +221,7 @@ func (l *Login) add(ctx context.Context, ws []config.Workspace) (Change, error) 
 	var ch Change
 	var good, bad []string
 	for _, w := range ws {
-		label := cmpOr(w.TeamName, cmpOr(w.Domain, "the workspace"))
+		label := cmp.Or(w.TeamName, w.Domain, "the workspace")
 		if err := l.verify(ctx, &w); err != nil {
 			slog.Warn("slack login check", "workspace", label, "err", err)
 			bad = append(bad, label)
@@ -231,7 +232,7 @@ func (l *Login) add(ctx context.Context, ws []config.Workspace) (Change, error) 
 			return ch, err
 		}
 		ch.Put = append(ch.Put, name)
-		good = append(good, cmpOr(w.TeamName, label))
+		good = append(good, cmp.Or(w.TeamName, label))
 	}
 	switch {
 	case len(bad) > 0 && len(good) > 0:

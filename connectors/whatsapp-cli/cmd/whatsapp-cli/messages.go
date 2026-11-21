@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -35,10 +34,7 @@ func newMessagesListCmd(flags *rootFlags) *cobra.Command {
 		Use:   "list",
 		Short: "List messages",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -129,10 +125,7 @@ func newMessagesSearchCmd(flags *rootFlags) *cobra.Command {
 		Short: "Search messages (FTS5 if available; otherwise LIKE)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -230,10 +223,7 @@ func newMessagesShowCmd(flags *rootFlags) *cobra.Command {
 				return fmt.Errorf("--chat and --id are required")
 			}
 
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}
@@ -286,10 +276,7 @@ func newMessagesContextCmd(flags *rootFlags) *cobra.Command {
 				return fmt.Errorf("--chat and --id are required")
 			}
 
-			ctx, cancel := withTimeout(context.Background(), flags)
-			defer cancel()
-
-			a, lk, err := newApp(ctx, flags, false, false)
+			a, lk, err := flags.newApp(false)
 			if err != nil {
 				return err
 			}

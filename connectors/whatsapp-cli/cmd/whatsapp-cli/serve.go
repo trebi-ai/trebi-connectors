@@ -26,7 +26,7 @@ func newServeCmd(flags *rootFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signalContext()
 			defer stop()
-			opts := app.Options{StoreDir: resolveStoreDir(flags), Version: version, JSON: flags.asJSON, AllowUnauthed: true}
+			opts := app.Options{StoreDir: flags.storeDir, Version: version}
 			if sandbox {
 				if !cmd.Flag("store").Changed && !config.Trebi() {
 					dir, err := os.MkdirTemp("", "whatsapp-cli-sandbox-")
