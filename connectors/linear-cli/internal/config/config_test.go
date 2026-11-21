@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 func TestResolve(t *testing.T) {
@@ -21,7 +23,7 @@ func TestResolve(t *testing.T) {
 	}{
 		{name: "trebi env", stateDir: t.TempDir(), env: "k-trebi", want: Settings{Key: "k-trebi", Source: "Trebi (LINEAR_API_KEY)", Trebi: true}},
 		{name: "trebi skips dotenv", stateDir: t.TempDir(), want: Settings{Trebi: true}},
-		{name: "trebi rejects flag", stateDir: t.TempDir(), env: "k", flag: "f", err: ErrTrebiSets},
+		{name: "trebi rejects flag", stateDir: t.TempDir(), env: "k", flag: "f", err: sdk.ErrTrebiSets},
 		{name: "standalone flag", env: "k", flag: "f", want: Settings{Key: "f", Source: "flag (--key)"}},
 		{name: "standalone env", env: "k", want: Settings{Key: "k", Source: "env (LINEAR_API_KEY)"}},
 		{name: "standalone dotenv", want: Settings{Key: "from-dotenv", Source: ".env (" + filepath.Join(work, ".env") + ")"}},

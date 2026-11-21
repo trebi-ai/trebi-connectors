@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/axiom-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // homeWithFile makes a home folder with a saved config file.
@@ -36,7 +37,7 @@ func TestTrebiMode(t *testing.T) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	for _, in := range []config.ResolveInput{{FlagSet: true, FlagToken: "x"}, {FlagOrgIDSet: true}, {FlagAPIURLSet: true}} {
-		if _, err := config.Resolve(in); !errors.Is(err, config.ErrTrebiSets) {
+		if _, err := config.Resolve(in); !errors.Is(err, sdk.ErrTrebiSets) {
 			t.Fatalf("%+v: %v", in, err)
 		}
 	}

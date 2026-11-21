@@ -6,7 +6,7 @@ package config
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,13 +19,6 @@ const EnvToken = "NOTION_TOKEN"
 
 // TokenLabel is the label of the token input in the catalog manifest.
 const TokenLabel = "Integration secret"
-
-var (
-	// ErrTrebiSets is a flag that selects a credential in Trebi mode.
-	ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
-	// ErrSetInTrebi is a command that saves a setting in Trebi mode.
-	ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
-)
 
 // File is the on-disk config schema.
 type File struct {
@@ -46,7 +39,7 @@ type Settings struct {
 func Resolve(flagToken string) (Settings, error) {
 	if _, ok := sdk.FromEnv(); ok {
 		if flagToken != "" {
-			return Settings{Trebi: true}, errors.New("--token: " + ErrTrebiSets.Error())
+			return Settings{Trebi: true}, fmt.Errorf("--token: %w", sdk.ErrTrebiSets)
 		}
 		s := Settings{Token: os.Getenv(EnvToken), Trebi: true}
 		if s.Token != "" {
@@ -99,7 +92,7 @@ func Load() (*File, error) {
 // Trebi mode: the token comes from the connection inputs.
 func Save(token string) error {
 	if _, ok := sdk.FromEnv(); ok {
-		return ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if err := os.MkdirAll(filepath.Dir(Path()), 0o700); err != nil {
 		return err

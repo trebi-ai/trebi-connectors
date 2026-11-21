@@ -16,6 +16,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc"
 	"github.com/trebi-ai/trebi-connectors/connectors/vnc-cli/vnc/vnctest"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // standalone clears the Trebi env and points HOME at a temp folder.
@@ -415,12 +416,12 @@ func TestTrebiMode(t *testing.T) {
 	}
 	for _, args := range [][]string{{"-s", other, "info"}, {"-t", "p", "info"}, {"-p", "X", "info"}} {
 		res := run(t, "", args...)
-		if !errors.Is(res.err, config.ErrTrebiSets) {
+		if !errors.Is(res.err, sdk.ErrTrebiSets) {
 			t.Fatalf("%v: %v", args, res.err)
 		}
 	}
 	for _, args := range [][]string{{"config", "set", "x", "--address", other}, {"config", "rm", "p"}} {
-		if res := run(t, "", args...); !errors.Is(res.err, config.ErrSetInTrebi) {
+		if res := run(t, "", args...); !errors.Is(res.err, sdk.ErrSetInTrebi) {
 			t.Fatalf("%v: %v", args, res.err)
 		}
 	}

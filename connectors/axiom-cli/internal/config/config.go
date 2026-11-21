@@ -37,13 +37,6 @@ const (
 )
 
 // Errors of Trebi mode.
-var (
-	// ErrTrebiSets is the error of a flag that selects a credential.
-	ErrTrebiSets = errors.New("trebi sets this value: use the connection inputs")
-	// ErrSetInTrebi is the error of a command that saves a setting.
-	ErrSetInTrebi = errors.New("set this value in Trebi: the connection inputs hold the token")
-)
-
 // Trebi reports Trebi mode and the state folder.
 func Trebi() (stateDir string, ok bool) {
 	t, ok := sdk.FromEnv()
@@ -221,11 +214,11 @@ type ResolveInput struct {
 
 // Resolve applies precedence: flag > env > file. The returned Source describes
 // where Token came from. In Trebi mode, only the env counts, and a flag
-// gives ErrTrebiSets.
+// gives sdk.ErrTrebiSets.
 func Resolve(in ResolveInput) (*Resolved, error) {
 	if _, ok := Trebi(); ok {
 		if in.FlagSet || in.FlagOrgIDSet || in.FlagAPIURLSet {
-			return nil, ErrTrebiSets
+			return nil, fmt.Errorf("--token, --org-id, --api-url: %w", sdk.ErrTrebiSets)
 		}
 		r := &Resolved{Token: in.EnvToken, OrgID: in.EnvOrgID, APIURL: in.EnvAPIURL, Source: SourceNone, Trebi: true}
 		if r.Token != "" {

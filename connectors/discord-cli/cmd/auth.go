@@ -10,6 +10,7 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/discord-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // AuthCommand returns the `auth` subcommand tree.
@@ -43,7 +44,7 @@ func authSet(c *cli.Context) error {
 	if token == "" {
 		return fmt.Errorf("usage: discord-cli auth set <token>")
 	}
-	if err := config.Save(token); errors.Is(err, config.ErrSetInTrebi) {
+	if err := config.Save(token); errors.Is(err, sdk.ErrSetInTrebi) {
 		return err
 	} else if err != nil {
 		return fmt.Errorf("saving config: %w", err)

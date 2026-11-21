@@ -11,6 +11,7 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/connectors/axiom-cli/cmd"
 	"github.com/trebi-ai/trebi-connectors/connectors/axiom-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 func app() *cli.App {
@@ -28,14 +29,14 @@ func TestTrebiModeRefusesSettings(t *testing.T) {
 	t.Setenv("TREBI_STATE_DIR", t.TempDir())
 	t.Setenv(config.EnvToken, "")
 	for _, args := range [][]string{{"auth", "set", "--token", "x"}, {"auth", "clear"}} {
-		if err := app().Run(append([]string{"axiom-cli"}, args...)); !errors.Is(err, config.ErrSetInTrebi) {
+		if err := app().Run(append([]string{"axiom-cli"}, args...)); !errors.Is(err, sdk.ErrSetInTrebi) {
 			t.Fatalf("%v: %v", args, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(home, ".cli-tools")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("a file was written: %v", err)
 	}
-	if err := app().Run([]string{"axiom-cli", "--token", "xaat-flag", "monitors", "list"}); !errors.Is(err, config.ErrTrebiSets) {
+	if err := app().Run([]string{"axiom-cli", "--token", "xaat-flag", "monitors", "list"}); !errors.Is(err, sdk.ErrTrebiSets) {
 		t.Fatalf("got %v", err)
 	}
 }

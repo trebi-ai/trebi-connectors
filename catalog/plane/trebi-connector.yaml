@@ -2,7 +2,7 @@ schema: trebi-connector/1
 name: plane
 title: Plane
 description: "Start work when a work item, a comment, or an intake item changes in Plane, and read work items."
-version: 0.2.0
+version: 0.2.1
 publisher: trebi
 source: github.com/trebi-ai/trebi-connectors
 license: MIT

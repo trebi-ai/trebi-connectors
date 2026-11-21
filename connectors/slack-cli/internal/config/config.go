@@ -18,13 +18,6 @@ import (
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
-var (
-	// ErrTrebiSets is a flag that selects a store or a credential in Trebi mode.
-	ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
-	// ErrSetInTrebi is a command that saves a setting in Trebi mode.
-	ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
-)
-
 // Trebi reports whether the program runs in Trebi mode.
 func Trebi() bool {
 	_, ok := sdk.FromEnv()

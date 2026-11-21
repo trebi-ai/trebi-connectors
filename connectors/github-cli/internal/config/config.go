@@ -35,9 +35,6 @@ const (
 	SourceGH     = "gh"     // the gh login on this machine; read live
 )
 
-// ErrTrebiSets is a flag that selects a credential in Trebi mode.
-var ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
-
 // ErrGHLoggedOut is a gh login that has no token for github.com.
 var ErrGHLoggedOut = errors.New("GitHub is not logged in on this machine")
 
@@ -75,7 +72,7 @@ func ResolveStored(ctx context.Context, flagToken string) (Settings, error) {
 func resolve(ctx context.Context, flagToken string, readGH bool) (Settings, error) {
 	if t, ok := sdk.FromEnv(); ok {
 		if flagToken != "" {
-			return Settings{Trebi: true}, errors.New("--token: " + ErrTrebiSets.Error())
+			return Settings{Trebi: true}, fmt.Errorf("--token: %w", sdk.ErrTrebiSets)
 		}
 		s := Settings{Trebi: true, Login: NewLoginStore(t.StateDir), GH: NewGHLogin()}
 		if v := os.Getenv(EnvToken); v != "" {

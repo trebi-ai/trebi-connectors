@@ -37,7 +37,7 @@ func TestResolveTrebiMode(t *testing.T) {
 	t.Setenv(EnvToken, "")
 	t.Setenv(EnvGHToken, "gh-standalone")
 	t.Setenv("PATH", fakeGH(t, "from-gh"))
-	if _, err := Resolve(ctx, "flag"); err == nil || !strings.Contains(err.Error(), ErrTrebiSets.Error()) {
+	if _, err := Resolve(ctx, "flag"); !errors.Is(err, sdk.ErrTrebiSets) {
 		t.Fatalf("--token in Trebi mode: %v", err)
 	}
 	s, err := Resolve(ctx, "")

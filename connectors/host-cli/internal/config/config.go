@@ -5,7 +5,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -51,10 +50,6 @@ const (
 	DefaultAbove = 90.0
 )
 
-// ErrTrebiSets is the error of a flag that selects a credential in Trebi
-// mode.
-var ErrTrebiSets = errors.New("trebi sets this value: use the connection inputs")
-
 // Settings is the resolved configuration.
 type Settings struct {
 	Addr    string // host:port
@@ -86,12 +81,12 @@ type Flags struct {
 }
 
 // Resolve reads the settings. In Trebi mode, a flag that selects the
-// server, the user, or the key gives ErrTrebiSets.
+// server, the user, or the key gives sdk.ErrTrebiSets.
 func Resolve(f Flags) (Settings, error) {
 	t, trebi := sdk.FromEnv()
 	s := Settings{Trebi: trebi, StateDir: t.StateDir}
 	if trebi && (f.Host != "" || f.User != "" || f.KeyFile != "") {
-		return s, ErrTrebiSets
+		return s, fmt.Errorf("--host, --user, --key: %w", sdk.ErrTrebiSets)
 	}
 	s.Addr = withPort(firstOf(f.Host, os.Getenv(EnvHost)))
 	s.User = firstOf(f.User, os.Getenv(EnvUser))

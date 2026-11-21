@@ -6,7 +6,6 @@ package config
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,9 +19,6 @@ const EnvKey = "LINEAR_API_KEY"
 
 // KeyLabel is the label of the key input in the catalog manifest.
 const KeyLabel = "API key"
-
-// ErrTrebiSets is a flag that selects a credential in Trebi mode.
-var ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
 
 // File is the on-disk config schema.
 type File struct {
@@ -43,7 +39,7 @@ type Settings struct {
 func Resolve(flagKey string) (Settings, error) {
 	if _, ok := sdk.FromEnv(); ok {
 		if flagKey != "" {
-			return Settings{Trebi: true}, fmt.Errorf("--key: %w", ErrTrebiSets)
+			return Settings{Trebi: true}, fmt.Errorf("--key: %w", sdk.ErrTrebiSets)
 		}
 		s := Settings{Key: os.Getenv(EnvKey), Trebi: true}
 		if s.Key != "" {

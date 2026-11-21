@@ -65,7 +65,7 @@ func run(ctx context.Context, args []string) error {
 		EnableShellCompletion: true,
 		Before: func(ctx context.Context, c *cli.Command) (context.Context, error) {
 			if config.Trebi() && (c.IsSet("api-key") || c.IsSet("host")) {
-				return ctx, config.ErrTrebiSets
+				return ctx, sdk.ErrTrebiSets
 			}
 			for _, f := range []struct {
 				flag string

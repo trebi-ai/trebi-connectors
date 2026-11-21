@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/host-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // home makes a home folder with a key and a known_hosts file.
@@ -50,7 +51,7 @@ func TestTrebiMode(t *testing.T) {
 		t.Fatalf("missing %v", m)
 	}
 	for _, f := range []config.Flags{{Host: "x"}, {User: "x"}, {KeyFile: "x"}} {
-		if _, err := config.Resolve(f); !errors.Is(err, config.ErrTrebiSets) {
+		if _, err := config.Resolve(f); !errors.Is(err, sdk.ErrTrebiSets) {
 			t.Fatalf("%+v: %v", f, err)
 		}
 	}

@@ -17,13 +17,6 @@ import (
 	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
-var (
-	// ErrTrebiSets is a flag that selects a credential in Trebi mode.
-	ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
-	// ErrSetInTrebi is a command that saves a setting in Trebi mode.
-	ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
-)
-
 // Trebi reports whether the program runs in Trebi mode.
 func Trebi() bool {
 	_, ok := sdk.FromEnv()
@@ -185,7 +178,7 @@ func (c *Config) File() string { return c.path }
 // Save writes the config with mode 0600 through a temp file and a rename.
 func (c *Config) Save() error {
 	if Trebi() {
-		return ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if c.path == "" {
 		p, err := Path()
@@ -207,7 +200,7 @@ func (c *Config) Save() error {
 // Delete removes the config file. A missing file is not an error.
 func (c *Config) Delete() error {
 	if Trebi() {
-		return ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if c.path == "" {
 		return nil

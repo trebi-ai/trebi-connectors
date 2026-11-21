@@ -10,6 +10,7 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/microsoft-todo-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // AuthCommand returns the `auth` command.
@@ -40,7 +41,7 @@ func AuthCommand() *cli.Command {
 func authLogin(c *cli.Context) error {
 	s := settingsFromCtx(c)
 	if s.Trebi {
-		return config.ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if s.ClientID == "" {
 		return fmt.Errorf("no Microsoft app id: set %s or pass --client-id", config.EnvClientID)
@@ -120,7 +121,7 @@ func authStatus(c *cli.Context) error {
 func authLogout(c *cli.Context) error {
 	s := settingsFromCtx(c)
 	if s.Trebi {
-		return config.ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if err := os.Remove(s.AuthPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

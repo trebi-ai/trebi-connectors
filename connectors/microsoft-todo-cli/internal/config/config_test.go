@@ -1,9 +1,9 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/trebi-ai/trebi-connectors/sdk"
@@ -15,7 +15,7 @@ func TestResolveTrebiMode(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(EnvClientID, "")
 	t.Setenv(EnvTenant, "")
-	if _, err := Resolve(Flags{ClientID: "flag"}, "build"); err == nil || !strings.Contains(err.Error(), ErrTrebiSets.Error()) {
+	if _, err := Resolve(Flags{ClientID: "flag"}, "build"); !errors.Is(err, sdk.ErrTrebiSets) {
 		t.Fatalf("--client-id in Trebi mode: %v", err)
 	}
 	if _, err := Resolve(Flags{Tenant: "consumers"}, "build"); err == nil {

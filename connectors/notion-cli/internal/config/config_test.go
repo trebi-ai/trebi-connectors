@@ -1,9 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 func TestResolveTrebiMode(t *testing.T) {
@@ -28,7 +31,7 @@ func TestResolveTrebiMode(t *testing.T) {
 	if _, err := Resolve("flag"); err == nil {
 		t.Fatal("--token must fail in Trebi mode")
 	}
-	if err := Save("x"); err != ErrSetInTrebi {
+	if err := Save("x"); !errors.Is(err, sdk.ErrSetInTrebi) {
 		t.Fatalf("save: %v", err)
 	}
 	t.Setenv(EnvToken, "secret_a")

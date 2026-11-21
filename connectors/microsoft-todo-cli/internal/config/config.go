@@ -5,7 +5,7 @@
 package config
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -23,12 +23,6 @@ const (
 
 // DefaultTenant accepts work, school, and personal accounts.
 const DefaultTenant = "common"
-
-// ErrSetInTrebi is a command that saves a setting in Trebi mode.
-var ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
-
-// ErrTrebiSets is a flag that selects a setting in Trebi mode.
-var ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
 
 // Settings tell where the login is and which Microsoft app logs in.
 type Settings struct {
@@ -55,7 +49,7 @@ func Resolve(f Flags, buildID string) (Settings, error) {
 	if t, ok := sdk.FromEnv(); ok {
 		s := Settings{StateDir: t.StateDir, Trebi: true}
 		if f.ClientID != "" || f.Tenant != "" {
-			return s, errors.New("--client-id, --tenant: " + ErrTrebiSets.Error())
+			return s, fmt.Errorf("--client-id, --tenant: %w", sdk.ErrTrebiSets)
 		}
 		s.ClientID, s.Source = pick(
 			source{os.Getenv(EnvClientID), "Trebi (" + EnvClientID + ")"},

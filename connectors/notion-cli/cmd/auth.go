@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/trebi-ai/trebi-connectors/connectors/notion-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // AuthCommand returns the `auth` subcommand tree.
@@ -28,7 +29,7 @@ func authSet(c *cli.Context) error {
 	if token == "" {
 		return errors.New("usage: notion-cli auth set <secret>")
 	}
-	if err := config.Save(token); errors.Is(err, config.ErrSetInTrebi) {
+	if err := config.Save(token); errors.Is(err, sdk.ErrSetInTrebi) {
 		return err
 	} else if err != nil {
 		return fmt.Errorf("save config: %w", err)

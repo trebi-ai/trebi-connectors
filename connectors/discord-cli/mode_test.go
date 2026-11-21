@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // run runs the program in-process and returns its stdout.
@@ -60,7 +63,7 @@ func TestTrebiMode(t *testing.T) {
 	if err != nil || !strings.Contains(out, "No token configured") {
 		t.Fatalf("auth show must not find the home, .env, or second env name token: %q %v", out, err)
 	}
-	if _, err := run(t, "--token", "from-flag", "auth", "show"); err == nil || !strings.Contains(err.Error(), "Trebi sets this value") {
+	if _, err := run(t, "--token", "from-flag", "auth", "show"); err == nil || !strings.Contains(err.Error(), "Trebi sets this value") || !errors.Is(err, sdk.ErrTrebiSets) {
 		t.Fatalf("--token in Trebi mode: %v", err)
 	}
 	if _, err := run(t, "auth", "set", "new-token"); err == nil || err.Error() != "Set this value in Trebi" {

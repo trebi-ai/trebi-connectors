@@ -17,6 +17,7 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/config"
 	"github.com/trebi-ai/trebi-connectors/connectors/plane-cli/internal/output"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // AuthCommand returns the `auth` command tree.
@@ -58,7 +59,7 @@ func savesSetting(c *cli.Command) *cli.Command {
 	action := c.Action
 	c.Action = func(ctx context.Context, c *cli.Command) error {
 		if config.Trebi() {
-			return config.ErrSetInTrebi
+			return sdk.ErrSetInTrebi
 		}
 		return action(ctx, c)
 	}

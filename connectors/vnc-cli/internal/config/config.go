@@ -45,14 +45,6 @@ const (
 // DefaultIdleTimeout is the time a background session stays with no client.
 const DefaultIdleTimeout = 5 * time.Minute
 
-var (
-	// ErrTrebiSets is a flag that selects a server or a credential in Trebi
-	// mode.
-	ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
-	// ErrSetInTrebi is a command that saves a setting in Trebi mode.
-	ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
-)
-
 // Target is one named server in the config file.
 type Target struct {
 	Server      string `toml:"server"`
@@ -96,7 +88,7 @@ type Settings struct {
 }
 
 // Resolve reads the settings. In Trebi mode, a flag that selects the
-// server or a credential gives ErrTrebiSets. Standalone, the order is the
+// server or a credential gives sdk.ErrTrebiSets. Standalone, the order is the
 // flags, the target in the config file, then the VNC_* env names.
 func Resolve(f Flags) (Settings, error) {
 	t, trebi := sdk.FromEnv()
@@ -107,7 +99,7 @@ func Resolve(f Flags) (Settings, error) {
 	if trebi {
 		for name, v := range map[string]string{"--server": f.Server, "--target": f.Target, "--user": f.User, "--password-env": f.PasswordEnv} {
 			if v != "" {
-				return s, fmt.Errorf("%s: %w", name, ErrTrebiSets)
+				return s, fmt.Errorf("%s: %w", name, sdk.ErrTrebiSets)
 			}
 		}
 		s.Server = strings.TrimSpace(os.Getenv(EnvServer))
@@ -196,7 +188,7 @@ func Load(dir string) (File, error) {
 // Trebi mode.
 func SetTarget(name string, t Target, makeDefault bool) error {
 	if _, trebi := sdk.FromEnv(); trebi {
-		return ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if name == "" || t.Server == "" {
 		return errors.New("a target needs a name and a server")
@@ -216,7 +208,7 @@ func SetTarget(name string, t Target, makeDefault bool) error {
 // mode.
 func RemoveTarget(name string) error {
 	if _, trebi := sdk.FromEnv(); trebi {
-		return ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	return edit(func(f *File) {
 		delete(f.Targets, name)

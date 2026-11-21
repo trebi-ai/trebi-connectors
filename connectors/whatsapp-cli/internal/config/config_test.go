@@ -1,9 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 func TestStoreDir(t *testing.T) {
@@ -13,7 +16,7 @@ func TestStoreDir(t *testing.T) {
 		if got, err := StoreDir(""); err != nil || got != "/trebi/state" {
 			t.Errorf("StoreDir() = %q, %v, want /trebi/state", got, err)
 		}
-		if _, err := StoreDir("/flag"); err == nil || err.Error() != "--store: Trebi sets this value" {
+		if _, err := StoreDir("/flag"); err == nil || err.Error() != "--store: Trebi sets this value" || !errors.Is(err, sdk.ErrTrebiSets) {
 			t.Errorf("StoreDir(flag) in Trebi mode: %v", err)
 		}
 	})

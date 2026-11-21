@@ -4,7 +4,7 @@
 package config
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,9 +23,6 @@ const (
 // Trebi mode reads it.
 const EnvDeviceName = "WA_DEVICE_NAME"
 
-// ErrTrebiSets is a flag that selects a store in Trebi mode.
-var ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
-
 // Trebi reports whether the program runs in Trebi mode.
 func Trebi() bool {
 	_, ok := sdk.FromEnv()
@@ -39,7 +36,7 @@ func StoreDir(flagStore string) (string, error) {
 	dir := flagStore
 	if t, ok := sdk.FromEnv(); ok {
 		if flagStore != "" {
-			return "", errors.New("--store: " + ErrTrebiSets.Error())
+			return "", fmt.Errorf("--store: %w", sdk.ErrTrebiSets)
 		}
 		dir = t.StateDir
 	}

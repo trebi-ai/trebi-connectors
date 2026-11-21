@@ -6,6 +6,7 @@ import (
 
 	"github.com/trebi-ai/trebi-connectors/connectors/axiom-cli/internal/client"
 	"github.com/trebi-ai/trebi-connectors/connectors/axiom-cli/internal/config"
+	"github.com/trebi-ai/trebi-connectors/sdk"
 	"github.com/urfave/cli/v2"
 )
 
@@ -46,7 +47,7 @@ func AuthCommand() *cli.Command {
 
 func authSet(c *cli.Context) error {
 	if _, ok := config.Trebi(); ok {
-		return config.ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	f := &config.File{
 		Token:  c.String("token"),
@@ -114,7 +115,7 @@ func authShow(c *cli.Context) error {
 
 func authClear(c *cli.Context) error {
 	if _, ok := config.Trebi(); ok {
-		return config.ErrSetInTrebi
+		return sdk.ErrSetInTrebi
 	}
 	if err := config.Clear(); err != nil {
 		return err
