@@ -177,6 +177,32 @@ func TestDeriveFeatures(t *testing.T) {
 	}
 }
 
+func TestFeatureTable(t *testing.T) {
+	t.Parallel()
+	want := []string{
+		FeatureRoomsList, FeatureRoomsOpen, FeatureThreads, FeatureThreadsCreate, FeatureHistory,
+		FeatureReplay, FeatureTyping, FeatureSeen, FeatureReactions, FeatureEdit,
+		FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies, FeatureSubscriptions, FeatureWebhooks,
+	}
+	if got := Features(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("features %v", got)
+	}
+	methods := map[string]string{
+		MethodMessagesEdit: FeatureEdit, MethodMessagesHistory: FeatureHistory, MethodEventsReplay: FeatureReplay,
+		MethodRoomsList: FeatureRoomsList, MethodRoomsGet: FeatureRoomsList, MethodRoomsOpen: FeatureRoomsOpen,
+		MethodThreadsList: FeatureThreads, MethodThreadsCreate: FeatureThreadsCreate, MethodTyping: FeatureTyping,
+		MethodMessagesSeen: FeatureSeen, MethodReactionsAdd: FeatureReactions,
+		MethodSubscriptionsOptions: FeatureSubscriptions, MethodSubscriptionsSync: FeatureSubscriptions,
+		MethodSubscriptionsSubmit: FeatureSubscriptions, MethodWebhookReceive: FeatureWebhooks,
+		MethodInitialize: "", MethodMessagesSend: "", MethodAuthStatus: "",
+	}
+	for m, f := range methods {
+		if got := FeatureOf(m); got != f {
+			t.Errorf("FeatureOf(%q) = %q, want %q", m, got, f)
+		}
+	}
+}
+
 func sameJSON(t *testing.T, a, b []byte) bool {
 	t.Helper()
 	var x, y any

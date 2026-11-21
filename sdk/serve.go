@@ -229,6 +229,7 @@ type session struct {
 	mu       sync.Mutex
 	init     *InitializeResult
 	features map[string]bool
+	events   map[string]bool // declared event types; nil before initialize
 	ready    bool
 	starting bool
 	queue    [][]byte
@@ -384,6 +385,10 @@ func (s *session) initialize(m inMsg) {
 	for _, f := range res.Features {
 		s.features[f] = true
 	}
+	s.events = map[string]bool{}
+	for _, d := range res.Events {
+		s.events[d.Type] = true
+	}
 	s.mu.Unlock()
 	s.reply(m.ID, res, nil)
 }
@@ -398,9 +403,7 @@ func (s *session) initialized() {
 	}
 	s.starting = true
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodAuthStatus))
-	st := s.status(ctx)
-	cancel()
+	st := s.statusNow()
 	s.mu.Lock()
 	if err := s.write(outMsg{JSONRPC: "2.0", Method: MethodStatus, Params: st}); err != nil {
 		s.log.Warn("write status", "err", err)
@@ -449,6 +452,13 @@ func (s *session) status(ctx context.Context) Status {
 	return Status{State: st.State, Reason: st.Reason, Account: st.Account, Accounts: st.Accounts}
 }
 
+// statusNow reads the status with the protocol timeout.
+func (s *session) statusNow() Status {
+	ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodAuthStatus))
+	defer cancel()
+	return s.status(ctx)
+}
+
 func (s *session) has(feature string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -493,121 +503,85 @@ func (s *session) request(m inMsg) {
 func (s *session) call(ctx context.Context, m inMsg) (any, error) {
 	switch m.Method {
 	case MethodMessagesSend:
-		var p SendParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return s.send(ctx, p)
+		return decodeThen(m.Params, SendParams{}, func(p SendParams) (any, error) { return s.send(ctx, p) })
 	case MethodMessagesEdit:
-		var p EditParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return Empty{}, s.a.(Editor).Edit(ctx, p)
+		return decodeThen(m.Params, EditParams{}, func(p EditParams) (any, error) {
+			return Empty{}, s.a.(Editor).Edit(ctx, p)
+		})
 	case MethodMessagesHistory:
-		q := HistoryQuery{Limit: 50}
-		if err := decode(m.Params, &q); err != nil {
-			return nil, err
-		}
-		page, err := s.a.(Historian).History(ctx, q)
-		page.Events = orEmpty(page.Events)
-		return page, err
+		return decodeThen(m.Params, HistoryQuery{Limit: 50}, func(q HistoryQuery) (any, error) {
+			page, err := s.a.(Historian).History(ctx, q)
+			page.Events = orEmpty(page.Events)
+			return page, err
+		})
 	case MethodEventsReplay:
-		p := ReplayParams{Limit: 500}
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		events, complete, err := s.a.(Replayer).Replay(ctx, p.After, p.Limit)
-		return ReplayResult{Events: orEmpty(events), Complete: complete}, err
+		return decodeThen(m.Params, ReplayParams{Limit: 500}, func(p ReplayParams) (any, error) {
+			events, complete, err := s.a.(Replayer).Replay(ctx, p.After, p.Limit)
+			return ReplayResult{Events: orEmpty(events), Complete: complete}, err
+		})
 	case MethodRoomsList:
-		q := RoomQuery{Limit: 100}
-		if err := decode(m.Params, &q); err != nil {
-			return nil, err
-		}
-		page, err := s.a.(RoomLister).ListRooms(ctx, q)
-		page.Rooms = orEmpty(page.Rooms)
-		return page, err
+		return decodeThen(m.Params, RoomQuery{Limit: 100}, func(q RoomQuery) (any, error) {
+			page, err := s.a.(RoomLister).ListRooms(ctx, q)
+			page.Rooms = orEmpty(page.Rooms)
+			return page, err
+		})
 	case MethodRoomsGet:
-		var p RoomParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		r, err := s.getRoom(ctx, p.Room)
-		return RoomResult{Room: r}, err
+		return decodeThen(m.Params, RoomParams{}, func(p RoomParams) (any, error) {
+			r, err := s.getRoom(ctx, p.Room)
+			return RoomResult{Room: r}, err
+		})
 	case MethodRoomsOpen:
-		var p RoomOpenParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		r, err := s.a.(RoomOpener).OpenRoom(ctx, p.User)
-		return RoomResult{Room: r}, err
+		return decodeThen(m.Params, RoomOpenParams{}, func(p RoomOpenParams) (any, error) {
+			r, err := s.a.(RoomOpener).OpenRoom(ctx, p.User)
+			return RoomResult{Room: r}, err
+		})
 	case MethodThreadsList:
-		q := ThreadQuery{Limit: 100}
-		if err := decode(m.Params, &q); err != nil {
-			return nil, err
-		}
-		page, err := s.a.(ThreadLister).ListThreads(ctx, q)
-		page.Threads = orEmpty(page.Threads)
-		return page, err
+		return decodeThen(m.Params, ThreadQuery{Limit: 100}, func(q ThreadQuery) (any, error) {
+			page, err := s.a.(ThreadLister).ListThreads(ctx, q)
+			page.Threads = orEmpty(page.Threads)
+			return page, err
+		})
 	case MethodThreadsCreate:
-		var p CreateThreadParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		t, err := s.a.(ThreadCreator).CreateThread(ctx, p)
-		return ThreadResult{Thread: t}, err
+		return decodeThen(m.Params, CreateThreadParams{}, func(p CreateThreadParams) (any, error) {
+			t, err := s.a.(ThreadCreator).CreateThread(ctx, p)
+			return ThreadResult{Thread: t}, err
+		})
 	case MethodTyping:
-		var p TypingParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return Empty{}, s.a.(Typer).Typing(ctx, p.Room, p.Thread)
+		return decodeThen(m.Params, TypingParams{}, func(p TypingParams) (any, error) {
+			return Empty{}, s.a.(Typer).Typing(ctx, p.Room, p.Thread)
+		})
 	case MethodMessagesSeen:
-		var p SeenParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return Empty{}, s.a.(Seer).Seen(ctx, p.Room, p.MessageID)
+		return decodeThen(m.Params, SeenParams{}, func(p SeenParams) (any, error) {
+			return Empty{}, s.a.(Seer).Seen(ctx, p.Room, p.MessageID)
+		})
 	case MethodReactionsAdd:
-		var p ReactionParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return Empty{}, s.a.(Reactor).React(ctx, p.Room, p.MessageID, p.Emoji)
+		return decodeThen(m.Params, ReactionParams{}, func(p ReactionParams) (any, error) {
+			return Empty{}, s.a.(Reactor).React(ctx, p.Room, p.MessageID, p.Emoji)
+		})
 	case MethodSubscriptionsOptions:
-		q := OptionQuery{Limit: 50}
-		if err := decode(m.Params, &q); err != nil {
-			return nil, err
-		}
-		page, err := s.a.(Subscriber).Options(ctx, q)
-		page.Options = orEmpty(page.Options)
-		return page, err
+		return decodeThen(m.Params, OptionQuery{Limit: 50}, func(q OptionQuery) (any, error) {
+			page, err := s.a.(Subscriber).Options(ctx, q)
+			page.Options = orEmpty(page.Options)
+			return page, err
+		})
 	case MethodSubscriptionsSync:
-		var p SyncParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return s.sync(ctx, p)
+		return decodeThen(m.Params, SyncParams{}, func(p SyncParams) (any, error) { return s.sync(ctx, p) })
 	case MethodSubscriptionsSubmit:
-		var p SubmitParams
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		sub, ok := s.a.(SubscriptionSubmitter)
-		if !ok {
-			return nil, Unsupported("this adapter takes no answers for a subscription")
-		}
-		st, err := sub.SubmitSubscription(ctx, p)
-		if err == nil && st.ID == "" {
-			st.ID = p.ID
-		}
-		return st, err
+		return decodeThen(m.Params, SubmitParams{}, func(p SubmitParams) (any, error) {
+			sub, ok := s.a.(SubscriptionSubmitter)
+			if !ok {
+				return nil, Unsupported("this adapter takes no answers for a subscription")
+			}
+			st, err := sub.SubmitSubscription(ctx, p)
+			if err == nil && st.ID == "" {
+				st.ID = p.ID
+			}
+			return st, err
+		})
 	case MethodWebhookReceive:
-		var p WebhookRequest
-		if err := decode(m.Params, &p); err != nil {
-			return nil, err
-		}
-		return Empty{}, s.a.(WebhookReceiver).ReceiveWebhook(ctx, p)
+		return decodeThen(m.Params, WebhookRequest{}, func(p WebhookRequest) (any, error) {
+			return Empty{}, s.a.(WebhookReceiver).ReceiveWebhook(ctx, p)
+		})
 	case MethodAuthStatus:
 		st := s.status(ctx)
 		return AuthStatusResult{State: st.State, Account: st.Account, Accounts: st.Accounts}, nil
@@ -894,9 +868,7 @@ func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, method strin
 		return
 	}
 	if err == nil {
-		ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodAuthStatus))
-		st := s.status(ctx)
-		cancel()
+		st := s.statusNow()
 		s.notify(MethodAuthDone, AuthDoneParams{FlowID: f.id, OK: true, Account: st.Account})
 		s.notify(MethodStatus, st)
 		return
@@ -907,9 +879,7 @@ func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, method strin
 	}
 	s.notify(MethodAuthDone, AuthDoneParams{FlowID: f.id, OK: false, Error: msg})
 	if !superseded {
-		ctx, cancel := context.WithTimeout(s.ctx, timeout(MethodAuthStatus))
-		st := s.status(ctx)
-		cancel()
+		st := s.statusNow()
 		s.notify(MethodStatus, st)
 	}
 }
@@ -953,7 +923,7 @@ func (e emitter) Event(ev Event) error {
 		ev.TS = FormatTime(time.Now())
 	}
 	e.s.mu.Lock()
-	declared := e.s.init == nil || slices.ContainsFunc(e.s.init.Events, func(d EventDecl) bool { return d.Type == ev.Type })
+	declared := e.s.events == nil || e.s.events[ev.Type]
 	e.s.mu.Unlock()
 	if !declared {
 		return Invalid("event type " + strconv.Quote(ev.Type) + " is not in initialize")
@@ -1029,14 +999,14 @@ func marshalLine(m outMsg) ([]byte, error) {
 // With none declared, it lists every method feature the adapter implements.
 func deriveFeatures(a Adapter, declared []string) []string {
 	impl := map[string]bool{}
-	for _, f := range Features() {
-		impl[f] = implements(a, f)
+	for _, f := range featureTable {
+		impl[f.name] = f.has(a)
 	}
 	if len(declared) == 0 {
 		var out []string
-		for _, f := range Features() {
-			if impl[f] && f != FeatureAttachmentsIn && f != FeatureAttachmentsOut && f != FeatureReplies {
-				out = append(out, f)
+		for _, f := range featureTable {
+			if impl[f.name] && len(f.methods) > 0 {
+				out = append(out, f.name)
 			}
 		}
 		return out
@@ -1048,42 +1018,6 @@ func deriveFeatures(a Adapter, declared []string) []string {
 		}
 	}
 	return out
-}
-
-// implements reports whether a has the interface of a feature. The
-// attachment features and replies have no method, so any adapter may
-// declare them.
-func implements(a Adapter, feature string) bool {
-	var ok bool
-	switch feature {
-	case FeatureRoomsList:
-		_, ok = a.(RoomLister)
-	case FeatureRoomsOpen:
-		_, ok = a.(RoomOpener)
-	case FeatureThreads:
-		_, ok = a.(ThreadLister)
-	case FeatureThreadsCreate:
-		_, ok = a.(ThreadCreator)
-	case FeatureHistory:
-		_, ok = a.(Historian)
-	case FeatureReplay:
-		_, ok = a.(Replayer)
-	case FeatureTyping:
-		_, ok = a.(Typer)
-	case FeatureSeen:
-		_, ok = a.(Seer)
-	case FeatureReactions:
-		_, ok = a.(Reactor)
-	case FeatureEdit:
-		_, ok = a.(Editor)
-	case FeatureSubscriptions:
-		_, ok = a.(Subscriber)
-	case FeatureWebhooks:
-		_, ok = a.(WebhookReceiver)
-	case FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies:
-		ok = true
-	}
-	return ok
 }
 
 // timeout is the request timeout of the protocol. Zero means none.
@@ -1109,6 +1043,14 @@ func decode(raw json.RawMessage, v any) error {
 		return Invalid("params: " + err.Error())
 	}
 	return nil
+}
+
+// decodeThen decodes raw over p, which holds the defaults, then calls fn.
+func decodeThen[P any](raw json.RawMessage, p P, fn func(P) (any, error)) (any, error) {
+	if err := decode(raw, &p); err != nil {
+		return nil, err
+	}
+	return fn(p)
 }
 
 func orEmpty[T any](s []T) []T {

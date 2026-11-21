@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash"
+	"slices"
 	"strings"
 	"time"
 )
@@ -720,43 +721,56 @@ func (r WebhookRequest) VerifyHMAC(secret []byte, header, prefix string, h func(
 // FormatTime writes t in the event time format.
 func FormatTime(t time.Time) string { return t.UTC().Format(TimeLayout) }
 
+// featureSpec ties one channel feature to the methods it gates and to the
+// adapter interface that serves it. A feature with no method has no gate.
+type featureSpec struct {
+	name    string
+	methods []string
+	has     func(Adapter) bool
+}
+
+func hasIface[T any](a Adapter) bool {
+	_, ok := a.(T)
+	return ok
+}
+
+func always(Adapter) bool { return true }
+
+// featureTable lists every feature in the fixed order.
+var featureTable = []featureSpec{
+	{FeatureRoomsList, []string{MethodRoomsList, MethodRoomsGet}, hasIface[RoomLister]},
+	{FeatureRoomsOpen, []string{MethodRoomsOpen}, hasIface[RoomOpener]},
+	{FeatureThreads, []string{MethodThreadsList}, hasIface[ThreadLister]},
+	{FeatureThreadsCreate, []string{MethodThreadsCreate}, hasIface[ThreadCreator]},
+	{FeatureHistory, []string{MethodMessagesHistory}, hasIface[Historian]},
+	{FeatureReplay, []string{MethodEventsReplay}, hasIface[Replayer]},
+	{FeatureTyping, []string{MethodTyping}, hasIface[Typer]},
+	{FeatureSeen, []string{MethodMessagesSeen}, hasIface[Seer]},
+	{FeatureReactions, []string{MethodReactionsAdd}, hasIface[Reactor]},
+	{FeatureEdit, []string{MethodMessagesEdit}, hasIface[Editor]},
+	{FeatureAttachmentsIn, nil, always},
+	{FeatureAttachmentsOut, nil, always},
+	{FeatureReplies, nil, always},
+	{FeatureSubscriptions, []string{MethodSubscriptionsOptions, MethodSubscriptionsSync, MethodSubscriptionsSubmit}, hasIface[Subscriber]},
+	{FeatureWebhooks, []string{MethodWebhookReceive}, hasIface[WebhookReceiver]},
+}
+
 // FeatureOf returns the channel feature a method needs, or "" for a core
 // method.
 func FeatureOf(method string) string {
-	switch method {
-	case MethodMessagesEdit:
-		return FeatureEdit
-	case MethodMessagesHistory:
-		return FeatureHistory
-	case MethodEventsReplay:
-		return FeatureReplay
-	case MethodRoomsList, MethodRoomsGet:
-		return FeatureRoomsList
-	case MethodRoomsOpen:
-		return FeatureRoomsOpen
-	case MethodThreadsList:
-		return FeatureThreads
-	case MethodThreadsCreate:
-		return FeatureThreadsCreate
-	case MethodTyping:
-		return FeatureTyping
-	case MethodMessagesSeen:
-		return FeatureSeen
-	case MethodReactionsAdd:
-		return FeatureReactions
-	case MethodSubscriptionsOptions, MethodSubscriptionsSync, MethodSubscriptionsSubmit:
-		return FeatureSubscriptions
-	case MethodWebhookReceive:
-		return FeatureWebhooks
+	for _, f := range featureTable {
+		if slices.Contains(f.methods, method) {
+			return f.name
+		}
 	}
 	return ""
 }
 
 // Features lists every feature in the fixed order.
 func Features() []string {
-	return []string{
-		FeatureRoomsList, FeatureRoomsOpen, FeatureThreads, FeatureThreadsCreate, FeatureHistory,
-		FeatureReplay, FeatureTyping, FeatureSeen, FeatureReactions, FeatureEdit,
-		FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies, FeatureSubscriptions, FeatureWebhooks,
+	out := make([]string, len(featureTable))
+	for i, f := range featureTable {
+		out[i] = f.name
 	}
+	return out
 }
