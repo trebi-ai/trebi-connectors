@@ -29,7 +29,7 @@ func newSendFileCmd(flags *rootFlags) *cobra.Command {
 			// Forward to a running `whatsapp-cli listen` daemon if present; the
 			// daemon reads the file path itself, so it must be reachable on
 			// the same host (it is — the socket is host-local).
-			return sendDispatch(flags, ipc.Request{
+			return flags.dispatch(ipc.Request{
 				Cmd: "send_file", To: to, Path: filePath,
 				Filename: filename, Caption: caption, Mime: mimeOverride,
 			}, func() error {
@@ -50,7 +50,7 @@ func newSendFileCmd(flags *rootFlags) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return printSendResult(flags, toJID, msgID, meta)
+				return flags.printSend(toJID, msgID, meta)
 			})
 		},
 	}

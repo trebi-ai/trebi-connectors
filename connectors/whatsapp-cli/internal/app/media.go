@@ -22,6 +22,52 @@ type mediaJob struct {
 	msgID   string
 }
 
+// mediaQueue holds the jobs that wait for a free worker. push never blocks.
+type mediaQueue struct {
+	mu   sync.Mutex
+	jobs []mediaJob
+	wake chan struct{}
+}
+
+func newMediaQueue() *mediaQueue {
+	return &mediaQueue{wake: make(chan struct{}, 1)}
+}
+
+func (q *mediaQueue) push(j mediaJob) {
+	q.mu.Lock()
+	q.jobs = append(q.jobs, j)
+	q.mu.Unlock()
+	select {
+	case q.wake <- struct{}{}:
+	default:
+	}
+}
+
+// feed sends the queued jobs to out in order until ctx ends.
+func (q *mediaQueue) feed(ctx context.Context, out chan<- mediaJob) {
+	for {
+		q.mu.Lock()
+		if len(q.jobs) == 0 {
+			q.mu.Unlock()
+			select {
+			case <-q.wake:
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+		j := q.jobs[0]
+		q.jobs[0] = mediaJob{}
+		q.jobs = q.jobs[1:]
+		q.mu.Unlock()
+		select {
+		case out <- j:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func (a *App) ResolveMediaOutputPath(info store.MediaDownloadInfo, requested string) (string, error) {
 	filename := mediaFilename(info)
 

@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"strings"
 	"testing"
@@ -310,5 +312,78 @@ func TestSyncStoresMentions(t *testing.T) {
 		if err != nil || m.Text != text || !strings.Contains(m.DisplayText, "@Ana Maria") || string(m.Mentions) != want {
 			t.Fatalf("%s: %+v %s %v", id, m, m.Mentions, err)
 		}
+	}
+}
+
+func TestStoreHistoryCallback(t *testing.T) {
+	a := newTestApp(t)
+	a.wa = fakewa.New()
+	chat := types.JID{User: "123", Server: types.DefaultUserServer}
+	msg := func(id string) *waHistorySync.HistorySyncMsg {
+		return &waHistorySync.HistorySyncMsg{Message: &waWeb.WebMessageInfo{
+			Key:              &waCommon.MessageKey{RemoteJID: proto.String(chat.String()), ID: proto.String(id)},
+			MessageTimestamp: proto.Uint64(uint64(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Unix())),
+			Message:          &waE2E.Message{Conversation: proto.String("hi")},
+		}}
+	}
+	v := &events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{
+		{Name: proto.String("no id"), Messages: []*waHistorySync.HistorySyncMsg{msg("skipped")}},
+		{ID: proto.String(chat.String()), Name: proto.String("Alice"), Messages: []*waHistorySync.HistorySyncMsg{
+			{}, msg(""), msg("good"),
+		}},
+	}}}
+
+	var ids []string
+	a.storeHistory(context.Background(), v, func(pm *wa.ParsedMessage, err error) {
+		if err != nil {
+			t.Errorf("store %s: %v", pm.ID, err)
+		}
+		ids = append(ids, pm.ID)
+	})
+	if len(ids) != 1 || ids[0] != "good" {
+		t.Fatalf("stored = %v, want [good]", ids)
+	}
+	if c, err := a.db.GetChat(chat.String()); err != nil || c.Name != "Alice" {
+		t.Fatalf("chat: %+v %v", c, err)
+	}
+}
+
+// reactionClient decrypts every reaction to a fixed emoji, or fails.
+type reactionClient struct {
+	*fakewa.Client
+	emoji string
+	err   error
+}
+
+func (c reactionClient) DecryptReaction(context.Context, *events.Message) (*waE2E.ReactionMessage, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &waE2E.ReactionMessage{Text: proto.String(c.emoji)}, nil
+}
+
+func TestParseLiveReaction(t *testing.T) {
+	chat := types.JID{User: "123", Server: types.DefaultUserServer}
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "r1",
+			Timestamp:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		Message: &waE2E.Message{EncReactionMessage: &waE2E.EncReactionMessage{
+			TargetMessageKey: &waCommon.MessageKey{ID: proto.String("target")},
+		}},
+	}
+	a := newTestApp(t)
+	a.wa = reactionClient{Client: fakewa.New(), emoji: "👍"}
+	pm := a.parseLive(context.Background(), evt)
+	if pm.ReactionToID != "target" || pm.ReactionEmoji != "👍" {
+		t.Fatalf("reaction = %q %q", pm.ReactionToID, pm.ReactionEmoji)
+	}
+
+	a.wa = reactionClient{Client: fakewa.New(), err: errors.New("no key")}
+	pm = a.parseLive(context.Background(), evt)
+	if pm.ReactionToID != "target" || pm.ReactionEmoji != "" {
+		t.Fatalf("after error = %q %q", pm.ReactionToID, pm.ReactionEmoji)
 	}
 }

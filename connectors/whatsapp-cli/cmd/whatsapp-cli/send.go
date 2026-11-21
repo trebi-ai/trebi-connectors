@@ -62,7 +62,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			return sendDispatch(flags, ipc.Request{
+			return flags.dispatch(ipc.Request{
 				Cmd: "send_receipt", Chat: chat, MessageIDs: ids,
 				ReceiptType: receiptType, Sender: sender, At: at,
 			}, func() error {
@@ -83,7 +83,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 				if err != nil {
 					return err
 				}
-				return printReceiptResult(flags, res)
+				return flags.printReceipt(res)
 			})
 		},
 	}
@@ -116,7 +116,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			return sendDispatch(flags, ipc.Request{
+			return flags.dispatch(ipc.Request{
 				Cmd: "send_presence", State: state,
 			}, func() error {
 				a, lk, err := flags.newApp(true)
@@ -136,7 +136,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 				if err != nil {
 					return err
 				}
-				return printPresenceResult(flags, stateOut)
+				return flags.printPresence(stateOut)
 			})
 		},
 	}
@@ -171,7 +171,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
-			return sendDispatch(flags, ipc.Request{
+			return flags.dispatch(ipc.Request{
 				Cmd: "send_chat_presence", To: to, State: state, Media: media,
 			}, func() error {
 				a, lk, err := flags.newApp(true)
@@ -191,7 +191,7 @@ If whatsapp-cli listen is running, this is forwarded over its Unix socket.`,
 				if err != nil {
 					return err
 				}
-				return printChatPresenceResult(flags, toJID, st, med)
+				return flags.printChatPresence(toJID, st, med)
 			})
 		},
 	}
@@ -220,7 +220,7 @@ func newSendTextCmd(flags *rootFlags) *cobra.Command {
 			// If a `whatsapp-cli listen` daemon is running, forward the send to it
 			// (it holds the single live WhatsApp connection). Otherwise send
 			// directly, acquiring the store lock ourselves.
-			return sendDispatch(flags, ipc.Request{Cmd: "send_text", To: to, Message: message}, func() error {
+			return flags.dispatch(ipc.Request{Cmd: "send_text", To: to, Message: message}, func() error {
 				a, lk, err := flags.newApp(true)
 				if err != nil {
 					return err
@@ -238,7 +238,7 @@ func newSendTextCmd(flags *rootFlags) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return printSendResult(flags, toJID, msgID, nil)
+				return flags.printSend(toJID, msgID, nil)
 			})
 		},
 	}

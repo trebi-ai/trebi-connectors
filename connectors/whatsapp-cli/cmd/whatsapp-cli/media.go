@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/app"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/ipc"
-	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/lock"
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/out"
 )
 
@@ -88,7 +86,7 @@ do not need to stop the listener.`,
 			}
 
 			req := ipc.Request{Cmd: "media_download", Chat: chat, MsgID: id, Output: outputPath}
-			return mediaDispatch(flags, req, func() error {
+			return flags.dispatch(req, func() error {
 				ctx, cancel := withTimeout(context.Background(), flags)
 				defer cancel()
 
@@ -106,7 +104,7 @@ do not need to stop the listener.`,
 				if err != nil {
 					return err
 				}
-				return printMediaDownloadResult(flags, result)
+				return flags.printMediaDownload(result)
 			})
 		},
 	}
@@ -119,45 +117,8 @@ do not need to stop the listener.`,
 	return cmd
 }
 
-// mediaDispatch prefers the listen daemon socket, else runs direct (acquires lock).
-func mediaDispatch(flags *rootFlags, req ipc.Request, direct func() error) error {
-	if resp, ok := forwardSend(flags, req); ok {
-		if !resp.OK {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return printMediaDownloadResult(flags, mediaDownloadResult{
-			Chat:      resp.Chat,
-			ID:        resp.ID,
-			Path:      resp.Path,
-			Bytes:     resp.Bytes,
-			MediaType: resp.MediaType,
-			MimeType:  resp.MimeType,
-		})
-	}
-
-	err := direct()
-	if err == nil || !errors.Is(err, lock.ErrLocked) {
-		return err
-	}
-
-	if resp, ok := forwardSend(flags, req); ok {
-		if !resp.OK {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return printMediaDownloadResult(flags, mediaDownloadResult{
-			Chat:      resp.Chat,
-			ID:        resp.ID,
-			Path:      resp.Path,
-			Bytes:     resp.Bytes,
-			MediaType: resp.MediaType,
-			MimeType:  resp.MimeType,
-		})
-	}
-	return err
-}
-
-func printMediaDownloadResult(flags *rootFlags, result mediaDownloadResult) error {
-	if flags.asJSON {
+func (f *rootFlags) printMediaDownload(result mediaDownloadResult) error {
+	if f.asJSON {
 		return out.WriteJSON(os.Stdout, map[string]any{
 			"chat":       result.Chat,
 			"id":         result.ID,

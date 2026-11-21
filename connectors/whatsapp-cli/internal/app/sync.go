@@ -62,6 +62,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 
 	var stopMedia func()
 	var mediaJobs chan mediaJob
+	queue := newMediaQueue()
 	enqueueMedia := func(chatJID, msgID string) {}
 	if opts.DownloadMedia {
 		mediaJobs = make(chan mediaJob, 512)
@@ -69,17 +70,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 			if strings.TrimSpace(chatJID) == "" || strings.TrimSpace(msgID) == "" {
 				return
 			}
-			select {
-			case mediaJobs <- mediaJob{chatJID: chatJID, msgID: msgID}:
-			default:
-				// Avoid blocking the event handler.
-				go func() {
-					select {
-					case mediaJobs <- mediaJob{chatJID: chatJID, msgID: msgID}:
-					case <-ctx.Done():
-					}
-				}()
-			}
+			queue.push(mediaJob{chatJID: chatJID, msgID: msgID})
 		}
 	}
 
@@ -95,17 +86,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 
 		switch v := evt.(type) {
 		case *events.Message:
-			pm := wa.ParseLiveMessage(v)
-			if pm.ReactionToID != "" && pm.ReactionEmoji == "" && v.Message != nil && v.Message.GetEncReactionMessage() != nil {
-				if reaction, err := a.wa.DecryptReaction(ctx, v); err == nil && reaction != nil {
-					pm.ReactionEmoji = reaction.GetText()
-					if pm.ReactionToID == "" {
-						if key := reaction.GetKey(); key != nil {
-							pm.ReactionToID = key.GetID()
-						}
-					}
-				}
-			}
+			pm := a.parseLive(ctx, v)
 			if err := a.storeParsedMessage(ctx, &pm, liveMessage); err == nil {
 				messagesStored.Add(1)
 			}
@@ -117,30 +98,15 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 			}
 		case *events.HistorySync:
 			fmt.Fprintf(os.Stderr, "\nProcessing history sync (%d conversations)...\n", len(v.Data.Conversations))
-			for _, conv := range v.Data.Conversations {
+			a.storeHistory(ctx, v, func(pm *wa.ParsedMessage, err error) {
 				lastEvent.Store(time.Now().UTC().UnixNano())
-				chatID := strings.TrimSpace(conv.GetID())
-				if chatID == "" {
-					continue
+				if err == nil {
+					messagesStored.Add(1)
 				}
-				a.storeConversationName(chatID, conv.GetName())
-				for _, m := range conv.Messages {
-					lastEvent.Store(time.Now().UTC().UnixNano())
-					if m.Message == nil {
-						continue
-					}
-					pm := wa.ParseHistoryMessage(chatID, m.Message)
-					if pm.ID == "" || pm.Chat.IsEmpty() {
-						continue
-					}
-					if err := a.storeParsedMessage(ctx, &pm, historyMessage); err == nil {
-						messagesStored.Add(1)
-					}
-					if opts.DownloadMedia && pm.Media != nil && pm.ID != "" {
-						enqueueMedia(pm.Chat.String(), pm.ID)
-					}
+				if opts.DownloadMedia && pm.Media != nil && pm.ID != "" {
+					enqueueMedia(pm.Chat.String(), pm.ID)
 				}
-			}
+			})
 			fmt.Fprintf(os.Stderr, "\rSynced %d messages...", messagesStored.Load())
 		case *events.Connected:
 			fmt.Fprintln(os.Stderr, "\nConnected.")
@@ -184,6 +150,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 			return SyncResult{}, err
 		}
 		defer stopMedia()
+		feedCtx, stopFeed := context.WithCancel(ctx)
+		defer stopFeed()
+		go queue.feed(feedCtx, mediaJobs)
 	}
 
 	// Optional: bootstrap imports (helps contacts/groups management without waiting for events).
@@ -269,6 +238,40 @@ func chatKind(chat types.JID) string {
 		return "dm"
 	}
 	return "unknown"
+}
+
+// parseLive parses a live message. It decrypts the emoji of an encrypted
+// reaction; a decrypt error keeps the message with no emoji.
+func (a *App) parseLive(ctx context.Context, v *events.Message) wa.ParsedMessage {
+	pm := wa.ParseLiveMessage(v)
+	if pm.ReactionToID != "" && pm.ReactionEmoji == "" && v.Message.GetEncReactionMessage() != nil {
+		if r, err := a.wa.DecryptReaction(ctx, v); err == nil && r != nil {
+			pm.ReactionEmoji = r.GetText()
+		}
+	}
+	return pm
+}
+
+// storeHistory stores the names and the messages of a history sync. It
+// calls stored with the result of each message store.
+func (a *App) storeHistory(ctx context.Context, v *events.HistorySync, stored func(pm *wa.ParsedMessage, err error)) {
+	for _, conv := range v.Data.GetConversations() {
+		chatID := strings.TrimSpace(conv.GetID())
+		if chatID == "" {
+			continue
+		}
+		a.storeConversationName(chatID, conv.GetName())
+		for _, m := range conv.GetMessages() {
+			if m.GetMessage() == nil {
+				continue
+			}
+			pm := wa.ParseHistoryMessage(chatID, m.GetMessage())
+			if pm.ID == "" || pm.Chat.IsEmpty() {
+				continue
+			}
+			stored(&pm, a.storeParsedMessage(ctx, &pm, historyMessage))
+		}
+	}
 }
 
 // msgOrigin tells storeParsedMessage if it may ask WhatsApp for names.

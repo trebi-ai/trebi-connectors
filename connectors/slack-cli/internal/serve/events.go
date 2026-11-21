@@ -109,7 +109,7 @@ func (t *Team) Events(ctx context.Context, raw json.RawMessage) []sdk.Event {
 	case "message":
 		return t.messageEvents(ctx, ch, m, raw)
 	case "app_mention":
-		ev := t.message(ctx, ch, m, raw)
+		ev := t.message(ctx, ch, m, raw, nil)
 		return []sdk.Event{asMention(ev)}
 	case "reaction_added":
 		return t.reaction(ctx, m, raw)
@@ -127,7 +127,7 @@ var plain = map[string]bool{"": true, "bot_message": true, "thread_broadcast": t
 func (t *Team) messageEvents(ctx context.Context, ch string, m message, raw json.RawMessage) []sdk.Event {
 	switch {
 	case plain[m.Subtype]:
-		ev := t.message(ctx, ch, m, raw)
+		ev := t.message(ctx, ch, m, raw, nil)
 		if t.mentions(m) {
 			return []sdk.Event{ev, asMention(ev)}
 		}
@@ -137,7 +137,11 @@ func (t *Team) messageEvents(ctx context.Context, ch string, m message, raw json
 		if m.Previous != nil && m.Previous.Text == m.Message.Text {
 			return nil
 		}
-		ev := t.message(ctx, ch, *m.Message, raw)
+		extra := map[string]any{}
+		if m.Previous != nil {
+			extra["previous_text"] = m.Previous.Text
+		}
+		ev := t.message(ctx, ch, *m.Message, raw, extra)
 		ev.Type = TypeEdited
 		at := m.TS
 		if m.Message.Edited != nil && m.Message.Edited.TS != "" {
@@ -145,11 +149,6 @@ func (t *Team) messageEvents(ctx context.Context, ch string, m message, raw json
 		}
 		ev.ID += ".edit." + at
 		ev.TS = slackTime(at)
-		extra := map[string]any{}
-		if m.Previous != nil {
-			extra["previous_text"] = m.Previous.Text
-		}
-		ev.Data = t.data(ch, m.Message.TS, raw, extra)
 		return []sdk.Event{ev}
 	case m.Subtype == "message_deleted" && m.DeletedTS != "":
 		prev := message{TS: m.DeletedTS}
@@ -166,12 +165,12 @@ func (t *Team) messageEvents(ctx context.Context, ch string, m message, raw json
 	return nil
 }
 
-// message maps one message in channel ch.
-func (t *Team) message(ctx context.Context, ch string, m message, raw json.RawMessage) sdk.Event {
+// message maps one message in channel ch. extra adds fields to the event data.
+func (t *Team) message(ctx context.Context, ch string, m message, raw json.RawMessage, extra map[string]any) sdk.Event {
 	ev := sdk.Event{
 		ID: t.msgID(ch, m.TS), Type: TypeMessage, TS: slackTime(m.TS),
 		Room: t.room(ctx, ch), Thread: thread(m), Sender: t.sender(ctx, m),
-		Text: t.text(ctx, m), Data: t.data(ch, m.TS, raw, nil),
+		Text: t.text(ctx, m), Data: t.data(ch, m.TS, raw, extra),
 	}
 	if ev.Thread != nil {
 		ev.ReplyTo = t.msgID(ch, m.ThreadTS)

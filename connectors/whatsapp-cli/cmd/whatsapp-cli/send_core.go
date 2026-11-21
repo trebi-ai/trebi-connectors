@@ -309,14 +309,12 @@ func sendPresenceCore(ctx context.Context, a sendApp, state string) (string, err
 	return stateOut, nil
 }
 
-// forwardSend tries to hand the request to a running `whatsapp-cli listen` daemon over
+// forward tries to hand the request to a running `whatsapp-cli listen` daemon over
 // its Unix socket. It returns (resp, true) if a daemon accepted the request
 // (whether the send succeeded or not — check resp.OK), or (_, false) if no live
 // daemon is reachable, in which case the caller sends directly.
-func forwardSend(flags *rootFlags, req ipc.Request) (ipc.Response, bool) {
-	storeDir := flags.storeDir
-
-	conn, err := ipc.Dial(storeDir)
+func (f *rootFlags) forward(req ipc.Request) (ipc.Response, bool) {
+	conn, err := ipc.Dial(f.storeDir)
 	if err != nil {
 		return ipc.Response{}, false
 	}
@@ -327,17 +325,17 @@ func forwardSend(flags *rootFlags, req ipc.Request) (ipc.Response, bool) {
 	return resp, true
 }
 
-// sendDispatch routes a send either to a running `whatsapp-cli listen` daemon (over the
+// dispatch routes a send or a media download either to a running `whatsapp-cli listen` daemon (over the
 // Unix socket) or, if none is reachable, performs it directly via the `direct`
 // callback (which acquires the store lock). If the direct path fails because the
 // store is locked, a daemon started in the race window between our first dial
 // and lock attempt — so we re-dial once and forward.
-func sendDispatch(flags *rootFlags, req ipc.Request, direct func() error) error {
-	if resp, ok := forwardSend(flags, req); ok {
+func (f *rootFlags) dispatch(req ipc.Request, direct func() error) error {
+	if resp, ok := f.forward(req); ok {
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		return printForwardedResult(flags, req, resp)
+		return f.printForwarded(req, resp)
 	}
 
 	err := direct()
@@ -346,25 +344,34 @@ func sendDispatch(flags *rootFlags, req ipc.Request, direct func() error) error 
 	}
 
 	// Lost the race to a daemon; forward to it instead.
-	if resp, ok := forwardSend(flags, req); ok {
+	if resp, ok := f.forward(req); ok {
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		return printForwardedResult(flags, req, resp)
+		return f.printForwarded(req, resp)
 	}
 	return err
 }
 
-func printForwardedResult(flags *rootFlags, req ipc.Request, resp ipc.Response) error {
+func (f *rootFlags) printForwarded(req ipc.Request, resp ipc.Response) error {
 	switch req.Cmd {
+	case "media_download":
+		return f.printMediaDownload(mediaDownloadResult{
+			Chat:      resp.Chat,
+			ID:        resp.ID,
+			Path:      resp.Path,
+			Bytes:     resp.Bytes,
+			MediaType: resp.MediaType,
+			MimeType:  resp.MimeType,
+		})
 	case "send_chat_presence":
-		return printChatPresenceResult(flags, resp.To, resp.State, resp.Media)
+		return f.printChatPresence(resp.To, resp.State, resp.Media)
 	case "send_receipt":
 		ts, _ := time.Parse(time.RFC3339Nano, resp.Timestamp)
 		if ts.IsZero() {
 			ts, _ = time.Parse(time.RFC3339, resp.Timestamp)
 		}
-		return printReceiptResult(flags, receiptResult{
+		return f.printReceipt(receiptResult{
 			Chat:       resp.Chat,
 			Type:       resp.ReceiptType,
 			MessageIDs: resp.MessageIDs,
@@ -372,16 +379,16 @@ func printForwardedResult(flags *rootFlags, req ipc.Request, resp ipc.Response) 
 			Timestamp:  ts,
 		})
 	case "send_presence":
-		return printPresenceResult(flags, resp.State)
+		return f.printPresence(resp.State)
 	default:
-		return printSendResult(flags, resp.To, resp.ID, resp.File)
+		return f.printSend(resp.To, resp.ID, resp.File)
 	}
 }
 
-// printSendResult writes the success output for a send, matching the format of
+// printSend writes the success output for a send, matching the format of
 // both the direct and forwarded paths. meta is non-nil only for file sends.
-func printSendResult(flags *rootFlags, to, id string, meta map[string]string) error {
-	if flags.asJSON {
+func (f *rootFlags) printSend(to, id string, meta map[string]string) error {
+	if f.asJSON {
 		payload := map[string]any{
 			"sent": true,
 			"to":   to,
@@ -400,8 +407,8 @@ func printSendResult(flags *rootFlags, to, id string, meta map[string]string) er
 	return nil
 }
 
-func printChatPresenceResult(flags *rootFlags, to, state, media string) error {
-	if flags.asJSON {
+func (f *rootFlags) printChatPresence(to, state, media string) error {
+	if f.asJSON {
 		return out.WriteJSON(os.Stdout, map[string]any{
 			"to":    to,
 			"state": state,
@@ -416,8 +423,8 @@ func printChatPresenceResult(flags *rootFlags, to, state, media string) error {
 	return nil
 }
 
-func printReceiptResult(flags *rootFlags, res receiptResult) error {
-	if flags.asJSON {
+func (f *rootFlags) printReceipt(res receiptResult) error {
+	if f.asJSON {
 		payload := map[string]any{
 			"chat":        res.Chat,
 			"type":        res.Type,
@@ -442,8 +449,8 @@ func printReceiptResult(flags *rootFlags, res receiptResult) error {
 	return nil
 }
 
-func printPresenceResult(flags *rootFlags, state string) error {
-	if flags.asJSON {
+func (f *rootFlags) printPresence(state string) error {
+	if f.asJSON {
 		return out.WriteJSON(os.Stdout, map[string]any{
 			"state": state,
 		})

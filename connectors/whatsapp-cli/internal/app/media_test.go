@@ -5,6 +5,8 @@ import (
 	"github.com/trebi-ai/trebi-connectors/connectors/whatsapp-cli/internal/wa/fakewa"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -54,5 +56,32 @@ func TestDownloadMediaJobMarksDownloaded(t *testing.T) {
 	}
 	if _, err := os.Stat(a.MediaPath(info.LocalPath)); err != nil {
 		t.Fatalf("expected downloaded file to exist: %v", err)
+	}
+}
+
+func TestMediaQueueOrder(t *testing.T) {
+	q := newMediaQueue()
+	before := runtime.NumGoroutine()
+	const n = 1000
+	for i := 0; i < n; i++ {
+		q.push(mediaJob{chatJID: "c", msgID: strconv.Itoa(i)})
+	}
+	if grew := runtime.NumGoroutine() - before; grew > 2 {
+		t.Fatalf("push started %d goroutines", grew)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan mediaJob, 512)
+	go q.feed(ctx, out)
+	for i := 0; i < n; i++ {
+		select {
+		case j := <-out:
+			if j.msgID != strconv.Itoa(i) {
+				t.Fatalf("job %d has id %s", i, j.msgID)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no job %d", i)
+		}
 	}
 }

@@ -316,25 +316,11 @@ func (d *Adapter) refreshGroups(ctx context.Context) {
 }
 
 func (d *Adapter) storeHistory(ctx context.Context, v *events.HistorySync) {
-	for _, conv := range v.Data.GetConversations() {
-		chatID := strings.TrimSpace(conv.GetID())
-		if chatID == "" {
-			continue
+	d.app.storeHistory(ctx, v, func(pm *wa.ParsedMessage, err error) {
+		if err != nil {
+			slog.Warn("store history message", "id", pm.ID, "err", err)
 		}
-		d.app.storeConversationName(chatID, conv.GetName())
-		for _, m := range conv.GetMessages() {
-			if m.GetMessage() == nil {
-				continue
-			}
-			pm := wa.ParseHistoryMessage(chatID, m.GetMessage())
-			if pm.ID == "" || pm.Chat.IsEmpty() {
-				continue
-			}
-			if err := d.app.storeParsedMessage(ctx, &pm, historyMessage); err != nil {
-				slog.Warn("store history message", "id", pm.ID, "err", err)
-			}
-		}
-	}
+	})
 }
 
 // messageData is the data of a message event.
@@ -349,12 +335,7 @@ func (d *Adapter) liveEvent(ctx context.Context, v *events.Message) (sdk.Event, 
 	if isSKDMOnly(v) || v.Info.Chat.Server == types.BroadcastServer || v.Info.Chat.Server == types.NewsletterServer {
 		return sdk.Event{}, false
 	}
-	pm := wa.ParseLiveMessage(v)
-	if pm.ReactionToID != "" && pm.ReactionEmoji == "" && v.Message.GetEncReactionMessage() != nil {
-		if r, err := d.app.wa.DecryptReaction(ctx, v); err == nil && r != nil {
-			pm.ReactionEmoji = r.GetText()
-		}
-	}
+	pm := d.app.parseLive(ctx, v)
 	if err := d.app.storeParsedMessage(ctx, &pm, liveMessage); err != nil {
 		slog.Warn("store message", "id", pm.ID, "err", err)
 	}

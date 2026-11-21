@@ -65,7 +65,7 @@ func (t *Team) History(ctx context.Context, q HistoryQuery) (Page, error) {
 			continue
 		}
 		oldest, newest = cmp.Or(oldest, m.TS), m.TS
-		page.Messages = append(page.Messages, t.message(ctx, q.Channel, m, raw))
+		page.Messages = append(page.Messages, t.message(ctx, q.Channel, m, raw, nil))
 	}
 	if resp.HasMore {
 		page.Next = oldest
@@ -98,7 +98,7 @@ func (t *Team) Search(ctx context.Context, query string, limit int) (Page, error
 		if json.Unmarshal(raw, &m) != nil || m.TS == "" || m.Channel == "" {
 			continue
 		}
-		page.Messages = append(page.Messages, t.message(ctx, string(m.Channel), m, raw))
+		page.Messages = append(page.Messages, t.message(ctx, string(m.Channel), m, raw, nil))
 	}
 	return page, nil
 }
