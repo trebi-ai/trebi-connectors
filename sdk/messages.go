@@ -113,8 +113,8 @@ const (
 	LoginKey      = "key"      // a key or token that the user pastes
 )
 
-// LoginTypes lists the login method types in the order of the UI.
-func LoginTypes() []string { return []string{LoginExisting, LoginBrowser, LoginPhone, LoginKey} }
+// loginTypes lists the login method types in the order of the UI.
+func loginTypes() []string { return []string{LoginExisting, LoginBrowser, LoginPhone, LoginKey} }
 
 // Room kinds.
 const (
@@ -154,8 +154,8 @@ const (
 // MaxLine is the largest line on the wire (4 MiB).
 const MaxLine = 4 << 20
 
-// TimeLayout is the event time format: UTC with microseconds.
-const TimeLayout = "2006-01-02T15:04:05.000000Z"
+// timeLayout is the event time format: UTC with microseconds.
+const timeLayout = "2006-01-02T15:04:05.000000Z"
 
 // Empty is the params or result of a message with no fields.
 type Empty struct{}
@@ -719,7 +719,7 @@ func (r WebhookRequest) VerifyHMAC(secret []byte, header, prefix string, h func(
 }
 
 // FormatTime writes t in the event time format.
-func FormatTime(t time.Time) string { return t.UTC().Format(TimeLayout) }
+func FormatTime(t time.Time) string { return t.UTC().Format(timeLayout) }
 
 // featureSpec ties one channel feature to the methods it gates and to the
 // adapter interface that serves it. A feature with no method has no gate.
@@ -755,9 +755,9 @@ var featureTable = []featureSpec{
 	{FeatureWebhooks, []string{MethodWebhookReceive}, hasIface[WebhookReceiver]},
 }
 
-// FeatureOf returns the channel feature a method needs, or "" for a core
+// featureOf returns the channel feature a method needs, or "" for a core
 // method.
-func FeatureOf(method string) string {
+func featureOf(method string) string {
 	for _, f := range featureTable {
 		if slices.Contains(f.methods, method) {
 			return f.name

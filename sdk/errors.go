@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// ErrTrebiSets is the error of a flag that selects a store or a credential
+// in Trebi mode. A caller wraps it with %w.
+var ErrTrebiSets = errors.New("Trebi sets this value") //nolint:staticcheck // Trebi is a name
+
+// ErrSetInTrebi is the error of a command that saves a setting in Trebi
+// mode. A caller wraps it with %w.
+var ErrSetInTrebi = errors.New("Set this value in Trebi") //nolint:staticcheck // a sentence for the user
+
 // Error codes (data.code of a JSON-RPC error). The daemon outbox acts on
 // the code: it retries transient and rate_limited, holds auth_required
 // until the session is back, and gives up on the others.
@@ -125,9 +133,9 @@ func (e *Error) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// AsError maps any adapter error to a typed error. A timeout or a network
+// asError maps any adapter error to a typed error. A timeout or a network
 // fault is transient; every other untyped error is permanent.
-func AsError(err error) *Error {
+func asError(err error) *Error {
 	var e *Error
 	if errors.As(err, &e) {
 		return e

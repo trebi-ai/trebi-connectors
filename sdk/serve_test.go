@@ -403,8 +403,8 @@ func TestDedupeSurvivesRestart(t *testing.T) {
 	}
 }
 
-func sandboxConfig() sdk.SandboxConfig {
-	return sdk.SandboxConfig{
+func sandboxConfig() sdktest.SandboxConfig {
+	return sdktest.SandboxConfig{
 		Adapter:  sdk.AdapterInfo{Name: "sandbox-cli", Version: "1.0.0"},
 		Features: []string{"rooms.list", "rooms.open", "threads", "history", "typing", "seen", "reactions", "attachments.in"},
 		Limits:   sdk.Limits{MaxText: 10, Formats: []string{"text"}},
@@ -420,7 +420,7 @@ func sandboxConfig() sdk.SandboxConfig {
 
 func TestSandbox(t *testing.T) {
 	t.Parallel()
-	c := sdktest.Start(sdk.NewSandbox(sandboxConfig()))
+	c := sdktest.Start(sdktest.NewSandbox(sandboxConfig()))
 	defer c.Close() //nolint:errcheck // the test checks the calls
 	res, err := c.Initialize(sdk.InitializeParams{})
 	if err != nil {
@@ -488,7 +488,7 @@ func TestSandboxLoginCancelAndInput(t *testing.T) {
 	t.Parallel()
 	cfg := sandboxConfig()
 	cfg.LoginDelay = time.Minute
-	c := sdktest.Start(sdk.NewSandbox(cfg))
+	c := sdktest.Start(sdktest.NewSandbox(cfg))
 	defer c.Close() //nolint:errcheck // the test checks the calls
 	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
 		t.Fatal(err)
@@ -654,14 +654,14 @@ func TestSandboxSubscriptions(t *testing.T) {
 		mu.Lock()
 		got = append(got, sdk.WebhookRequest{
 			ID: strconv.Itoa(len(got)), Method: r.Method, Body: string(body),
-			Headers: map[string]string{sdk.SandboxSignature: r.Header.Get(sdk.SandboxSignature)},
+			Headers: map[string]string{sdktest.SandboxSignature: r.Header.Get(sdktest.SandboxSignature)},
 		})
 		mu.Unlock()
 	}))
 	defer srv.Close()
 	cfg := sandboxConfig()
 	cfg.Login, cfg.Subscriptions = nil, true
-	c := sdktest.Start(sdk.NewSandbox(cfg))
+	c := sdktest.Start(sdktest.NewSandbox(cfg))
 	defer c.Close() //nolint:errcheck // the test checks the calls
 	res, err := c.Initialize(sdk.InitializeParams{Webhook: &sdk.Webhook{URL: srv.URL, Secret: "s3cret"}})
 	if err != nil {
@@ -675,8 +675,8 @@ func TestSandboxSubscriptions(t *testing.T) {
 		t.Fatalf("options %+v: %v", opts, err)
 	}
 	subs := sdk.SyncParams{Subscriptions: []sdk.Subscription{
-		{ID: "a", Values: map[string][]string{"target": {sdk.SandboxAlpha}}},
-		{ID: "m", Values: map[string][]string{"target": {sdk.SandboxManual}}},
+		{ID: "a", Values: map[string][]string{"target": {sdktest.SandboxAlpha}}},
+		{ID: "m", Values: map[string][]string{"target": {sdktest.SandboxManual}}},
 	}}
 	var sync sdk.SyncResult
 	if err := c.Call(sdk.MethodSubscriptionsSync, subs, &sync); err != nil {
@@ -704,7 +704,7 @@ func TestSandboxSubscriptions(t *testing.T) {
 			t.Fatalf("receive: %v", err)
 		}
 	}
-	if ev, err := c.WaitNote(sdk.MethodEvent); err != nil || !strings.Contains(string(ev.Params), sdk.SandboxAlpha) {
+	if ev, err := c.WaitNote(sdk.MethodEvent); err != nil || !strings.Contains(string(ev.Params), sdktest.SandboxAlpha) {
 		t.Fatalf("event %s: %v", ev.Params, err)
 	}
 	forged := reqs[0]
@@ -721,13 +721,13 @@ func TestSandboxSubscriptionsPoll(t *testing.T) {
 	t.Parallel()
 	cfg := sandboxConfig()
 	cfg.Login, cfg.Subscriptions = nil, true
-	c := sdktest.Start(sdk.NewSandbox(cfg))
+	c := sdktest.Start(sdktest.NewSandbox(cfg))
 	defer c.Close() //nolint:errcheck // the test checks the calls
 	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
 		t.Fatal(err)
 	}
 	var sync sdk.SyncResult
-	subs := sdk.SyncParams{Subscriptions: []sdk.Subscription{{ID: "m", Values: map[string][]string{"target": {sdk.SandboxManual}}}}}
+	subs := sdk.SyncParams{Subscriptions: []sdk.Subscription{{ID: "m", Values: map[string][]string{"target": {sdktest.SandboxManual}}}}}
 	if err := c.Call(sdk.MethodSubscriptionsSync, subs, &sync); err != nil || sync.Subscriptions[0].State != sdk.SubscriptionPolling {
 		t.Fatalf("sync %+v: %v", sync, err)
 	}
@@ -864,5 +864,17 @@ func TestServeStartedLine(t *testing.T) {
 	}
 	if got := buf.String(); !strings.Contains(got, `msg="serve started" logger=trebi_sdk`) {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestDeriveFeatures(t *testing.T) {
+	t.Parallel()
+	a := sdktest.NewSandbox(sdktest.SandboxConfig{})
+	if got := sdk.DeriveFeatures(a, nil); len(got) != 12 || got[0] != sdk.FeatureRoomsList {
+		t.Fatalf("derived %v", got)
+	}
+	got := sdk.DeriveFeatures(struct{ sdk.Adapter }{a}, []string{sdk.FeatureTyping, sdk.FeatureAttachmentsIn, sdk.FeatureReplies, "bogus"})
+	if strings.Join(got, ",") != sdk.FeatureAttachmentsIn+","+sdk.FeatureReplies {
+		t.Fatalf("a bare adapter keeps only the features with no method, got %v", got)
 	}
 }

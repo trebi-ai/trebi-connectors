@@ -287,7 +287,7 @@ func TestStateWatcherReadsFormatOneWithoutEpoch(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	old := `{"version":1,"rooms":{"r1":{"cpu":{"value":95,"breached":["above:90"],"seq":1}}}}`
-	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(old), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rec := &recordEmitter{}
@@ -356,7 +356,7 @@ func TestStateWatcherInvalid(t *testing.T) {
 func TestStateWatcherNewerFormat(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(`{"version":99,"rooms":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(`{"version":99,"rooms":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewStateWatcher(dir, &recordEmitter{}); err == nil {

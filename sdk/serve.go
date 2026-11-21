@@ -369,7 +369,7 @@ func (s *session) initialize(m inMsg) {
 	res, err := s.a.Initialize(ctx, p)
 	mi, missing := asMissingInput(err)
 	if err != nil && !missing {
-		s.reply(m.ID, nil, AsError(err))
+		s.reply(m.ID, nil, asError(err))
 		return
 	}
 	res.Protocol = Protocol
@@ -477,7 +477,7 @@ func (s *session) request(m inMsg) {
 		s.reply(m.ID, nil, AuthRequired(mi.Error()))
 		return
 	}
-	if f := FeatureOf(m.Method); f != "" && !s.has(f) {
+	if f := featureOf(m.Method); f != "" && !s.has(f) {
 		s.reply(m.ID, nil, Unsupported(f+" is not a feature of this adapter"))
 		return
 	}
@@ -492,7 +492,7 @@ func (s *session) request(m inMsg) {
 		return
 	}
 	if err != nil {
-		s.reply(m.ID, nil, AsError(err))
+		s.reply(m.ID, nil, asError(err))
 		return
 	}
 	s.reply(m.ID, result, nil)
@@ -783,7 +783,7 @@ func loginMethods(ctx context.Context, a Authenticator) ([]LoginMethod, error) {
 			return nil, Permanent("the adapter returns a login method with no id")
 		case seen[m.ID]:
 			return nil, Permanent("the adapter returns the login method " + strconv.Quote(m.ID) + " two times")
-		case !slices.Contains(LoginTypes(), m.Type):
+		case !slices.Contains(loginTypes(), m.Type):
 			return nil, Permanent("the login method " + strconv.Quote(m.ID) + " has the unknown type " + strconv.Quote(m.Type))
 		case !m.Available && m.Reason == "":
 			return nil, Permanent("the login method " + strconv.Quote(m.ID) + " is not available and has no reason")
@@ -864,7 +864,7 @@ func (s *session) beginAuth(a Authenticator, reqID json.RawMessage, method strin
 		if err == nil {
 			err = Permanent("the login flow ended before its first step")
 		}
-		s.reply(reqID, nil, AsError(err))
+		s.reply(reqID, nil, asError(err))
 		return
 	}
 	if err == nil {

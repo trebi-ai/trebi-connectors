@@ -1,4 +1,4 @@
-package sdk
+package sdktest
 
 import (
 	"bytes"
@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/trebi-ai/trebi-connectors/sdk"
 )
 
 // SandboxFile is the state file of the sandbox in TREBI_STATE_DIR.
@@ -30,16 +32,16 @@ const sandboxKeep = 500
 // values of the real adapter, so the sandbox passes the same conformance
 // checks as the catalog manifest.
 type SandboxConfig struct {
-	Adapter  AdapterInfo
-	Account  Account // the account after a login
-	Events   []EventDecl
+	Adapter  sdk.AdapterInfo
+	Account  sdk.Account // the account after a login
+	Events   []sdk.EventDecl
 	Features []string
-	Limits   Limits
+	Limits   sdk.Limits
 	// Login are the login methods. A method with a Reason is not
 	// available. The type sets the fake flow: phone shows QR codes, browser
 	// a url step with a pasted fallback, existing a pick list of accounts,
 	// and key one secret field.
-	Login []LoginMethod
+	Login []sdk.LoginMethod
 	// LoginDelay is the time a login flow waits before it completes. The
 	// default is one second, so auth/cancel can end a flow first.
 	LoginDelay time.Duration
@@ -74,11 +76,11 @@ type Sandbox struct {
 	cfg SandboxConfig
 
 	mu      sync.Mutex
-	folders Trebi
+	folders sdk.Trebi
 	st      sandboxState
-	emit    Emitter
-	inputs  map[string]chan map[string]Value
-	hook    *Webhook
+	emit    sdk.Emitter
+	inputs  map[string]chan map[string]sdk.Value
+	hook    *sdk.Webhook
 	client  *http.Client
 }
 
@@ -87,68 +89,68 @@ type Sandbox struct {
 type sandboxState struct {
 	LoggedIn bool `json:"logged_in"`
 	// Accounts are the account ids that the existing login picked.
-	Accounts []string            `json:"accounts,omitempty"`
-	Seq      int                 `json:"seq"`
-	Rooms    []Room              `json:"rooms"`
-	Threads  map[string][]Thread `json:"threads"`
-	Events   []Event             `json:"events"`
+	Accounts []string                `json:"accounts,omitempty"`
+	Seq      int                     `json:"seq"`
+	Rooms    []sdk.Room              `json:"rooms"`
+	Threads  map[string][]sdk.Thread `json:"threads"`
+	Events   []sdk.Event             `json:"events"`
 
-	Subscriptions []Subscription               `json:"subscriptions,omitempty"`
-	States        map[string]SubscriptionState `json:"states,omitempty"`
-	Answers       map[string]map[string]string `json:"answers,omitempty"`
+	Subscriptions []sdk.Subscription               `json:"subscriptions,omitempty"`
+	States        map[string]sdk.SubscriptionState `json:"states,omitempty"`
+	Answers       map[string]map[string]string     `json:"answers,omitempty"`
 }
 
 var (
-	_ Authenticator = (*Sandbox)(nil)
-	_ Runner        = (*Sandbox)(nil)
-	_ FolderUser    = (*Sandbox)(nil)
-	_ Sender        = (*Sandbox)(nil)
-	_ RoomLister    = (*Sandbox)(nil)
-	_ RoomGetter    = (*Sandbox)(nil)
-	_ RoomOpener    = (*Sandbox)(nil)
-	_ ThreadLister  = (*Sandbox)(nil)
-	_ ThreadCreator = (*Sandbox)(nil)
-	_ Replayer      = (*Sandbox)(nil)
-	_ Historian     = (*Sandbox)(nil)
-	_ Typer         = (*Sandbox)(nil)
-	_ Seer          = (*Sandbox)(nil)
-	_ Reactor       = (*Sandbox)(nil)
-	_ Editor        = (*Sandbox)(nil)
+	_ sdk.Authenticator = (*Sandbox)(nil)
+	_ sdk.Runner        = (*Sandbox)(nil)
+	_ sdk.FolderUser    = (*Sandbox)(nil)
+	_ sdk.Sender        = (*Sandbox)(nil)
+	_ sdk.RoomLister    = (*Sandbox)(nil)
+	_ sdk.RoomGetter    = (*Sandbox)(nil)
+	_ sdk.RoomOpener    = (*Sandbox)(nil)
+	_ sdk.ThreadLister  = (*Sandbox)(nil)
+	_ sdk.ThreadCreator = (*Sandbox)(nil)
+	_ sdk.Replayer      = (*Sandbox)(nil)
+	_ sdk.Historian     = (*Sandbox)(nil)
+	_ sdk.Typer         = (*Sandbox)(nil)
+	_ sdk.Seer          = (*Sandbox)(nil)
+	_ sdk.Reactor       = (*Sandbox)(nil)
+	_ sdk.Editor        = (*Sandbox)(nil)
 
-	_ Subscriber            = (*Sandbox)(nil)
-	_ SubscriptionSubmitter = (*Sandbox)(nil)
-	_ WebhookReceiver       = (*Sandbox)(nil)
+	_ sdk.Subscriber            = (*Sandbox)(nil)
+	_ sdk.SubscriptionSubmitter = (*Sandbox)(nil)
+	_ sdk.WebhookReceiver       = (*Sandbox)(nil)
 )
 
 // NewSandbox builds a sandbox with three rooms and one thread.
 func NewSandbox(cfg SandboxConfig) *Sandbox {
 	if cfg.Account.ID == "" {
-		cfg.Account = Account{ID: "sandbox", Name: "Sandbox"}
+		cfg.Account = sdk.Account{ID: "sandbox", Name: "Sandbox"}
 	}
 	if cfg.LoginDelay == 0 {
 		cfg.LoginDelay = time.Second
 	}
 	if len(cfg.Events) == 0 {
-		cfg.Events = []EventDecl{{Type: "message"}}
+		cfg.Events = []sdk.EventDecl{{Type: "message"}}
 	}
 	return &Sandbox{
 		cfg: cfg,
 		st: sandboxState{
-			Rooms: []Room{
-				{ID: "sandbox-general", Name: "general", Kind: RoomChannel},
-				{ID: "sandbox-team", Name: "team", Kind: RoomGroup},
-				{ID: "sandbox-dm-ana", Name: "Ana", Kind: RoomDM},
+			Rooms: []sdk.Room{
+				{ID: "sandbox-general", Name: "general", Kind: sdk.RoomChannel},
+				{ID: "sandbox-team", Name: "team", Kind: sdk.RoomGroup},
+				{ID: "sandbox-dm-ana", Name: "Ana", Kind: sdk.RoomDM},
 			},
-			Threads: map[string][]Thread{"sandbox-general": {{ID: "sandbox-thread-1", Title: "Sandbox thread"}}},
+			Threads: map[string][]sdk.Thread{"sandbox-general": {{ID: "sandbox-thread-1", Title: "Sandbox thread"}}},
 		},
-		inputs: map[string]chan map[string]Value{},
+		inputs: map[string]chan map[string]sdk.Value{},
 		client: &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
 // UseFolders loads the state of an earlier run. An empty or missing state
 // file keeps the new state.
-func (s *Sandbox) UseFolders(t Trebi) error {
+func (s *Sandbox) UseFolders(t sdk.Trebi) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.folders = t
@@ -190,12 +192,12 @@ func (s *Sandbox) save() error {
 	if err := os.MkdirAll(s.folders.StateDir, 0o700); err != nil {
 		return err
 	}
-	return WriteFileAtomic(path, b, 0o600)
+	return sdk.WriteFileAtomic(path, b, 0o600)
 }
 
 // Initialize answers with the configured result and keeps the webhook.
-func (s *Sandbox) Initialize(_ context.Context, in InitializeParams) (InitializeResult, error) {
-	res := InitializeResult{
+func (s *Sandbox) Initialize(_ context.Context, in sdk.InitializeParams) (sdk.InitializeResult, error) {
+	res := sdk.InitializeResult{
 		Adapter:  s.cfg.Adapter,
 		Events:   slices.Clone(s.cfg.Events),
 		Features: s.features(),
@@ -216,23 +218,23 @@ func (s *Sandbox) Initialize(_ context.Context, in InitializeParams) (Initialize
 func (s *Sandbox) features() []string {
 	out := slices.Clone(s.cfg.Features)
 	if len(out) == 0 {
-		for _, f := range Features() {
+		for _, f := range sdk.Features() {
 			switch f {
-			case FeatureAttachmentsIn, FeatureAttachmentsOut, FeatureReplies, FeatureSubscriptions, FeatureWebhooks:
+			case sdk.FeatureAttachmentsIn, sdk.FeatureAttachmentsOut, sdk.FeatureReplies, sdk.FeatureSubscriptions, sdk.FeatureWebhooks:
 			default:
 				out = append(out, f)
 			}
 		}
 	}
-	out = slices.DeleteFunc(out, func(f string) bool { return f == FeatureSubscriptions || f == FeatureWebhooks })
+	out = slices.DeleteFunc(out, func(f string) bool { return f == sdk.FeatureSubscriptions || f == sdk.FeatureWebhooks })
 	if s.cfg.Subscriptions {
-		out = append(out, FeatureSubscriptions, FeatureWebhooks)
+		out = append(out, sdk.FeatureSubscriptions, sdk.FeatureWebhooks)
 	}
 	return out
 }
 
 // Run keeps the Emitter for the self events of each send.
-func (s *Sandbox) Run(ctx context.Context, e Emitter) error {
+func (s *Sandbox) Run(ctx context.Context, e sdk.Emitter) error {
 	s.mu.Lock()
 	s.emit = e
 	s.mu.Unlock()
@@ -244,24 +246,24 @@ func (s *Sandbox) Run(ctx context.Context, e Emitter) error {
 }
 
 // sandboxAccounts are the accounts of the pick list of the existing login.
-var sandboxAccounts = []Choice{
+var sandboxAccounts = []sdk.Choice{
 	{Value: "sandbox-a", Label: "Sandbox A", Description: "a.sandbox.example"},
 	{Value: "sandbox-b", Label: "Sandbox B", Description: "b.sandbox.example"},
 }
 
 // AuthStatus is connected after a login, or always with no login methods.
 // After an existing login it has one row per picked account.
-func (s *Sandbox) AuthStatus(context.Context) (AuthState, error) {
+func (s *Sandbox) AuthStatus(context.Context) (sdk.AuthState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.connected() {
-		return AuthState{State: StateAuthRequired, Reason: ReasonNone}, nil
+		return sdk.AuthState{State: sdk.StateAuthRequired, Reason: sdk.ReasonNone}, nil
 	}
 	acct := s.cfg.Account
-	st := AuthState{State: StateConnected, Account: &acct}
+	st := sdk.AuthState{State: sdk.StateConnected, Account: &acct}
 	for _, id := range s.st.Accounts {
-		row := AccountState{ID: id, State: StateConnected}
-		if i := slices.IndexFunc(sandboxAccounts, func(c Choice) bool { return c.Value == id }); i >= 0 {
+		row := sdk.AccountState{ID: id, State: sdk.StateConnected}
+		if i := slices.IndexFunc(sandboxAccounts, func(c sdk.Choice) bool { return c.Value == id }); i >= 0 {
 			row.Name = sandboxAccounts[i].Label
 		}
 		st.Accounts = append(st.Accounts, row)
@@ -273,7 +275,7 @@ func (s *Sandbox) connected() bool { return s.st.LoggedIn || len(s.cfg.Login) ==
 
 // LoginMethods returns the configured methods. A method with a reason is
 // not available.
-func (s *Sandbox) LoginMethods(context.Context) ([]LoginMethod, error) {
+func (s *Sandbox) LoginMethods(context.Context) ([]sdk.LoginMethod, error) {
 	out := slices.Clone(s.cfg.Login)
 	for i := range out {
 		out[i].Available = out[i].Reason == ""
@@ -284,30 +286,30 @@ func (s *Sandbox) LoginMethods(context.Context) ([]LoginMethod, error) {
 // BeginAuth sends a fake first step for the type of the method. A flow
 // with fields waits for the answer; a url step also ends after LoginDelay.
 // A QR flow sends a second code after LoginDelay. Then it logs in.
-func (s *Sandbox) BeginAuth(ctx context.Context, method string, steps StepSink) error {
-	i := slices.IndexFunc(s.cfg.Login, func(m LoginMethod) bool { return m.ID == method })
+func (s *Sandbox) BeginAuth(ctx context.Context, method string, steps sdk.StepSink) error {
+	i := slices.IndexFunc(s.cfg.Login, func(m sdk.LoginMethod) bool { return m.ID == method })
 	if i < 0 {
-		return Invalid("unknown login method " + strconv.Quote(method))
+		return sdk.Invalid("unknown login method " + strconv.Quote(method))
 	}
-	exp := FormatTime(time.Now().Add(20 * time.Second))
-	var first Step
-	var next *Step
+	exp := sdk.FormatTime(time.Now().Add(20 * time.Second))
+	var first sdk.Step
+	var next *sdk.Step
 	switch s.cfg.Login[i].Type {
-	case LoginPhone:
-		first = Step{Kind: StepQR, Data: "sandbox-qr-1", ExpiresAt: exp}
-		next = &Step{Kind: StepQR, Data: "sandbox-qr-2", ExpiresAt: exp}
-	case LoginBrowser:
-		first = Step{Kind: StepURL, URL: "https://example.com/login", ExpiresAt: exp, Fields: []StepField{
+	case sdk.LoginPhone:
+		first = sdk.Step{Kind: sdk.StepQR, Data: "sandbox-qr-1", ExpiresAt: exp}
+		next = &sdk.Step{Kind: sdk.StepQR, Data: "sandbox-qr-2", ExpiresAt: exp}
+	case sdk.LoginBrowser:
+		first = sdk.Step{Kind: sdk.StepURL, URL: "https://example.com/login", ExpiresAt: exp, Fields: []sdk.StepField{
 			{Name: "redirect", Label: "Address of the page", Help: "Any value works in the sandbox."},
 		}}
-	case LoginExisting:
-		first = Step{Kind: StepInput, Message: "Pick the accounts to follow.", Fields: []StepField{
-			{Name: "accounts", Label: "Accounts", Choices: sandboxAccounts, Multiple: true, Default: Value{sandboxAccounts[0].Value, sandboxAccounts[1].Value}},
+	case sdk.LoginExisting:
+		first = sdk.Step{Kind: sdk.StepInput, Message: "Pick the accounts to follow.", Fields: []sdk.StepField{
+			{Name: "accounts", Label: "Accounts", Choices: sandboxAccounts, Multiple: true, Default: sdk.Value{sandboxAccounts[0].Value, sandboxAccounts[1].Value}},
 		}}
 	default:
-		first = Step{Kind: StepInput, Fields: []StepField{{Name: "key", Label: "Key", Secret: true, Help: "Any value works in the sandbox."}}}
+		first = sdk.Step{Kind: sdk.StepInput, Fields: []sdk.StepField{{Name: "key", Label: "Key", Secret: true, Help: "Any value works in the sandbox."}}}
 	}
-	in := make(chan map[string]Value, 1)
+	in := make(chan map[string]sdk.Value, 1)
 	s.mu.Lock()
 	s.inputs[steps.FlowID()] = in
 	s.mu.Unlock()
@@ -320,7 +322,7 @@ func (s *Sandbox) BeginAuth(ctx context.Context, method string, steps StepSink) 
 		return err
 	}
 	var wait <-chan time.Time
-	if first.Kind != StepInput {
+	if first.Kind != sdk.StepInput {
 		wait = time.After(s.cfg.LoginDelay)
 	}
 	var picked []string
@@ -344,12 +346,12 @@ func (s *Sandbox) BeginAuth(ctx context.Context, method string, steps StepSink) 
 
 // SubmitAuth answers a step with fields. The SDK already checked the
 // values against the step.
-func (s *Sandbox) SubmitAuth(_ context.Context, flowID string, fields map[string]Value) error {
+func (s *Sandbox) SubmitAuth(_ context.Context, flowID string, fields map[string]sdk.Value) error {
 	s.mu.Lock()
 	in, ok := s.inputs[flowID]
 	s.mu.Unlock()
 	if !ok {
-		return NotFound("unknown login flow")
+		return sdk.NotFound("unknown login flow")
 	}
 	select {
 	case in <- fields:
@@ -367,38 +369,38 @@ func (s *Sandbox) Logout(context.Context) error {
 }
 
 // Send stores the message and emits it as a self message event.
-func (s *Sandbox) Send(_ context.Context, m SendParams) (SendResult, error) {
+func (s *Sandbox) Send(_ context.Context, m sdk.SendParams) (sdk.SendResult, error) {
 	if m.Text == "" && len(m.Attachments) == 0 {
-		return SendResult{}, Invalid("text and attachments are empty")
+		return sdk.SendResult{}, sdk.Invalid("text and attachments are empty")
 	}
 	s.mu.Lock()
 	if !s.connected() {
 		s.mu.Unlock()
-		return SendResult{}, AuthRequired("log in first")
+		return sdk.SendResult{}, sdk.AuthRequired("log in first")
 	}
 	room, err := s.room(m.Room)
 	if err != nil {
 		s.mu.Unlock()
-		return SendResult{}, err
+		return sdk.SendResult{}, err
 	}
-	if m.Thread != "" && !slices.ContainsFunc(s.st.Threads[m.Room], func(t Thread) bool { return t.ID == m.Thread }) {
+	if m.Thread != "" && !slices.ContainsFunc(s.st.Threads[m.Room], func(t sdk.Thread) bool { return t.ID == m.Thread }) {
 		s.mu.Unlock()
-		return SendResult{}, NotFound("unknown thread")
+		return sdk.SendResult{}, sdk.NotFound("unknown thread")
 	}
 	s.st.Seq++
 	id := "sandbox-m" + strconv.Itoa(s.st.Seq)
 	atts, err := s.keepAttachments(id, m.Attachments)
 	if err != nil {
 		s.mu.Unlock()
-		return SendResult{}, err
+		return sdk.SendResult{}, err
 	}
-	ev := Event{
-		ID: id, Type: "message", TS: FormatTime(time.Now()),
-		Room: &room, Sender: &Author{ID: s.cfg.Account.ID, Name: s.cfg.Account.Name, Self: true},
+	ev := sdk.Event{
+		ID: id, Type: "message", TS: sdk.FormatTime(time.Now()),
+		Room: &room, Sender: &sdk.Author{ID: s.cfg.Account.ID, Name: s.cfg.Account.Name, Self: true},
 		Text: m.Text, ReplyTo: m.ReplyTo, Attachments: atts,
 	}
 	if m.Thread != "" {
-		ev.Thread = &Thread{ID: m.Thread}
+		ev.Thread = &sdk.Thread{ID: m.Thread}
 	}
 	s.st.Events = append(s.st.Events, ev)
 	if n := len(s.st.Events); n > sandboxKeep {
@@ -408,22 +410,22 @@ func (s *Sandbox) Send(_ context.Context, m SendParams) (SendResult, error) {
 	emit, out := s.emit, s.public(ev)
 	s.mu.Unlock()
 	if err != nil {
-		return SendResult{}, Transient("save the sandbox state: " + err.Error())
+		return sdk.SendResult{}, sdk.Transient("save the sandbox state: " + err.Error())
 	}
 	if emit != nil && s.declares("message") {
 		emit.Event(out) //nolint:errcheck // the send is done; a lost event is not a send error
 	}
-	return SendResult{MessageID: id, Thread: m.Thread}, nil
+	return sdk.SendResult{MessageID: id, Thread: m.Thread}, nil
 }
 
 func (s *Sandbox) declares(typ string) bool {
-	return slices.ContainsFunc(s.cfg.Events, func(d EventDecl) bool { return d.Type == typ })
+	return slices.ContainsFunc(s.cfg.Events, func(d sdk.EventDecl) bool { return d.Type == typ })
 }
 
 // keepAttachments copies each local file of a send to the state folder and
 // returns the attachments with paths relative to it. The caller holds mu.
-func (s *Sandbox) keepAttachments(id string, in []Attachment) ([]Attachment, error) {
-	out := make([]Attachment, 0, len(in))
+func (s *Sandbox) keepAttachments(id string, in []sdk.Attachment) ([]sdk.Attachment, error) {
+	out := make([]sdk.Attachment, 0, len(in))
 	for i, a := range in {
 		if a.Path == "" {
 			out = append(out, a)
@@ -431,7 +433,7 @@ func (s *Sandbox) keepAttachments(id string, in []Attachment) ([]Attachment, err
 		}
 		if s.folders.StateDir == "" {
 			if _, err := os.Stat(a.Path); err != nil {
-				return nil, Invalid("attachment: " + err.Error())
+				return nil, sdk.Invalid("attachment: " + err.Error())
 			}
 			a.Path = ""
 			out = append(out, a)
@@ -444,7 +446,7 @@ func (s *Sandbox) keepAttachments(id string, in []Attachment) ([]Attachment, err
 		rel := filepath.Join("attachments", id+"-"+strconv.Itoa(i)+"-"+filepath.Base(name))
 		size, err := copyFile(a.Path, filepath.Join(s.folders.StateDir, rel))
 		if err != nil {
-			return nil, Invalid("attachment: " + err.Error())
+			return nil, sdk.Invalid("attachment: " + err.Error())
 		}
 		a.Path, a.Size = rel, size
 		if a.Name == "" {
@@ -479,7 +481,7 @@ func copyFile(src, dst string) (int64, error) {
 }
 
 // public returns ev with absolute attachment paths. The caller holds mu.
-func (s *Sandbox) public(ev Event) Event {
+func (s *Sandbox) public(ev sdk.Event) sdk.Event {
 	if len(ev.Attachments) == 0 {
 		return ev
 	}
@@ -493,16 +495,16 @@ func (s *Sandbox) public(ev Event) Event {
 }
 
 // room finds a room. The caller holds mu.
-func (s *Sandbox) room(id string) (Room, error) {
+func (s *Sandbox) room(id string) (sdk.Room, error) {
 	if id == "" {
-		return Room{}, Invalid("room is empty")
+		return sdk.Room{}, sdk.Invalid("room is empty")
 	}
 	for _, r := range s.st.Rooms {
 		if r.ID == id {
 			return r, nil
 		}
 	}
-	return Room{}, NotFound("unknown room")
+	return sdk.Room{}, sdk.NotFound("unknown room")
 }
 
 // message finds a message in a room. The caller holds mu.
@@ -511,20 +513,20 @@ func (s *Sandbox) message(room, id string) (int, error) {
 		return 0, err
 	}
 	if id == "" {
-		return 0, Invalid("message_id is empty")
+		return 0, sdk.Invalid("message_id is empty")
 	}
 	for i, ev := range s.st.Events {
 		if ev.ID == id && ev.Room != nil && ev.Room.ID == room {
 			return i, nil
 		}
 	}
-	return 0, NotFound("unknown message")
+	return 0, sdk.NotFound("unknown message")
 }
 
 // Edit changes the text of a sent message.
-func (s *Sandbox) Edit(_ context.Context, p EditParams) error {
+func (s *Sandbox) Edit(_ context.Context, p sdk.EditParams) error {
 	if p.Text == "" {
-		return Invalid("text is empty")
+		return sdk.Invalid("text is empty")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -537,13 +539,13 @@ func (s *Sandbox) Edit(_ context.Context, p EditParams) error {
 }
 
 // History returns the newest sent messages of a room, oldest first.
-func (s *Sandbox) History(_ context.Context, q HistoryQuery) (EventPage, error) {
+func (s *Sandbox) History(_ context.Context, q sdk.HistoryQuery) (sdk.EventPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := s.room(q.Room); err != nil {
-		return EventPage{}, err
+		return sdk.EventPage{}, err
 	}
-	var out []Event
+	var out []sdk.Event
 	for _, ev := range s.st.Events {
 		if ev.ID == q.Before {
 			break
@@ -555,22 +557,22 @@ func (s *Sandbox) History(_ context.Context, q HistoryQuery) (EventPage, error) 
 	if q.Limit > 0 && len(out) > q.Limit {
 		out = out[len(out)-q.Limit:]
 	}
-	return EventPage{Events: out}, nil
+	return sdk.EventPage{Events: out}, nil
 }
 
 // Replay returns the events after an event id. An unknown id is a gap.
-func (s *Sandbox) Replay(_ context.Context, after string, limit int) ([]Event, bool, error) {
+func (s *Sandbox) Replay(_ context.Context, after string, limit int) ([]sdk.Event, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	start := 0
 	if after != "" {
-		i := slices.IndexFunc(s.st.Events, func(ev Event) bool { return ev.ID == after })
+		i := slices.IndexFunc(s.st.Events, func(ev sdk.Event) bool { return ev.ID == after })
 		if i < 0 {
 			return nil, false, nil
 		}
 		start = i + 1
 	}
-	var out []Event
+	var out []sdk.Event
 	for _, ev := range s.st.Events[start:] {
 		if limit > 0 && len(out) == limit {
 			return out, false, nil
@@ -581,10 +583,10 @@ func (s *Sandbox) Replay(_ context.Context, after string, limit int) ([]Event, b
 }
 
 // ListRooms filters the rooms by name and kind. The cursor is an offset.
-func (s *Sandbox) ListRooms(_ context.Context, q RoomQuery) (RoomPage, error) {
+func (s *Sandbox) ListRooms(_ context.Context, q sdk.RoomQuery) (sdk.RoomPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var match []Room
+	var match []sdk.Room
 	for _, r := range s.st.Rooms {
 		if (q.Kind == "" || r.Kind == q.Kind) && strings.Contains(strings.ToLower(r.Name), strings.ToLower(q.Query)) {
 			match = append(match, r)
@@ -596,7 +598,7 @@ func (s *Sandbox) ListRooms(_ context.Context, q RoomQuery) (RoomPage, error) {
 	if q.Limit > 0 {
 		end = min(start+q.Limit, len(match))
 	}
-	page := RoomPage{Rooms: match[start:end]}
+	page := sdk.RoomPage{Rooms: match[start:end]}
 	if end < len(match) {
 		page.Next = strconv.Itoa(end)
 	}
@@ -604,21 +606,21 @@ func (s *Sandbox) ListRooms(_ context.Context, q RoomQuery) (RoomPage, error) {
 }
 
 // GetRoom finds one room.
-func (s *Sandbox) GetRoom(_ context.Context, id string) (Room, error) {
+func (s *Sandbox) GetRoom(_ context.Context, id string) (sdk.Room, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.room(id)
 }
 
 // OpenRoom opens a DM room with any user.
-func (s *Sandbox) OpenRoom(_ context.Context, user string) (Room, error) {
+func (s *Sandbox) OpenRoom(_ context.Context, user string) (sdk.Room, error) {
 	if user == "" {
-		return Room{}, Invalid("user is empty")
+		return sdk.Room{}, sdk.Invalid("user is empty")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r := Room{ID: "sandbox-dm-" + user, Name: user, Kind: RoomDM}
-	if slices.ContainsFunc(s.st.Rooms, func(x Room) bool { return x.ID == r.ID }) {
+	r := sdk.Room{ID: "sandbox-dm-" + user, Name: user, Kind: sdk.RoomDM}
+	if slices.ContainsFunc(s.st.Rooms, func(x sdk.Room) bool { return x.ID == r.ID }) {
 		return r, nil
 	}
 	s.st.Rooms = append(s.st.Rooms, r)
@@ -626,31 +628,31 @@ func (s *Sandbox) OpenRoom(_ context.Context, user string) (Room, error) {
 }
 
 // ListThreads lists the threads of a room.
-func (s *Sandbox) ListThreads(_ context.Context, q ThreadQuery) (ThreadPage, error) {
+func (s *Sandbox) ListThreads(_ context.Context, q sdk.ThreadQuery) (sdk.ThreadPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := s.room(q.Room); err != nil {
-		return ThreadPage{}, err
+		return sdk.ThreadPage{}, err
 	}
-	return ThreadPage{Threads: slices.Clone(s.st.Threads[q.Room])}, nil
+	return sdk.ThreadPage{Threads: slices.Clone(s.st.Threads[q.Room])}, nil
 }
 
 // CreateThread adds a thread to a room.
-func (s *Sandbox) CreateThread(_ context.Context, p CreateThreadParams) (Thread, error) {
+func (s *Sandbox) CreateThread(_ context.Context, p sdk.CreateThreadParams) (sdk.Thread, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := s.room(p.Room); err != nil {
-		return Thread{}, err
+		return sdk.Thread{}, err
 	}
 	if p.FromMessage != "" {
 		if _, err := s.message(p.Room, p.FromMessage); err != nil {
-			return Thread{}, err
+			return sdk.Thread{}, err
 		}
 	}
 	s.st.Seq++
-	t := Thread{ID: "sandbox-t" + strconv.Itoa(s.st.Seq), Title: p.Title}
+	t := sdk.Thread{ID: "sandbox-t" + strconv.Itoa(s.st.Seq), Title: p.Title}
 	if s.st.Threads == nil {
-		s.st.Threads = map[string][]Thread{}
+		s.st.Threads = map[string][]sdk.Thread{}
 	}
 	s.st.Threads[p.Room] = append(s.st.Threads[p.Room], t)
 	return t, s.save()
@@ -667,7 +669,7 @@ func (s *Sandbox) Typing(_ context.Context, room, _ string) error {
 // Seen accepts any message id in a known room.
 func (s *Sandbox) Seen(_ context.Context, room, messageID string) error {
 	if messageID == "" {
-		return Invalid("message_id is empty")
+		return sdk.Invalid("message_id is empty")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -678,7 +680,7 @@ func (s *Sandbox) Seen(_ context.Context, room, messageID string) error {
 // React accepts any message id in a known room.
 func (s *Sandbox) React(_ context.Context, room, messageID, emoji string) error {
 	if messageID == "" || emoji == "" {
-		return Invalid("message_id and emoji must be set")
+		return sdk.Invalid("message_id and emoji must be set")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -687,11 +689,11 @@ func (s *Sandbox) React(_ context.Context, room, messageID, emoji string) error 
 }
 
 // Options lists the sandbox targets for any field.
-func (s *Sandbox) Options(_ context.Context, q OptionQuery) (OptionPage, error) {
-	var page OptionPage
+func (s *Sandbox) Options(_ context.Context, q sdk.OptionQuery) (sdk.OptionPage, error) {
+	var page sdk.OptionPage
 	for _, t := range []string{SandboxAlpha, SandboxBeta, SandboxManual} {
 		if strings.Contains(t, strings.ToLower(q.Query)) {
-			page.Options = append(page.Options, FieldOption{Value: t, Label: strings.TrimPrefix(t, "sandbox/")})
+			page.Options = append(page.Options, sdk.FieldOption{Value: t, Label: strings.TrimPrefix(t, "sandbox/")})
 		}
 	}
 	return page, nil
@@ -700,16 +702,16 @@ func (s *Sandbox) Options(_ context.Context, q OptionQuery) (OptionPage, error) 
 // Sync makes the api targets active with a webhook, asks for a code for the
 // manual target, and polls without a webhook. Each api target that becomes
 // active gets one delivery.
-func (s *Sandbox) Sync(ctx context.Context, p SyncParams) (SyncResult, error) {
+func (s *Sandbox) Sync(ctx context.Context, p sdk.SyncParams) (sdk.SyncResult, error) {
 	s.mu.Lock()
 	hook, old := s.hook, s.st.States
-	states := map[string]SubscriptionState{}
+	states := map[string]sdk.SubscriptionState{}
 	answers := map[string]map[string]string{}
-	var res SyncResult
+	var res sdk.SyncResult
 	var deliver []string
 	for _, sub := range p.Subscriptions {
 		st := s.subscriptionState(sub, hook)
-		if st.State == SubscriptionActive && st.Mode == ModeAPI && old[sub.ID].State != SubscriptionActive {
+		if st.State == sdk.SubscriptionActive && st.Mode == sdk.ModeAPI && old[sub.ID].State != sdk.SubscriptionActive {
 			deliver = append(deliver, st.Room.ID)
 		}
 		if a, ok := s.st.Answers[sub.ID]; ok {
@@ -722,11 +724,11 @@ func (s *Sandbox) Sync(ctx context.Context, p SyncParams) (SyncResult, error) {
 	err := s.save()
 	s.mu.Unlock()
 	if err != nil {
-		return SyncResult{}, Transient("save the sandbox state: " + err.Error())
+		return sdk.SyncResult{}, sdk.Transient("save the sandbox state: " + err.Error())
 	}
 	for _, target := range deliver {
 		if err := s.deliver(ctx, hook, target); err != nil {
-			return SyncResult{}, err
+			return sdk.SyncResult{}, err
 		}
 	}
 	return res, nil
@@ -734,7 +736,7 @@ func (s *Sandbox) Sync(ctx context.Context, p SyncParams) (SyncResult, error) {
 
 // subscriptionState is the state of one subscription now. The caller
 // holds mu.
-func (s *Sandbox) subscriptionState(sub Subscription, hook *Webhook) SubscriptionState {
+func (s *Sandbox) subscriptionState(sub sdk.Subscription, hook *sdk.Webhook) sdk.SubscriptionState {
 	target := sub.Value("target")
 	if target == "" {
 		for _, v := range sub.Values {
@@ -743,22 +745,22 @@ func (s *Sandbox) subscriptionState(sub Subscription, hook *Webhook) Subscriptio
 			}
 		}
 	}
-	st := SubscriptionState{ID: sub.ID, Title: target, Room: &Room{ID: target, Name: strings.TrimPrefix(target, "sandbox/")}}
+	st := sdk.SubscriptionState{ID: sub.ID, Title: target, Room: &sdk.Room{ID: target, Name: strings.TrimPrefix(target, "sandbox/")}}
 	switch {
 	case target != SandboxAlpha && target != SandboxBeta && target != SandboxManual:
-		st.Room, st.Mode, st.State, st.Message = nil, ModePoll, SubscriptionError, "Choose a sandbox target."
+		st.Room, st.Mode, st.State, st.Message = nil, sdk.ModePoll, sdk.SubscriptionError, "Choose a sandbox target."
 	case hook == nil:
-		st.Mode, st.State = ModePoll, SubscriptionPolling
+		st.Mode, st.State = sdk.ModePoll, sdk.SubscriptionPolling
 	case target != SandboxManual:
-		st.Mode, st.State = ModeAPI, SubscriptionActive
+		st.Mode, st.State = sdk.ModeAPI, sdk.SubscriptionActive
 	case s.st.Answers[sub.ID]["code"] != "":
-		st.Mode, st.State = ModeManual, SubscriptionActive
+		st.Mode, st.State = sdk.ModeManual, sdk.SubscriptionActive
 	default:
-		st.Mode, st.State = ModeManual, SubscriptionActionRequired
-		st.Action = &Action{
+		st.Mode, st.State = sdk.ModeManual, sdk.SubscriptionActionRequired
+		st.Action = &sdk.Action{
 			Text: "Copy this address into the sandbox. Then type any code below.",
-			Show: []ShowValue{{Label: "URL", Value: hook.URL}},
-			Ask:  []AskField{{Name: "code", Label: "Code", Secret: true, Required: true}},
+			Show: []sdk.ShowValue{{Label: "URL", Value: hook.URL}},
+			Ask:  []sdk.AskField{{Name: "code", Label: "Code", Secret: true, Required: true}},
 		}
 	}
 	return st
@@ -766,37 +768,37 @@ func (s *Sandbox) subscriptionState(sub Subscription, hook *Webhook) Subscriptio
 
 // SubmitSubscription keeps the code of the manual target, makes it active,
 // and sends one delivery.
-func (s *Sandbox) SubmitSubscription(ctx context.Context, p SubmitParams) (SubscriptionState, error) {
+func (s *Sandbox) SubmitSubscription(ctx context.Context, p sdk.SubmitParams) (sdk.SubscriptionState, error) {
 	if p.Fields["code"] == "" {
-		return SubscriptionState{}, Invalid("the code is empty")
+		return sdk.SubscriptionState{}, sdk.Invalid("the code is empty")
 	}
 	s.mu.Lock()
 	hook := s.hook
 	st, ok := s.st.States[p.ID]
 	if !ok {
 		s.mu.Unlock()
-		return SubscriptionState{}, NotFound("unknown subscription")
+		return sdk.SubscriptionState{}, sdk.NotFound("unknown subscription")
 	}
-	if st.Mode != ModeManual || hook == nil {
+	if st.Mode != sdk.ModeManual || hook == nil {
 		s.mu.Unlock()
-		return SubscriptionState{}, Invalid("this subscription asks for no answer")
+		return sdk.SubscriptionState{}, sdk.Invalid("this subscription asks for no answer")
 	}
 	if s.st.Answers == nil {
 		s.st.Answers = map[string]map[string]string{}
 	}
 	s.st.Answers[p.ID] = map[string]string{"code": p.Fields["code"]}
-	st.State, st.Action = SubscriptionActive, nil
+	st.State, st.Action = sdk.SubscriptionActive, nil
 	s.st.States[p.ID] = st
 	err := s.save()
 	s.mu.Unlock()
 	if err != nil {
-		return SubscriptionState{}, Transient("save the sandbox state: " + err.Error())
+		return sdk.SubscriptionState{}, sdk.Transient("save the sandbox state: " + err.Error())
 	}
 	return st, s.deliver(ctx, hook, st.Room.ID)
 }
 
 // deliver posts one signed delivery for a target to the webhook URL.
-func (s *Sandbox) deliver(ctx context.Context, hook *Webhook, target string) error {
+func (s *Sandbox) deliver(ctx context.Context, hook *sdk.Webhook, target string) error {
 	body, err := json.Marshal(sandboxDelivery{Target: target, Text: "hello"})
 	if err != nil {
 		return err
@@ -805,41 +807,41 @@ func (s *Sandbox) deliver(ctx context.Context, hook *Webhook, target string) err
 	mac.Write(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook.URL, bytes.NewReader(body))
 	if err != nil {
-		return Invalid("webhook url: " + err.Error())
+		return sdk.Invalid("webhook url: " + err.Error())
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(SandboxSignature, "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return Transient("post the sandbox delivery: " + err.Error())
+		return sdk.Transient("post the sandbox delivery: " + err.Error())
 	}
 	resp.Body.Close() //nolint:errcheck,gosec // the status is all the sandbox reads
 	if resp.StatusCode >= 300 {
-		return Transient("post the sandbox delivery: " + resp.Status)
+		return sdk.Transient("post the sandbox delivery: " + resp.Status)
 	}
 	return nil
 }
 
 // ReceiveWebhook checks the signature and emits one message event in the
 // room of the target.
-func (s *Sandbox) ReceiveWebhook(ctx context.Context, req WebhookRequest) error {
+func (s *Sandbox) ReceiveWebhook(ctx context.Context, req sdk.WebhookRequest) error {
 	s.mu.Lock()
 	hook := s.hook
 	s.mu.Unlock()
-	if hook == nil || !req.VerifyHMAC([]byte(hook.Secret), SandboxSignature, "sha256=", sha256.New, EncodingHex) {
-		return Invalid("bad signature")
+	if hook == nil || !req.VerifyHMAC([]byte(hook.Secret), SandboxSignature, "sha256=", sha256.New, sdk.EncodingHex) {
+		return sdk.Invalid("bad signature")
 	}
 	var d sandboxDelivery
 	if err := json.Unmarshal([]byte(req.Body), &d); err != nil || d.Target == "" {
-		return Invalid("the body is not a sandbox delivery")
+		return sdk.Invalid("the body is not a sandbox delivery")
 	}
-	e := EmitterFrom(ctx)
+	e := sdk.EmitterFrom(ctx)
 	if e == nil || !s.declares("message") {
 		return nil
 	}
-	return e.Event(Event{
-		ID: "sandbox-hook-" + req.ID, Type: "message", TS: FormatTime(time.Now()),
-		Room:   &Room{ID: d.Target, Name: strings.TrimPrefix(d.Target, "sandbox/")},
-		Sender: &Author{ID: "sandbox-platform", Name: "Sandbox", Bot: true}, Text: d.Text,
+	return e.Event(sdk.Event{
+		ID: "sandbox-hook-" + req.ID, Type: "message", TS: sdk.FormatTime(time.Now()),
+		Room:   &sdk.Room{ID: d.Target, Name: strings.TrimPrefix(d.Target, "sandbox/")},
+		Sender: &sdk.Author{ID: "sandbox-platform", Name: "Sandbox", Bot: true}, Text: d.Text,
 	})
 }

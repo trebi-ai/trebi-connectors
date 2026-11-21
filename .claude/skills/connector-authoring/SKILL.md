@@ -58,6 +58,7 @@ Write the choice between the two modes in `internal/config` of the program. No o
 - In Trebi mode, read each setting only from its input env name and from `TREBI_STATE_DIR`. A flag that selects a store or a credential returns an error with "Trebi sets this value". A command that saves a setting returns an error with "Set this value in Trebi".
 - Standalone, keep the defaults of the tool: flags, env names, `.env` files, and a config file in the home folder.
 - Give one function that resolves each setting and tells its source, for example `config.Resolve(flag) (Settings, error)` in `discord-cli` or `config.StoreDir(flag)` in `whatsapp-cli`.
+- Use `sdk.ErrTrebiSets` and `sdk.ErrSetInTrebi`, wrapped with `%w`.
 
 ## 3. The `serve` command with the SDK
 
@@ -98,7 +99,7 @@ return sdk.Serve(ctx, a)
 - The fake echoes each send as a `message` event with `sender.self: true`.
 - A fake login completes by itself. It keeps its state in `TREBI_STATE_DIR`, so a restart stays logged in.
 - The sandbox writes nothing outside the state and cache folders. Outside Trebi, use a temp folder or fixed fake credentials. Never send a real credential to the fake.
-- `sdk.NewSandbox` is the reference adapter of the SDK. Do not use it for the sandbox of a program.
+- `sdktest.NewSandbox` is the reference adapter of the SDK. Do not use it for the sandbox of a program.
 - The sandbox delivery rule: for a connector with `events.subscriptions`, the fake registers a webhook when the adapter asks for one. It then POSTs one signed delivery to the webhook URL, with the same headers and the same signature form as the real system. The conformance check gives the URL and the secret, sends the delivery back with `webhook/receive`, and expects one event. It also changes one byte of the body and expects `invalid`.
 - With no webhook, the fake serves the poll path, so `sync` gives `polling`.
 

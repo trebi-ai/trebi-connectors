@@ -122,7 +122,7 @@ func TestAsError(t *testing.T) {
 		{errors.New("boom"), CodePermanent},
 	}
 	for _, c := range cases {
-		if got := AsError(c.err).Code; got != c.want {
+		if got := asError(c.err).Code; got != c.want {
 			t.Errorf("%v → %s, want %s", c.err, got, c.want)
 		}
 	}
@@ -156,7 +156,7 @@ func TestSentStorePersistsAndBounds(t *testing.T) {
 	if _, ok := re.get("k3"); ok {
 		t.Fatal("k3 is over the bound and must be gone")
 	}
-	data, err := os.ReadFile(filepath.Join(dir, SentFile))
+	data, err := os.ReadFile(filepath.Join(dir, sentFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,15 +165,13 @@ func TestSentStorePersistsAndBounds(t *testing.T) {
 	}
 }
 
-func TestDeriveFeatures(t *testing.T) {
+func TestTrebiModeErrors(t *testing.T) {
 	t.Parallel()
-	a := NewSandbox(SandboxConfig{})
-	if got := deriveFeatures(a, nil); len(got) != 12 || got[0] != FeatureRoomsList {
-		t.Fatalf("derived %v", got)
+	if err := fmt.Errorf("--token: %w", ErrTrebiSets); !errors.Is(err, ErrTrebiSets) {
+		t.Fatal("a wrapped ErrTrebiSets must match")
 	}
-	got := deriveFeatures(struct{ Adapter }{a}, []string{FeatureTyping, FeatureAttachmentsIn, FeatureReplies, "bogus"})
-	if strings.Join(got, ",") != FeatureAttachmentsIn+","+FeatureReplies {
-		t.Fatalf("a bare adapter keeps only the features with no method, got %v", got)
+	if ErrTrebiSets.Error() != "Trebi sets this value" || ErrSetInTrebi.Error() != "Set this value in Trebi" {
+		t.Fatalf("texts %q, %q", ErrTrebiSets, ErrSetInTrebi)
 	}
 }
 
@@ -197,8 +195,8 @@ func TestFeatureTable(t *testing.T) {
 		MethodInitialize: "", MethodMessagesSend: "", MethodAuthStatus: "",
 	}
 	for m, f := range methods {
-		if got := FeatureOf(m); got != f {
-			t.Errorf("FeatureOf(%q) = %q, want %q", m, got, f)
+		if got := featureOf(m); got != f {
+			t.Errorf("featureOf(%q) = %q, want %q", m, got, f)
 		}
 	}
 }

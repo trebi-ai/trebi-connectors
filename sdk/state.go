@@ -17,8 +17,8 @@ import (
 	"time"
 )
 
-// StateFile is the store of StateWatcher in TREBI_STATE_DIR.
-const StateFile = "trebi-sdk-state.json"
+// stateFile is the store of StateWatcher in TREBI_STATE_DIR.
+const stateFile = "trebi-sdk-state.json"
 
 // Event types of StateWatcher. Declare them in InitializeResult.Events.
 const (
@@ -102,7 +102,7 @@ func WithText(f func(typ string, c StateChange) string) StateOption {
 // thresholds, only a crossing emits: state.changed on the way out and
 // state.recovered on the way back. When a threshold changes, an open breach
 // moves to a new threshold with the same operator, or recovers. With a
-// stateDir, the values stay in StateFile, so a restart does not emit each
+// stateDir, the values stay in stateFile, so a restart does not emit each
 // key again.
 type StateWatcher struct {
 	path  string
@@ -112,7 +112,7 @@ type StateWatcher struct {
 	rooms map[string]Room // the last room of each id, for the events of Retain
 }
 
-// stateVersion is the format of StateFile.
+// stateVersion is the format of stateFile.
 const stateVersion = 1
 
 type stateDoc struct {
@@ -144,7 +144,7 @@ func NewStateWatcher(stateDir string, e EventEmitter) (*StateWatcher, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("state dir: %w", err)
 	}
-	w.path = filepath.Join(stateDir, StateFile)
+	w.path = filepath.Join(stateDir, stateFile)
 	b, err := os.ReadFile(w.path)
 	if errors.Is(err, os.ErrNotExist) {
 		w.data.Epoch = newEpoch()

@@ -10,8 +10,8 @@ import (
 	"sync"
 )
 
-// SentFile is the dedupe store of messages/send in TREBI_STATE_DIR.
-const SentFile = "trebi-sdk-sent.jsonl"
+// sentFile is the dedupe store of messages/send in TREBI_STATE_DIR.
+const sentFile = "trebi-sdk-sent.jsonl"
 
 // defaultMaxSent bounds the keys the store keeps. The daemon retries a send
 // within minutes, so the newest keys are the ones that matter.
@@ -43,7 +43,7 @@ func newSentStore(dir string, max int) (*sentStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("state dir: %w", err)
 	}
-	s.path = filepath.Join(dir, SentFile)
+	s.path = filepath.Join(dir, sentFile)
 	data, err := os.ReadFile(s.path)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read %s: %w", s.path, err)

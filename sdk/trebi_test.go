@@ -98,7 +98,7 @@ func startSandbox(t *testing.T, state, cache string) *sdktest.Conn {
 	cfg.Events = []sdk.EventDecl{{Type: "message"}}
 	cfg.Features = []string{"rooms.list", "rooms.open", "threads", "threads.create", "history", "replay", "typing", "seen", "reactions", "edit", "attachments.in", "attachments.out"}
 	cfg.Limits.MaxText = 100
-	c := sdktest.Start(sdk.NewSandbox(cfg), sdk.WithStateDir(state), sdk.WithCacheDir(cache))
+	c := sdktest.Start(sdktest.NewSandbox(cfg), sdk.WithStateDir(state), sdk.WithCacheDir(cache))
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck // the test checks the calls
 	if _, err := c.Initialize(sdk.InitializeParams{}); err != nil {
 		t.Fatal(err)
